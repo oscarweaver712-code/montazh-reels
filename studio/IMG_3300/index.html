@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Теорема Пифагора — не Пифагора</title>
+    <script src="assets/gsap.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 60px; width: 960px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 744px; top: 150px; }
+      .card-left { left: 36px; top: 150px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 104px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="61.867" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="61.867" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="h-lead" class="g lead" style="top: 56px;">это знали за 1000 лет до него</div>
+        <div id="formula" class="g eq-line" style="top: 95px; font-size: 150px;">a² + b² = c²</div>
+        <div id="qm" class="g big" style="top: 110px; font-size: 300px;">?</div>
+        <div id="lines0" class="g big" style="top: 80px; font-size: 200px; white-space: nowrap;">0 строк</div>
+        <div id="k1000" class="g big red" style="top: 70px; font-size: 190px; white-space: nowrap;">−1000 лет</div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="61.867" data-track-index="1"></video>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <svg id="tri" class="g" viewBox="0 0 640 440" style="left: 220px; top: 1230px; width: 640px; height: 440px; overflow: visible;">
+          <path id="tri-p" d="M 120 380 L 120 90 L 520 380 Z" fill="rgba(240,53,44,0.10)" stroke="#F2EBDD" stroke-width="10" stroke-linejoin="round"
+                pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path d="M 120 345 L 155 345 L 155 380" fill="none" stroke="#F2EBDD" stroke-width="6" />
+          <text x="78" y="250" font-family="Cormorant" font-style="italic" font-weight="700" font-size="74" fill="#F2EBDD">a</text>
+          <text x="300" y="432" font-family="Cormorant" font-style="italic" font-weight="700" font-size="74" fill="#F2EBDD">b</text>
+          <text x="340" y="215" font-family="Cormorant" font-style="italic" font-weight="700" font-size="74" fill="#F0352C">c</text>
+        </svg>
+        <div id="pill-bab" class="g pill" style="left: 120px; top: 1270px; font-size: 38px;">Вавилонская?</div>
+        <div id="pill-ind" class="g pill" style="left: 600px; top: 1270px; font-size: 38px;">Индийская?</div>
+        <div id="card-pyth" class="g card card-right">
+          <div class="ph"><img src="assets/img/pythagoras.jpg" alt="" /></div>
+          <div class="card-name">Пифагор</div>
+          <div class="card-sub">«Афинская школа», Рафаэль</div>
+        </div>
+        <div id="stamp-sect" class="g stamp" style="left: 150px; top: 250px; font-size: 84px; background: rgba(12,12,14,0.55);">глава секты</div>
+        <div id="pill-club" class="g pill" style="left: 0; width: 1080px; text-align: center; top: 1265px; background: none; border: none; font-size: 46px;">закрытый клуб <span style="color: var(--red);">по подписке</span></div>
+        <div id="rule" class="g paper" style="left: 130px; top: 1255px; width: 820px; text-align: center;"><div class="paper-text" style="font-style: normal; font-weight: 700;">Правило №1:</div><div class="paper-text">никому не рассказывать, что изучаешь</div></div>
+        <div id="pill-teacher" class="g pill" style="left: 0; width: 1080px; text-align: center; top: 1265px; background: none; border: none; font-size: 46px;">все открытия → <span style="color: var(--red);">учителю</span></div>
+        <div id="card-plim" class="g doc" style="left: 170px; top: 1240px; width: 740px; padding: 16px;">
+          <div style="width: 708px; height: 420px; overflow: hidden;"><img src="assets/img/plimpton322.jpg" alt="" style="display: block; width: 708px; height: 420px; object-fit: cover; object-position: 50% 50%;" /></div>
+          <div class="doc-cap">Плимптон 322 · Вавилон, ок. 1800 до н. э.</div>
+        </div>
+        <div id="pill-in" class="g pill" style="left: 170px; top: 1270px; font-size: 40px;">Индия ✓</div>
+        <div id="pill-ch" class="g pill" style="left: 600px; top: 1270px; font-size: 40px;">Китай ✓</div>
+        <div id="cta" class="g cta" style="left: 90px; top: 1130px; width: 900px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">объясню сложное простым языком</div>
+        </div>
+        <svg id="cta-arrow" class="g" viewBox="0 0 220 200" style="left: 70px; top: 1470px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-lead" src="assets/sfx/whoosh-short.mp3" data-start="0.29" data-volume="0.26"></audio>
+      <audio id="sfx-tri" src="assets/sfx/sparkle.mp3" data-start="0.37" data-volume="0.24"></audio>
+      <audio id="sfx-formula" src="assets/sfx/impact-bass-1.mp3" data-start="2.29" data-volume="0.42"></audio>
+      <audio id="sfx-bab" src="assets/sfx/pop.mp3" data-start="6.27" data-volume="0.32"></audio>
+      <audio id="sfx-ind" src="assets/sfx/pop.mp3" data-start="7.27" data-volume="0.32"></audio>
+      <audio id="sfx-pyth" src="assets/sfx/whoosh-short.mp3" data-start="9.23" data-volume="0.28"></audio>
+      <audio id="sfx-sect" src="assets/sfx/impact-bass-1.mp3" data-start="12.27" data-volume="0.34"></audio>
+      <audio id="sfx-club" src="assets/sfx/pop.mp3" data-start="14.85" data-volume="0.30"></audio>
+      <audio id="sfx-rule" src="assets/sfx/whoosh.mp3" data-start="20.97" data-volume="0.24"></audio>
+      <audio id="sfx-teacher" src="assets/sfx/pop.mp3" data-start="26.53" data-volume="0.30"></audio>
+      <audio id="sfx-qm" src="assets/sfx/pop.mp3" data-start="35.13" data-volume="0.30"></audio>
+      <audio id="sfx-lines" src="assets/sfx/click.mp3" data-start="39.27" data-volume="0.38"></audio>
+      <audio id="sfx-k1000" src="assets/sfx/impact-bass-1.mp3" data-start="44.37" data-volume="0.40"></audio>
+      <audio id="sfx-plim" src="assets/sfx/whoosh.mp3" data-start="46.79" data-volume="0.24"></audio>
+      <audio id="sfx-pin" src="assets/sfx/pop.mp3" data-start="53.41" data-volume="0.30"></audio>
+      <audio id="sfx-pch" src="assets/sfx/pop.mp3" data-start="53.89" data-volume="0.30"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="55.11" data-volume="0.40"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[0.27, 5.07], [35.07, 36.17], [39.22, 42.07], [44.32, 45.62]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры ----------
+      const caps = document.getElementById("caps");
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        el.textContent = c.text;
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход, сработавший посреди входа, в покадровом рендере
+        // проигрывает недоигравшему fromTo — и слово висит до конца ролика
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) },
+                  { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: Math.min(0.09, c.t1 - c.t0), ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+      });
+
+
+      // ---------- хук: это знали за тысячу лет, а назвали Пифагоровой ----------
+      enter("#h-lead", 0.31, { fromScale: 1, fromY: 20, dur: 0.3, ease: "power2.out" });
+      tl.set("#tri", { opacity: 1 }, 0.31);
+      draw("#tri-p", 0.37, 0.9);
+      slam("#formula", 2.31, { fromScale: 1.4 });
+      flash(2.31);
+      leave(["#h-lead", "#formula"], 4.97, { y: -60 });
+      leave("#tri", 5.27, { y: 80, scale: 0.8 });
+      enter("#pill-bab", 6.29, { fromX: -220, fromScale: 0.9, rot: -3 });
+      enter("#pill-ind", 7.29, { fromX: 220, fromScale: 0.9, rot: 3 });
+      leave(["#pill-bab", "#pill-ind"], 8.17, { y: 60 });
+
+      // ---------- Пифагор — глава секты, клуб по подписке ----------
+      card("#card-pyth", 9.25, 27.67, "right");
+      slam("#stamp-sect", 12.29, { fromScale: 2.2, rot: -6, blur: 10 });
+      leave("#stamp-sect", 13.27, { scale: 0.6, y: 0, rot: -18 });
+      enter("#pill-club", 14.87, { fromScale: 0.85, dur: 0.25 });
+      leave("#pill-club", 17.47, { y: 60 });
+
+      // ---------- как в «Бойцовском клубе»: молчать, открытия — учителю ----------
+      doc("#rule", 20.99, 25.87, { fromRot: -5, rot: 1 });
+      enter("#pill-teacher", 26.55, { fromScale: 0.85, dur: 0.25 });
+      leave("#pill-teacher", 27.97, { y: 60 });
+
+      // ---------- никто не знает, не оставил ни строчки ----------
+      slam("#qm", 35.15, { fromScale: 1.6 });
+      leave("#qm", 36.07, { y: -60 });
+      slam("#lines0", 39.29, { fromScale: 1.4 });
+      leave("#lines0", 41.97, { y: -60 });
+
+      // ---------- знали за тысячу лет до него: вавилонская табличка ----------
+      slam("#k1000", 44.39, { fromScale: 1.5 });
+      flash(44.39);
+      leave("#k1000", 45.52, { y: -60 });
+      doc("#card-plim", 46.81, 51.97, { fromRot: 6, rot: -2 });
+      tl.fromTo("#card-plim img", { scale: 1 }, { scale: 1.12, duration: 5.2, ease: "none" }, 46.81);
+      enter("#pill-in", 53.43, { fromX: -220, fromScale: 0.9, rot: -3 });
+      enter("#pill-ch", 53.91, { fromX: 220, fromScale: 0.9, rot: 3 });
+      leave(["#pill-in", "#pill-ch"], 54.87, { y: 60 });
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 55.11);
+      tl.set("#cta-arrow", { opacity: 1 }, 55.46);
+      draw("#arrow-path", 55.46, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 55.78);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 56.11);
+
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

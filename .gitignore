@@ -1,0 +1,48 @@
+# В git: код, правила, пресеты и решения режиссёра. Видео и всё, что пересобирается
+# из них, остаётся на машине — это гигабайты.
+
+# видео не хранятся в git — они большие
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep
+
+# work/ — промежуточное: дубли, маски, кадры, логи очереди. Пересобирается из исходника.
+# Но решения режиссёра и транскрипты — исходники ролика: по номерам слов из транскрипта
+# написаны text_fixes, и перераспознавание может сдвинуть нумерацию. Картинки из downloads/
+# искались и подбирались руками — их тоже храним.
+work/*
+!work/IMG_*.txt
+!work/IMG_*.words.json
+!work/IMG_*/
+work/IMG_*/*
+!work/IMG_*/edit.json
+!work/IMG_*/director.json
+!work/IMG_*/page.py
+!work/IMG_*/downloads/
+
+# окружения python: .venv основное, .venv-audio отдельное под torch (вместе ~3,6 ГБ)
+.venv*/
+__pycache__/
+*.pyc
+
+# исходный вариативный шрифт: в репозитории нужен только запечённый ExtraBold
+presets/fonts/Montserrat-var.ttf
+
+# временный пресет, который пишет панель
+presets/_ui.json
+
+# новый конвейер: тяжёлое и пересобираемое не храним
+models/
+studio/*/assets/
+studio/*/renders/
+studio/*/snapshots/
+studio/*/.hyperframes/
+studio/*/node_modules/
+# их заново пишет compose.py на каждой сборке
+studio/*/camera.js
+studio/*/captions.js
+studio/*/hyperframes.json
+studio/*/package.json
+
+.DS_Store

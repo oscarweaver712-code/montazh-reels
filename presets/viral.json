@@ -1,0 +1,106 @@
+{
+ "name": "viral",
+ "_comment": "Пресет динамичного монтажа для преподавательских Reels. Всё, что тут меняется, влияет на итоговый ролик — код трогать не нужно.",
+ "video": {
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "encoder": "h264_videotoolbox",
+  "bitrate": "12M",
+  "_encoder_note": "h264_videotoolbox — аппаратный кодек M5, быстро. Для максимального качества: 'libx264' + crf ниже."
+ },
+ "look": {
+  "enabled": true,
+  "brightness": -8,
+  "_note": "Яркость в шкале CapCut, от -50 до +50. Двигает средние тона, чёрное и белое остаются на месте. Подобрать на своём кадре: .venv/bin/python scripts/look.py input/<файл> --at 12 --at 40"
+ },
+ "cut": {
+  "enabled": true,
+  "max_silence": 0.28,
+  "keep_silence": 0.08,
+  "pad_start": 0.06,
+  "pad_end": 0.1,
+  "min_segment": 0.18,
+  "trim_head_tail": true,
+  "_note": "max_silence — пауза длиннее этого вырезается. Меньше значение = плотнее темп. 0.35 щадяще, 0.28 бодро, 0.20 очень жёстко.",
+  "silence_db": -35,
+  "silence_min": 0.1,
+  "silence_reach": 1.2,
+  "_silence_note": "Границы реза ставятся по настоящей тишине в звуке, а не по концу распознанного слова: whisper пишет произнесённое «ноль целых восемь десятых» как «0 ,8» и обрывает слово на 0.3-0.4 с раньше. silence_db — что считать тишиной, silence_reach — насколько далеко искать паузу возле границы.",
+  "remove_fillers": true,
+  "fillers": [
+   "э",
+   "ээ",
+   "эээ",
+   "эм",
+   "эмм",
+   "ммм",
+   "мм",
+   "аа",
+   "ааа",
+   "ну"
+  ],
+  "filler_phrases": [
+   "как бы",
+   "ну вот",
+   "в общем",
+   "так вот",
+   "это самое"
+  ],
+  "_fillers_note": "Слова целиком вырезаются из речи. 'ну' и 'вот' частотны — если режет смысл, убери их из списка.",
+  "remove_stutters": true,
+  "stutter_window": 0.8
+ },
+ "motion": {
+  "punch_in": true,
+  "zoom_cycle": [
+   1.0,
+   1.07,
+   1.03,
+   1.11,
+   1.0,
+   1.05
+  ],
+  "min_hold_sec": 2.5,
+  "_note": "Крупность меняется на склейках — рез перестаёт читаться, картинка не замирает. zoom_cycle перебирается по кругу. 1.0 = как снято."
+ },
+ "subs": {
+  "enabled": true,
+  "font": "Montserrat ExtraBold",
+  "font_size": 92,
+  "words_per_phrase": 3,
+  "color_base": "FFFFFF",
+  "color_active": "FFE24B",
+  "color_accent": "3BE8B0",
+  "outline": 7,
+  "shadow": 3,
+  "margin_v": 420,
+  "margin_h": 110,
+  "active_scale": 112,
+  "uppercase": false,
+  "pop_in": true,
+  "_note": "margin_v — высота над низом кадра в пикселях. 420 ≈ нижняя треть, безопасно от интерфейса Reels. color_active — подсветка текущего слова, color_accent — ключевые слова.",
+  "accent_words": []
+ },
+ "audio": {
+  "enabled": true,
+  "normalize": true,
+  "highpass": 80,
+  "denoise": true,
+  "denoise_strength": 10,
+  "noise_floor": -45,
+  "compress": true,
+  "loudness_target": -14,
+  "true_peak": -1.5,
+  "_note": "loudness_target -14 LUFS — стандарт соцсетей. Компрессия делает голос плотным и разборчивым в телефонном динамике.",
+  "_denoise_note": "denoise_strength — сколько дБ шума снимать (1-97, разумно 8-14). noise_floor — запасной порог тишины, если замерить по паузам записи не вышло; сам порог обычно берётся из файла. Не поднимать выше -30: там уже живёт голос, и шумодав начнёт выедать согласные."
+ },
+ "hook": {
+  "enabled": false,
+  "text": "",
+  "duration": 2.5,
+  "font_size": 110,
+  "color": "FFFFFF",
+  "_note": "Текстовый оверлей поверх первых секунд. Включается на конкретный ролик, текст задаётся под смысл."
+ }
+}

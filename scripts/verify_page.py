@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""Проверка страницы графики до рендера: ничего не залипнет на экране, все ассеты на месте.
+
+Пара к verify_render.py: тот смотрит готовый mp4, этот — страницу, пока рендер ещё не
+потрачен. Ловит то, что глазами по снимкам не видно:
+
+  • элемент залипает. Рендер HyperFrames шагает по таймлайну кадр за кадром, а GSAP
+    рисует на каждом шаге только те твины, у которых что-то сдвинулось. Если уход
+    (set или короткий to) срабатывает, пока появление ещё доигрывает, на следующем кадре
+    появление дописывает opacity 1, а уход больше не перерисовывается — слово висит до
+    конца ролика, следующие бегут поверх. Снимок прыгает сразу в нужное время, рисует
+    твины по порядку, и там всё чисто — поэтому только снимкам верить нельзя;
+  • запас по кадрам. То же перекрытие, которое сейчас проскакивает между кадрами: сдвинь
+    дубль на кадр — и залипнет. Это тоже ошибка, а не везение;
+  • ошибка JS на странице, селектор, который ничего не нашёл, картинка или звук по
+    несуществующему пути.
+
+Как проверяется: страница открывается в том же headless Chrome, которым рендерит
+HyperFrames, видео и звук отключены. Таймлайн прогоняется трижды — по кадрам, как рендер;
+по кадрам плюс точки сразу после каждой границы твина; прыжком из нуля в каждый кадр,
+как снимок. Прозрачность, которая расходится с прыжком, и есть залипание.
+
+  .venv/bin/python scripts/verify_page.py IMG_3317
+  .venv/bin/python scripts/verify_page.py --all
+"""
+import argparse
+import html
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from common import ROOT
+
+STUDIO = ROOT / "studio"
+CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell"
+FPS = 30
+
+# Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
+# без него страница падает на первой же строке) и сбор ошибок и предупреждений GSAP.
+EARLY_JS = """
+      window.__timelines = {};
+      window.addEventListener("error", (e) => window.__HF_CHECK.errors.push(
+        `${e.message} (${String(e.filename || "").split("/").pop()}:${e.lineno || "?"})`));
+      const warn = console.warn.bind(console);
+      console.warn = (...a) => { window.__HF_CHECK.warnings.push(a.map(String).join(" ")); warn(...a); };
+"""
+
+# Ставится после скрипта страницы. Результат пишется в <pre id="hf-check"> — его и
+# забирает --dump-dom.
+CHECK_JS = r"""
+(() => {
+  const C = window.__HF_CHECK;
+  const res = { pageErrors: C.errors, warnings: C.warnings, stuck: [], risky: [], never: [] };
+  const started = performance.now();
+  try {
+    const tl = (window.__timelines || {}).main;
+    if (!tl) throw new Error("на странице нет таймлайна window.__timelines.main");
+    const root = document.querySelector("[data-composition-id]");
+    const duration = parseFloat(root && root.getAttribute("data-duration")) || tl.duration();
+    const fps = C.fps;
+
+    // ---- твины, которые трогают прозрачность; остальные (камера — тысячи ключей) не нужны
+    const hasOpacity = (v) => !!v && typeof v === "object" && ("opacity" in v || "autoAlpha" in v);
+    const touches = (v) => {
+      if (!v) return false;
+      if (hasOpacity(v) || hasOpacity(v.startAt)) return true;
+      const kf = v.keyframes;
+      if (Array.isArray(kf)) return kf.some(hasOpacity);
+      return !!kf && typeof kf === "object" && (hasOpacity(kf) || Object.values(kf).some(hasOpacity));
+    };
+    const byEl = new Map();
+    const idle = [];
+    let tweens = 0;
+    const walk = (timeline, offset) => {
+      for (const child of timeline.getChildren(false, true, true)) {
+        const start = offset + child.startTime();
+        if (typeof child.getChildren === "function") { walk(child, start); continue; }
+        if (!touches(child.vars)) { idle.push(child); continue; }
+        if (child.timeline) { walk(child.timeline, start); continue; }     // stagger, keyframes
+        tweens++;
+        const v = child.vars;
+        const tw = { start, end: start + child.totalDuration(),
+                     kind: child.duration() === 0 ? "set" : (v.startAt ? "fromTo" : "to"),
+                     to: v.opacity ?? v.autoAlpha ?? null };
+        for (const el of child.targets()) {
+          if (!(el instanceof Element)) continue;
+          if (!byEl.has(el)) byEl.set(el, []);
+          byEl.get(el).push(tw);
+        }
+      }
+    };
+    walk(tl, 0);
+    idle.forEach((t) => t.kill());
+
+    const label = (el) => {
+      if (el.id) return "#" + el.id;
+      if (el.classList.contains("cap")) return `субтитр «${el.textContent}»`;
+      let p = el.parentElement;
+      while (p && !p.id) p = p.parentElement;
+      const cls = typeof el.className === "string" && el.className.trim()
+        ? "." + el.className.trim().split(/\s+/).join(".") : "";
+      const nth = el.parentElement ? [...el.parentElement.children].indexOf(el) + 1 : 1;
+      return `${p ? "#" + p.id + " " : ""}${el.tagName.toLowerCase()}${cls}:nth-child(${nth})`;
+    };
+    const els = [...byEl.keys()];
+    // Пока GSAP не тронул элемент, его прозрачность — из CSS; читать computed на каждом
+    // кадре дорого, поэтому он запоминается один раз.
+    const base = els.map((el) => parseFloat(getComputedStyle(el).opacity));
+    const snap = () => Float32Array.from(els, (el, i) => {
+      const s = el.style.opacity;
+      return s === "" ? base[i] : parseFloat(s);
+    });
+
+    const N = Math.max(1, Math.round(duration * fps));
+    const at = (k) => k / fps;
+    // рендер HyperFrames шагает totalTime(t, false), не подавляя события. Это важно: set,
+    // попавший ровно в кадр, при подавленных событиях перерисовывается ещё раз и прячет
+    // залипание, а в настоящем рендере — нет (IMG_3309, «то» на 18.80)
+    const real = [];
+    for (let k = 0; k < N; k++) { tl.totalTime(at(k), false); real.push(snap()); }
+
+    // те же кадры плюс точки сразу после каждой границы твина: так выглядел бы рендер,
+    // если бы дубль сдвинулся и кадр попал в щель между уходом и концом появления
+    const times = [];
+    for (let k = 0; k < N; k++) times.push([at(k), k]);
+    for (const list of byEl.values()) {
+      for (const tw of list) {
+        for (const t of [tw.start + 1e-4, tw.end + 1e-4]) if (t > 0 && t < duration) times.push([t, -1]);
+      }
+    }
+    times.sort((a, b) => a[0] - b[0]);
+    tl.totalTime(0, false);
+    const edge = new Array(N);
+    for (const [t, k] of times) { tl.totalTime(t, false); if (k >= 0) edge[k] = snap(); }
+
+    // эталон: прыжок из нуля, как делает снимок — твины рисуются строго по порядку
+    const ref = new Array(N);
+    for (let k = 0; k < N; k++) { tl.totalTime(0, false); tl.totalTime(at(k), false); ref[k] = snap(); }
+
+    const why = (list, t) => {
+      // твин, который стоит раньше, а доигрывает позже следующего, — он и перебивает уход
+      const near = list.filter((tw) => tw.start <= t + 1e-6).sort((a, b) => a.start - b.start);
+      for (let i = 0; i < near.length; i++) {
+        for (let j = i + 1; j < near.length; j++) {
+          if (near[i].end > near[j].end + 1e-6) return { a: near[i], b: near[j] };
+        }
+      }
+      return null;
+    };
+    const runs = (pass, seen) => {
+      const found = [];
+      els.forEach((el, i) => {
+        if (seen && seen.has(el)) return;
+        let k0 = -1;
+        for (let k = 0; k <= N; k++) {
+          const bad = k < N && Math.abs(pass[k][i] - ref[k][i]) > 0.05;
+          if (bad && k0 < 0) k0 = k;
+          if (!bad && k0 >= 0) {
+            const list = byEl.get(el);
+            found.push({ el: label(el), from: at(k0), to: at(k), got: pass[k0][i], want: ref[k0][i],
+                         why: why(list, at(k0)), first: list[0].start });
+            seen && seen.add(el);
+            k0 = -1;
+            if (seen) break;
+          }
+        }
+      });
+      return found;
+    };
+    const flagged = new Set();
+    res.stuck = runs(real, flagged);
+    res.risky = runs(edge, flagged);
+
+    document.querySelectorAll(".g").forEach((el) => {
+      const i = els.indexOf(el);
+      const peak = i < 0 ? parseFloat(getComputedStyle(el).opacity) : Math.max(...real.map((f) => f[i]));
+      if (!(peak > 0.01)) res.never.push(label(el));
+    });
+    Object.assign(res, { ok: true, frames: N, elements: els.length, tweens });
+  } catch (e) {
+    res.ok = false;
+    res.crash = String(e && e.stack || e);
+  }
+  res.ms = Math.round(performance.now() - started);
+  const pre = document.createElement("pre");
+  pre.id = "hf-check";
+  pre.textContent = JSON.stringify(res);
+  document.body.replaceChildren(pre);
+})();
+"""
+
+
+def find_chrome() -> str:
+    """Тот же headless Chrome, которым рендерит HyperFrames."""
+    found = sorted(CHROME_CACHE.glob("*/chrome-headless-shell-*/chrome-headless-shell"))
+    if not found:
+        raise RuntimeError(
+            f"Нет браузера HyperFrames в {CHROME_CACHE}. Поставь его: "
+            "npx --yes hyperframes@0.8.141 browser ensure")
+    return str(found[-1])
+
+
+def missing_assets(project: Path, page: str) -> list:
+    refs = set(re.findall(r'(?:src|href)="(assets/[^"]+)"', page))
+    refs |= set(re.findall(r"""url\(["']?(assets/[^"')]+)""", page))
+    return sorted(r for r in refs if not (project / r).exists())
+
+
+def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180) -> dict:
+    """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS)."""
+    page_path = Path(page_path).resolve()
+    page = page_path.read_text(encoding="utf-8")
+    # видео и звук для разбора не нужны — без них страница грузится за доли секунды
+    page = re.sub(r'(<(?:video|audio)\b[^>]*?)\s+src="[^"]*"', r"\1", page)
+    config = json.dumps({"fps": fps, "errors": [], "warnings": []})
+    head = (f'<head>\n    <base href="{page_path.parent.as_uri()}/">\n'
+            f'    <script>window.__HF_CHECK = {config};{EARLY_JS}    </script>')
+    page, n_head = re.subn(r"<head>", lambda _: head, page, count=1)
+    cut = page.rfind("</body>")
+    if not n_head or cut < 0:
+        raise ValueError(f"{page_path.name}: нет <head> или </body> — это не страница HyperFrames")
+    page = page[:cut] + f"<script>{CHECK_JS}</script>\n" + page[cut:]
+
+    with tempfile.TemporaryDirectory(prefix="reels_verify_page_") as tmp:
+        wrapper = Path(tmp) / "page.html"
+        wrapper.write_text(page, encoding="utf-8")
+        cmd = [find_chrome(), "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+               "--disable-extensions", "--mute-audio", f"--user-data-dir={Path(tmp) / 'profile'}",
+               "--virtual-time-budget=2000", "--dump-dom", wrapper.as_uri()]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Проверка страницы {page_path.parent.name} не уложилась в {timeout:.0f} с")
+    found = re.search(r'<pre id="hf-check">(.*?)</pre>', result.stdout, re.S)
+    if not found:
+        raise RuntimeError(f"Chrome не вернул разбор страницы {page_path.parent.name}:\n"
+                           f"{result.stderr.strip()[-600:]}")
+    return json.loads(html.unescape(found.group(1)))
+
+
+def explain(item: dict) -> str:
+    """«субтитр «мы»: висит 48.87–96.07 с — уход в 48.85 раньше конца появления (48.90)»."""
+    text = f"{item['el']}: {item['got']:.2f} вместо {item['want']:.2f} на {item['from']:.2f}–{item['to']:.2f} с"
+    pair = item.get("why")
+    if pair:
+        a, b = pair["a"], pair["b"]
+        text += (f" — {b['kind']} в {b['start']:.2f} кончается раньше, чем {a['kind']} "
+                 f"{a['start']:.2f}–{a['end']:.2f}")
+    return text
+
+
+def verify(stem_or_dir: str, fps: int = FPS) -> list:
+    """Печатает отчёт по странице; возвращает список провалов (пустой — можно рендерить)."""
+    project = Path(stem_or_dir)
+    if not project.is_dir():
+        project = STUDIO / stem_or_dir
+    page_path = project / "index.html"
+    if not page_path.exists():
+        raise FileNotFoundError(f"Нет страницы {page_path}")
+    failed = []
+
+    def check(ok: bool, title: str, details: list = ()):
+        print(f"  {'✓' if ok else '✗'} {title}")
+        for line in list(details)[:8]:
+            print(f"      {line}")
+        if len(details) > 8:
+            print(f"      … и ещё {len(details) - 8}")
+        if not ok:
+            failed.append(title)
+
+    print(f"Страница {project.name}")
+    gone = missing_assets(project, page_path.read_text(encoding="utf-8"))
+    check(not gone, "все картинки, звуки и шрифты на месте", gone)
+
+    started = time.time()
+    res = run_timeline(page_path, fps)
+    if not res.get("ok"):
+        check(False, "таймлайн разобран", [res.get("crash", "?")])
+        return failed
+    errors = res["pageErrors"] + [w for w in res["warnings"] if "not found" in w or "Invalid" in w]
+    check(not errors, "страница без ошибок JS и пустых селекторов", errors)
+    check(not res["stuck"], "в рендере ничего не залипает", [explain(i) for i in res["stuck"]])
+    check(not res["risky"], "запас по кадрам: при сдвиге на кадр тоже не залипнет",
+          [explain(i) for i in res["risky"]])
+    if res["never"]:
+        print(f"  · ни разу не появляются: {', '.join(res['never'][:12])}")
+    print(f"  · {res['elements']} элементов, {res['tweens']} твинов прозрачности, {res['frames']} кадров "
+          f"за {time.time() - started:.1f} с")
+    return failed
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Проверка страницы графики до рендера")
+    ap.add_argument("stems", nargs="*", help="имена роликов (IMG_3317) или папки проектов")
+    ap.add_argument("--all", action="store_true", help="все проекты в studio/")
+    ap.add_argument("--fps", type=int, default=FPS)
+    args = ap.parse_args()
+    stems = args.stems or []
+    if args.all:
+        stems += [p.parent.name for p in sorted(STUDIO.glob("*/index.html")) if not p.parent.name.startswith("_")]
+    if not stems:
+        ap.error("укажи ролик или --all")
+
+    bad = {}
+    for stem in stems:
+        failed = verify(stem, args.fps)
+        if failed:
+            bad[stem] = failed
+        print()
+    if bad:
+        print(f"✗ страницы с ошибками: {', '.join(bad)} — рендерить нельзя, пока не поправим")
+        sys.exit(1)
+    print("✓ страницы чистые, можно рендерить")
+
+
+if __name__ == "__main__":
+    main()

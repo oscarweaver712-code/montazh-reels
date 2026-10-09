@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Почему соты шестиугольные</title>
+    <script src="assets/gsap.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 60px; width: 960px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 744px; top: 150px; }
+      .card-left { left: 36px; top: 150px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 104px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="56.300" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="56.300" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="w-lead" class="g lead" style="top: 64px;">украдёт у меня эту идею</div>
+        <div id="w-pik" class="g big" style="top: 60px; font-size: 250px;">ПИК</div>
+        <div id="w-sam" class="g big red" style="top: 130px; font-size: 210px;">«Самолёт»</div>
+        <div id="q" class="g big" style="top: 90px; font-size: 300px;">?</div>
+        <svg id="comb" class="g" viewBox="0 0 1080 420" style="left: 0; top: 40px; width: 1080px; height: 420px;">
+          <path class="hx" d="M 40.0 5.0 L 87.6 32.5 L 87.6 87.5 L 40.0 115.0 L -7.6 87.5 L -7.6 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 140.5 5.0 L 188.1 32.5 L 188.1 87.5 L 140.5 115.0 L 92.8 87.5 L 92.8 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 240.9 5.0 L 288.5 32.5 L 288.5 87.5 L 240.9 115.0 L 193.3 87.5 L 193.3 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 341.4 5.0 L 389.0 32.5 L 389.0 87.5 L 341.4 115.0 L 293.7 87.5 L 293.7 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 441.8 5.0 L 489.5 32.5 L 489.5 87.5 L 441.8 115.0 L 394.2 87.5 L 394.2 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 542.3 5.0 L 589.9 32.5 L 589.9 87.5 L 542.3 115.0 L 494.7 87.5 L 494.7 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 642.8 5.0 L 690.4 32.5 L 690.4 87.5 L 642.8 115.0 L 595.1 87.5 L 595.1 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 743.2 5.0 L 790.8 32.5 L 790.8 87.5 L 743.2 115.0 L 695.6 87.5 L 695.6 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 843.7 5.0 L 891.3 32.5 L 891.3 87.5 L 843.7 115.0 L 796.0 87.5 L 796.0 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 944.1 5.0 L 991.8 32.5 L 991.8 87.5 L 944.1 115.0 L 896.5 87.5 L 896.5 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1044.6 5.0 L 1092.2 32.5 L 1092.2 87.5 L 1044.6 115.0 L 997.0 87.5 L 997.0 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1145.0 5.0 L 1192.7 32.5 L 1192.7 87.5 L 1145.0 115.0 L 1097.4 87.5 L 1097.4 32.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 90.2 92.0 L 137.9 119.5 L 137.9 174.5 L 90.2 202.0 L 42.6 174.5 L 42.6 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 190.7 92.0 L 238.3 119.5 L 238.3 174.5 L 190.7 202.0 L 143.1 174.5 L 143.1 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 291.1 92.0 L 338.8 119.5 L 338.8 174.5 L 291.1 202.0 L 243.5 174.5 L 243.5 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 391.6 92.0 L 439.2 119.5 L 439.2 174.5 L 391.6 202.0 L 344.0 174.5 L 344.0 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 492.1 92.0 L 539.7 119.5 L 539.7 174.5 L 492.1 202.0 L 444.4 174.5 L 444.4 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 592.5 92.0 L 640.2 119.5 L 640.2 174.5 L 592.5 202.0 L 544.9 174.5 L 544.9 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 693.0 92.0 L 740.6 119.5 L 740.6 174.5 L 693.0 202.0 L 645.4 174.5 L 645.4 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 793.4 92.0 L 841.1 119.5 L 841.1 174.5 L 793.4 202.0 L 745.8 174.5 L 745.8 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 893.9 92.0 L 941.5 119.5 L 941.5 174.5 L 893.9 202.0 L 846.3 174.5 L 846.3 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 994.4 92.0 L 1042.0 119.5 L 1042.0 174.5 L 994.4 202.0 L 946.7 174.5 L 946.7 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1094.8 92.0 L 1142.5 119.5 L 1142.5 174.5 L 1094.8 202.0 L 1047.2 174.5 L 1047.2 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1195.3 92.0 L 1242.9 119.5 L 1242.9 174.5 L 1195.3 202.0 L 1147.6 174.5 L 1147.6 119.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 40.0 179.0 L 87.6 206.5 L 87.6 261.5 L 40.0 289.0 L -7.6 261.5 L -7.6 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 140.5 179.0 L 188.1 206.5 L 188.1 261.5 L 140.5 289.0 L 92.8 261.5 L 92.8 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 240.9 179.0 L 288.5 206.5 L 288.5 261.5 L 240.9 289.0 L 193.3 261.5 L 193.3 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 341.4 179.0 L 389.0 206.5 L 389.0 261.5 L 341.4 289.0 L 293.7 261.5 L 293.7 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 441.8 179.0 L 489.5 206.5 L 489.5 261.5 L 441.8 289.0 L 394.2 261.5 L 394.2 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 542.3 179.0 L 589.9 206.5 L 589.9 261.5 L 542.3 289.0 L 494.7 261.5 L 494.7 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 642.8 179.0 L 690.4 206.5 L 690.4 261.5 L 642.8 289.0 L 595.1 261.5 L 595.1 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 743.2 179.0 L 790.8 206.5 L 790.8 261.5 L 743.2 289.0 L 695.6 261.5 L 695.6 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 843.7 179.0 L 891.3 206.5 L 891.3 261.5 L 843.7 289.0 L 796.0 261.5 L 796.0 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 944.1 179.0 L 991.8 206.5 L 991.8 261.5 L 944.1 289.0 L 896.5 261.5 L 896.5 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1044.6 179.0 L 1092.2 206.5 L 1092.2 261.5 L 1044.6 289.0 L 997.0 261.5 L 997.0 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1145.0 179.0 L 1192.7 206.5 L 1192.7 261.5 L 1145.0 289.0 L 1097.4 261.5 L 1097.4 206.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 90.2 266.0 L 137.9 293.5 L 137.9 348.5 L 90.2 376.0 L 42.6 348.5 L 42.6 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 190.7 266.0 L 238.3 293.5 L 238.3 348.5 L 190.7 376.0 L 143.1 348.5 L 143.1 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 291.1 266.0 L 338.8 293.5 L 338.8 348.5 L 291.1 376.0 L 243.5 348.5 L 243.5 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 391.6 266.0 L 439.2 293.5 L 439.2 348.5 L 391.6 376.0 L 344.0 348.5 L 344.0 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 492.1 266.0 L 539.7 293.5 L 539.7 348.5 L 492.1 376.0 L 444.4 348.5 L 444.4 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 592.5 266.0 L 640.2 293.5 L 640.2 348.5 L 592.5 376.0 L 544.9 348.5 L 544.9 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 693.0 266.0 L 740.6 293.5 L 740.6 348.5 L 693.0 376.0 L 645.4 348.5 L 645.4 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 793.4 266.0 L 841.1 293.5 L 841.1 348.5 L 793.4 376.0 L 745.8 348.5 L 745.8 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 893.9 266.0 L 941.5 293.5 L 941.5 348.5 L 893.9 376.0 L 846.3 348.5 L 846.3 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 994.4 266.0 L 1042.0 293.5 L 1042.0 348.5 L 994.4 376.0 L 946.7 348.5 L 946.7 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1094.8 266.0 L 1142.5 293.5 L 1142.5 348.5 L 1094.8 376.0 L 1047.2 348.5 L 1047.2 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1195.3 266.0 L 1242.9 293.5 L 1242.9 348.5 L 1195.3 376.0 L 1147.6 348.5 L 1147.6 293.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 40.0 353.0 L 87.6 380.5 L 87.6 435.5 L 40.0 463.0 L -7.6 435.5 L -7.6 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 140.5 353.0 L 188.1 380.5 L 188.1 435.5 L 140.5 463.0 L 92.8 435.5 L 92.8 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 240.9 353.0 L 288.5 380.5 L 288.5 435.5 L 240.9 463.0 L 193.3 435.5 L 193.3 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 341.4 353.0 L 389.0 380.5 L 389.0 435.5 L 341.4 463.0 L 293.7 435.5 L 293.7 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 441.8 353.0 L 489.5 380.5 L 489.5 435.5 L 441.8 463.0 L 394.2 435.5 L 394.2 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 542.3 353.0 L 589.9 380.5 L 589.9 435.5 L 542.3 463.0 L 494.7 435.5 L 494.7 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 642.8 353.0 L 690.4 380.5 L 690.4 435.5 L 642.8 463.0 L 595.1 435.5 L 595.1 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 743.2 353.0 L 790.8 380.5 L 790.8 435.5 L 743.2 463.0 L 695.6 435.5 L 695.6 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 843.7 353.0 L 891.3 380.5 L 891.3 435.5 L 843.7 463.0 L 796.0 435.5 L 796.0 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 944.1 353.0 L 991.8 380.5 L 991.8 435.5 L 944.1 463.0 L 896.5 435.5 L 896.5 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1044.6 353.0 L 1092.2 380.5 L 1092.2 435.5 L 1044.6 463.0 L 997.0 435.5 L 997.0 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path class="hx" d="M 1145.0 353.0 L 1192.7 380.5 L 1192.7 435.5 L 1145.0 463.0 L 1097.4 435.5 L 1097.4 380.5 Z" fill="rgba(245,184,46,0)" stroke="#F5B82E" stroke-width="5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+        </svg>
+        <div id="w-3" class="g big" style="top: 120px; font-size: 220px;">3 способа</div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="56.300" data-track-index="1"></video>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="t-circ" class="g" style="left: 110px; top: 1262px; width: 310px; height: 352px; border-radius: 24px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16); overflow: hidden;">
+          <svg viewBox="0 0 310 290" style="position: absolute; left: 0; top: 0; width: 310px; height: 290px;"><defs><clipPath id="clip-t-circ"><rect x="14" y="14" width="282" height="262" rx="14" /></clipPath></defs><g clip-path="url(#clip-t-circ)" fill="none" stroke="#F2EBDD" stroke-width="4" stroke-linejoin="round"><circle cx="60" cy="75" r="40" fill="rgba(242,235,221,0.08)" /><circle cx="60" cy="175" r="40" fill="rgba(242,235,221,0.08)" /><circle cx="155" cy="75" r="40" fill="rgba(242,235,221,0.08)" /><circle cx="155" cy="175" r="40" fill="rgba(242,235,221,0.08)" /><circle cx="250" cy="75" r="40" fill="rgba(242,235,221,0.08)" /><circle cx="250" cy="175" r="40" fill="rgba(242,235,221,0.08)" /></g></svg>
+          <div class="label" style="position: absolute; left: 0; top: 296px; width: 310px; font-size: 24px; letter-spacing: 0.08em;">круги</div>
+        </div>
+        <div id="t-sqr" class="g" style="left: 660px; top: 1262px; width: 310px; height: 352px; border-radius: 24px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16); overflow: hidden;">
+          <svg viewBox="0 0 310 290" style="position: absolute; left: 0; top: 0; width: 310px; height: 290px;"><defs><clipPath id="clip-t-sqr"><rect x="14" y="14" width="282" height="262" rx="14" /></clipPath></defs><g clip-path="url(#clip-t-sqr)" fill="none" stroke="#F2EBDD" stroke-width="4" stroke-linejoin="round"><rect x="25" y="35" width="80" height="80" fill="rgba(242,235,221,0.08)" /><rect x="25" y="135" width="80" height="80" fill="rgba(242,235,221,0.08)" /><rect x="120" y="35" width="80" height="80" fill="rgba(242,235,221,0.08)" /><rect x="120" y="135" width="80" height="80" fill="rgba(242,235,221,0.08)" /><rect x="215" y="35" width="80" height="80" fill="rgba(242,235,221,0.08)" /><rect x="215" y="135" width="80" height="80" fill="rgba(242,235,221,0.08)" /></g></svg>
+          <div class="label" style="position: absolute; left: 0; top: 296px; width: 310px; font-size: 24px; letter-spacing: 0.08em;">квадраты</div>
+        </div>
+        <svg id="bee" class="g" viewBox="0 0 300 220" style="left: 700px; top: 220px; width: 300px; height: 220px; overflow: visible;">
+          <defs><clipPath id="bee-clip"><ellipse cx="150" cy="130" rx="78" ry="54" /></clipPath></defs>
+          <g id="bee-wings">
+            <ellipse cx="128" cy="66" rx="36" ry="54" fill="rgba(235,245,255,0.72)" stroke="#F2EBDD" stroke-width="4" transform="rotate(-18 128 66)" />
+            <ellipse cx="176" cy="64" rx="36" ry="54" fill="rgba(235,245,255,0.72)" stroke="#F2EBDD" stroke-width="4" transform="rotate(18 176 64)" />
+          </g>
+          <g clip-path="url(#bee-clip)">
+            <rect x="60" y="70" width="190" height="130" fill="#F5B82E" />
+            <rect x="112" y="70" width="24" height="130" fill="#17130E" /><rect x="160" y="70" width="24" height="130" fill="#17130E" />
+            <rect x="207" y="70" width="24" height="130" fill="#17130E" />
+          </g>
+          <ellipse cx="150" cy="130" rx="78" ry="54" fill="none" stroke="#F2EBDD" stroke-width="5" />
+          <path d="M 226 124 L 266 134 L 226 144 Z" fill="#F2EBDD" />
+          <circle cx="70" cy="120" r="36" fill="#17130E" stroke="#F2EBDD" stroke-width="5" />
+          <circle cx="58" cy="110" r="8" fill="#F2EBDD" />
+          <path d="M 54 88 Q 40 52 20 42 M 74 86 Q 74 50 60 30" fill="none" stroke="#F2EBDD" stroke-width="5" stroke-linecap="round" />
+        </svg>
+        <div id="taxi" class="g sticker" style="left: 90px; top: 300px; font-size: 54px; white-space: nowrap;">товарищи-таксисты</div>
+        <div id="card-marx" class="g card card-left">
+          <div class="ph"><img src="assets/img/marx.jpg" alt="" /></div>
+          <div class="card-name">Карл Маркс</div>
+          <div class="card-sub">«Капитал», 1867</div>
+        </div>
+        <div id="p-eco" class="g pill" style="left: 110px; top: 1270px; font-size: 40px;">экономика ✓</div>
+        <div id="p-math" class="g pill" style="left: 560px; top: 1270px; font-size: 40px;">математика ✓</div>
+        <svg id="pack" class="g" viewBox="0 0 860 380" style="left: 110px; top: 1252px; width: 860px; height: 380px;">
+          <rect id="pack-bg" x="0" y="0" width="860" height="380" rx="26" fill="#16130F" />
+          <g id="pack-g"><circle cx="80" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="80" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="80" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="180" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="180" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="180" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="280" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="280" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="280" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="380" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="380" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="380" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="480" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="480" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="480" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="580" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="580" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="580" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="680" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="680" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="680" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="780" cy="90" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="780" cy="190" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /><circle cx="780" cy="290" r="48" fill="#F5B82E" stroke="#C98E12" stroke-width="4" /></g>
+        </svg>
+        <div id="p-wax" class="g pill" style="left: 0; width: 1080px; text-align: center; top: 1655px; background: none; border: none; font-size: 44px;">щели = <span style="color: var(--red);">лишний воск</span></div>
+        <div id="ti-tri" class="g" style="left: 45px; top: 1262px; width: 310px; height: 352px; border-radius: 24px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16); overflow: hidden;">
+          <svg viewBox="0 0 310 290" style="position: absolute; left: 0; top: 0; width: 310px; height: 290px;"><defs><clipPath id="clip-ti-tri"><rect x="14" y="14" width="282" height="262" rx="14" /></clipPath></defs><g clip-path="url(#clip-ti-tri)" fill="none" stroke="#F2EBDD" stroke-width="4" stroke-linejoin="round"><path d="M -37.0 0.0 L 0.0 -64.1 L 37.0 0.0 Z" /><path d="M 0.0 -64.1 L 74.0 -64.1 L 37.0 0.0 Z" /><path d="M 37.0 0.0 L 74.0 -64.1 L 111.0 0.0 Z" /><path d="M 74.0 -64.1 L 148.0 -64.1 L 111.0 0.0 Z" /><path d="M 111.0 0.0 L 148.0 -64.1 L 185.0 0.0 Z" /><path d="M 148.0 -64.1 L 222.0 -64.1 L 185.0 0.0 Z" /><path d="M 185.0 0.0 L 222.0 -64.1 L 259.0 0.0 Z" /><path d="M 222.0 -64.1 L 296.0 -64.1 L 259.0 0.0 Z" /><path d="M 259.0 0.0 L 296.0 -64.1 L 333.0 0.0 Z" /><path d="M 296.0 -64.1 L 370.0 -64.1 L 333.0 0.0 Z" /><path d="M 333.0 0.0 L 370.0 -64.1 L 407.0 0.0 Z" /><path d="M 370.0 -64.1 L 444.0 -64.1 L 407.0 0.0 Z" /><path d="M 407.0 0.0 L 444.0 -64.1 L 481.0 0.0 Z" /><path d="M 444.0 -64.1 L 518.0 -64.1 L 481.0 0.0 Z" /><path d="M -74.0 64.1 L -37.0 0.0 L 0.0 64.1 Z" /><path d="M -37.0 0.0 L 37.0 0.0 L 0.0 64.1 Z" /><path d="M 0.0 64.1 L 37.0 0.0 L 74.0 64.1 Z" /><path d="M 37.0 0.0 L 111.0 0.0 L 74.0 64.1 Z" /><path d="M 74.0 64.1 L 111.0 0.0 L 148.0 64.1 Z" /><path d="M 111.0 0.0 L 185.0 0.0 L 148.0 64.1 Z" /><path d="M 148.0 64.1 L 185.0 0.0 L 222.0 64.1 Z" /><path d="M 185.0 0.0 L 259.0 0.0 L 222.0 64.1 Z" /><path d="M 222.0 64.1 L 259.0 0.0 L 296.0 64.1 Z" /><path d="M 259.0 0.0 L 333.0 0.0 L 296.0 64.1 Z" /><path d="M 296.0 64.1 L 333.0 0.0 L 370.0 64.1 Z" /><path d="M 333.0 0.0 L 407.0 0.0 L 370.0 64.1 Z" /><path d="M 370.0 64.1 L 407.0 0.0 L 444.0 64.1 Z" /><path d="M 407.0 0.0 L 481.0 0.0 L 444.0 64.1 Z" /><path d="M -37.0 128.2 L 0.0 64.1 L 37.0 128.2 Z" /><path d="M 0.0 64.1 L 74.0 64.1 L 37.0 128.2 Z" /><path d="M 37.0 128.2 L 74.0 64.1 L 111.0 128.2 Z" /><path d="M 74.0 64.1 L 148.0 64.1 L 111.0 128.2 Z" /><path d="M 111.0 128.2 L 148.0 64.1 L 185.0 128.2 Z" /><path d="M 148.0 64.1 L 222.0 64.1 L 185.0 128.2 Z" /><path d="M 185.0 128.2 L 222.0 64.1 L 259.0 128.2 Z" /><path d="M 222.0 64.1 L 296.0 64.1 L 259.0 128.2 Z" /><path d="M 259.0 128.2 L 296.0 64.1 L 333.0 128.2 Z" /><path d="M 296.0 64.1 L 370.0 64.1 L 333.0 128.2 Z" /><path d="M 333.0 128.2 L 370.0 64.1 L 407.0 128.2 Z" /><path d="M 370.0 64.1 L 444.0 64.1 L 407.0 128.2 Z" /><path d="M 407.0 128.2 L 444.0 64.1 L 481.0 128.2 Z" /><path d="M 444.0 64.1 L 518.0 64.1 L 481.0 128.2 Z" /><path d="M -74.0 192.3 L -37.0 128.2 L 0.0 192.3 Z" /><path d="M -37.0 128.2 L 37.0 128.2 L 0.0 192.3 Z" /><path d="M 0.0 192.3 L 37.0 128.2 L 74.0 192.3 Z" /><path d="M 37.0 128.2 L 111.0 128.2 L 74.0 192.3 Z" /><path d="M 74.0 192.3 L 111.0 128.2 L 148.0 192.3 Z" /><path d="M 111.0 128.2 L 185.0 128.2 L 148.0 192.3 Z" /><path d="M 148.0 192.3 L 185.0 128.2 L 222.0 192.3 Z" /><path d="M 185.0 128.2 L 259.0 128.2 L 222.0 192.3 Z" /><path d="M 222.0 192.3 L 259.0 128.2 L 296.0 192.3 Z" /><path d="M 259.0 128.2 L 333.0 128.2 L 296.0 192.3 Z" /><path d="M 296.0 192.3 L 333.0 128.2 L 370.0 192.3 Z" /><path d="M 333.0 128.2 L 407.0 128.2 L 370.0 192.3 Z" /><path d="M 370.0 192.3 L 407.0 128.2 L 444.0 192.3 Z" /><path d="M 407.0 128.2 L 481.0 128.2 L 444.0 192.3 Z" /><path d="M -37.0 256.3 L 0.0 192.3 L 37.0 256.3 Z" /><path d="M 0.0 192.3 L 74.0 192.3 L 37.0 256.3 Z" /><path d="M 37.0 256.3 L 74.0 192.3 L 111.0 256.3 Z" /><path d="M 74.0 192.3 L 148.0 192.3 L 111.0 256.3 Z" /><path d="M 111.0 256.3 L 148.0 192.3 L 185.0 256.3 Z" /><path d="M 148.0 192.3 L 222.0 192.3 L 185.0 256.3 Z" /><path d="M 185.0 256.3 L 222.0 192.3 L 259.0 256.3 Z" /><path d="M 222.0 192.3 L 296.0 192.3 L 259.0 256.3 Z" /><path d="M 259.0 256.3 L 296.0 192.3 L 333.0 256.3 Z" /><path d="M 296.0 192.3 L 370.0 192.3 L 333.0 256.3 Z" /><path d="M 333.0 256.3 L 370.0 192.3 L 407.0 256.3 Z" /><path d="M 370.0 192.3 L 444.0 192.3 L 407.0 256.3 Z" /><path d="M 407.0 256.3 L 444.0 192.3 L 481.0 256.3 Z" /><path d="M 444.0 192.3 L 518.0 192.3 L 481.0 256.3 Z" /><path d="M -74.0 320.4 L -37.0 256.3 L 0.0 320.4 Z" /><path d="M -37.0 256.3 L 37.0 256.3 L 0.0 320.4 Z" /><path d="M 0.0 320.4 L 37.0 256.3 L 74.0 320.4 Z" /><path d="M 37.0 256.3 L 111.0 256.3 L 74.0 320.4 Z" /><path d="M 74.0 320.4 L 111.0 256.3 L 148.0 320.4 Z" /><path d="M 111.0 256.3 L 185.0 256.3 L 148.0 320.4 Z" /><path d="M 148.0 320.4 L 185.0 256.3 L 222.0 320.4 Z" /><path d="M 185.0 256.3 L 259.0 256.3 L 222.0 320.4 Z" /><path d="M 222.0 320.4 L 259.0 256.3 L 296.0 320.4 Z" /><path d="M 259.0 256.3 L 333.0 256.3 L 296.0 320.4 Z" /><path d="M 296.0 320.4 L 333.0 256.3 L 370.0 320.4 Z" /><path d="M 333.0 256.3 L 407.0 256.3 L 370.0 320.4 Z" /><path d="M 370.0 320.4 L 407.0 256.3 L 444.0 320.4 Z" /><path d="M 407.0 256.3 L 481.0 256.3 L 444.0 320.4 Z" /><path d="M -37.0 384.5 L 0.0 320.4 L 37.0 384.5 Z" /><path d="M 0.0 320.4 L 74.0 320.4 L 37.0 384.5 Z" /><path d="M 37.0 384.5 L 74.0 320.4 L 111.0 384.5 Z" /><path d="M 74.0 320.4 L 148.0 320.4 L 111.0 384.5 Z" /><path d="M 111.0 384.5 L 148.0 320.4 L 185.0 384.5 Z" /><path d="M 148.0 320.4 L 222.0 320.4 L 185.0 384.5 Z" /><path d="M 185.0 384.5 L 222.0 320.4 L 259.0 384.5 Z" /><path d="M 222.0 320.4 L 296.0 320.4 L 259.0 384.5 Z" /><path d="M 259.0 384.5 L 296.0 320.4 L 333.0 384.5 Z" /><path d="M 296.0 320.4 L 370.0 320.4 L 333.0 384.5 Z" /><path d="M 333.0 384.5 L 370.0 320.4 L 407.0 384.5 Z" /><path d="M 370.0 320.4 L 444.0 320.4 L 407.0 384.5 Z" /><path d="M 407.0 384.5 L 444.0 320.4 L 481.0 384.5 Z" /><path d="M 444.0 320.4 L 518.0 320.4 L 481.0 384.5 Z" /></g></svg>
+          <div class="label" style="position: absolute; left: 0; top: 296px; width: 310px; font-size: 24px; letter-spacing: 0.08em;">треугольники</div>
+        </div>
+        <div id="ti-sq" class="g" style="left: 385px; top: 1262px; width: 310px; height: 352px; border-radius: 24px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16); overflow: hidden;">
+          <svg viewBox="0 0 310 290" style="position: absolute; left: 0; top: 0; width: 310px; height: 290px;"><defs><clipPath id="clip-ti-sq"><rect x="14" y="14" width="282" height="262" rx="14" /></clipPath></defs><g clip-path="url(#clip-ti-sq)" fill="none" stroke="#F2EBDD" stroke-width="4" stroke-linejoin="round"><rect x="14" y="14" width="66" height="66" /><rect x="14" y="80" width="66" height="66" /><rect x="14" y="146" width="66" height="66" /><rect x="14" y="212" width="66" height="66" /><rect x="14" y="278" width="66" height="66" /><rect x="80" y="14" width="66" height="66" /><rect x="80" y="80" width="66" height="66" /><rect x="80" y="146" width="66" height="66" /><rect x="80" y="212" width="66" height="66" /><rect x="80" y="278" width="66" height="66" /><rect x="146" y="14" width="66" height="66" /><rect x="146" y="80" width="66" height="66" /><rect x="146" y="146" width="66" height="66" /><rect x="146" y="212" width="66" height="66" /><rect x="146" y="278" width="66" height="66" /><rect x="212" y="14" width="66" height="66" /><rect x="212" y="80" width="66" height="66" /><rect x="212" y="146" width="66" height="66" /><rect x="212" y="212" width="66" height="66" /><rect x="212" y="278" width="66" height="66" /><rect x="278" y="14" width="66" height="66" /><rect x="278" y="80" width="66" height="66" /><rect x="278" y="146" width="66" height="66" /><rect x="278" y="212" width="66" height="66" /><rect x="278" y="278" width="66" height="66" /></g></svg>
+          <div class="label" style="position: absolute; left: 0; top: 296px; width: 310px; font-size: 24px; letter-spacing: 0.08em;">квадраты</div>
+        </div>
+        <div id="ti-hex" class="g" style="left: 725px; top: 1262px; width: 310px; height: 352px; border-radius: 24px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16); overflow: hidden;">
+          <svg viewBox="0 0 310 290" style="position: absolute; left: 0; top: 0; width: 310px; height: 290px;"><defs><clipPath id="clip-ti-hex"><rect x="14" y="14" width="282" height="262" rx="14" /></clipPath></defs><g clip-path="url(#clip-ti-hex)" fill="none" stroke="#F2EBDD" stroke-width="4" stroke-linejoin="round"><path d="M -34.6 -100.0 L 0.0 -80.0 L 0.0 -40.0 L -34.6 -20.0 L -69.3 -40.0 L -69.3 -80.0 Z" /><path d="M 34.6 -100.0 L 69.3 -80.0 L 69.3 -40.0 L 34.6 -20.0 L -0.0 -40.0 L 0.0 -80.0 Z" /><path d="M 103.9 -100.0 L 138.6 -80.0 L 138.6 -40.0 L 103.9 -20.0 L 69.3 -40.0 L 69.3 -80.0 Z" /><path d="M 173.2 -100.0 L 207.8 -80.0 L 207.8 -40.0 L 173.2 -20.0 L 138.6 -40.0 L 138.6 -80.0 Z" /><path d="M 242.5 -100.0 L 277.1 -80.0 L 277.1 -40.0 L 242.5 -20.0 L 207.8 -40.0 L 207.8 -80.0 Z" /><path d="M 311.8 -100.0 L 346.4 -80.0 L 346.4 -40.0 L 311.8 -20.0 L 277.1 -40.0 L 277.1 -80.0 Z" /><path d="M 381.1 -100.0 L 415.7 -80.0 L 415.7 -40.0 L 381.1 -20.0 L 346.4 -40.0 L 346.4 -80.0 Z" /><path d="M -69.3 -40.0 L -34.6 -20.0 L -34.6 20.0 L -69.3 40.0 L -103.9 20.0 L -103.9 -20.0 Z" /><path d="M 0.0 -40.0 L 34.6 -20.0 L 34.6 20.0 L 0.0 40.0 L -34.6 20.0 L -34.6 -20.0 Z" /><path d="M 69.3 -40.0 L 103.9 -20.0 L 103.9 20.0 L 69.3 40.0 L 34.6 20.0 L 34.6 -20.0 Z" /><path d="M 138.6 -40.0 L 173.2 -20.0 L 173.2 20.0 L 138.6 40.0 L 103.9 20.0 L 103.9 -20.0 Z" /><path d="M 207.8 -40.0 L 242.5 -20.0 L 242.5 20.0 L 207.8 40.0 L 173.2 20.0 L 173.2 -20.0 Z" /><path d="M 277.1 -40.0 L 311.8 -20.0 L 311.8 20.0 L 277.1 40.0 L 242.5 20.0 L 242.5 -20.0 Z" /><path d="M 346.4 -40.0 L 381.1 -20.0 L 381.1 20.0 L 346.4 40.0 L 311.8 20.0 L 311.8 -20.0 Z" /><path d="M -34.6 20.0 L 0.0 40.0 L 0.0 80.0 L -34.6 100.0 L -69.3 80.0 L -69.3 40.0 Z" /><path d="M 34.6 20.0 L 69.3 40.0 L 69.3 80.0 L 34.6 100.0 L -0.0 80.0 L 0.0 40.0 Z" /><path d="M 103.9 20.0 L 138.6 40.0 L 138.6 80.0 L 103.9 100.0 L 69.3 80.0 L 69.3 40.0 Z" /><path d="M 173.2 20.0 L 207.8 40.0 L 207.8 80.0 L 173.2 100.0 L 138.6 80.0 L 138.6 40.0 Z" /><path d="M 242.5 20.0 L 277.1 40.0 L 277.1 80.0 L 242.5 100.0 L 207.8 80.0 L 207.8 40.0 Z" /><path d="M 311.8 20.0 L 346.4 40.0 L 346.4 80.0 L 311.8 100.0 L 277.1 80.0 L 277.1 40.0 Z" /><path d="M 381.1 20.0 L 415.7 40.0 L 415.7 80.0 L 381.1 100.0 L 346.4 80.0 L 346.4 40.0 Z" /><path d="M -69.3 80.0 L -34.6 100.0 L -34.6 140.0 L -69.3 160.0 L -103.9 140.0 L -103.9 100.0 Z" /><path d="M 0.0 80.0 L 34.6 100.0 L 34.6 140.0 L 0.0 160.0 L -34.6 140.0 L -34.6 100.0 Z" /><path d="M 69.3 80.0 L 103.9 100.0 L 103.9 140.0 L 69.3 160.0 L 34.6 140.0 L 34.6 100.0 Z" /><path d="M 138.6 80.0 L 173.2 100.0 L 173.2 140.0 L 138.6 160.0 L 103.9 140.0 L 103.9 100.0 Z" /><path d="M 207.8 80.0 L 242.5 100.0 L 242.5 140.0 L 207.8 160.0 L 173.2 140.0 L 173.2 100.0 Z" /><path d="M 277.1 80.0 L 311.8 100.0 L 311.8 140.0 L 277.1 160.0 L 242.5 140.0 L 242.5 100.0 Z" /><path d="M 346.4 80.0 L 381.1 100.0 L 381.1 140.0 L 346.4 160.0 L 311.8 140.0 L 311.8 100.0 Z" /><path d="M -34.6 140.0 L 0.0 160.0 L 0.0 200.0 L -34.6 220.0 L -69.3 200.0 L -69.3 160.0 Z" /><path d="M 34.6 140.0 L 69.3 160.0 L 69.3 200.0 L 34.6 220.0 L -0.0 200.0 L 0.0 160.0 Z" /><path d="M 103.9 140.0 L 138.6 160.0 L 138.6 200.0 L 103.9 220.0 L 69.3 200.0 L 69.3 160.0 Z" /><path d="M 173.2 140.0 L 207.8 160.0 L 207.8 200.0 L 173.2 220.0 L 138.6 200.0 L 138.6 160.0 Z" /><path d="M 242.5 140.0 L 277.1 160.0 L 277.1 200.0 L 242.5 220.0 L 207.8 200.0 L 207.8 160.0 Z" /><path d="M 311.8 140.0 L 346.4 160.0 L 346.4 200.0 L 311.8 220.0 L 277.1 200.0 L 277.1 160.0 Z" /><path d="M 381.1 140.0 L 415.7 160.0 L 415.7 200.0 L 381.1 220.0 L 346.4 200.0 L 346.4 160.0 Z" /><path d="M -69.3 200.0 L -34.6 220.0 L -34.6 260.0 L -69.3 280.0 L -103.9 260.0 L -103.9 220.0 Z" /><path d="M 0.0 200.0 L 34.6 220.0 L 34.6 260.0 L 0.0 280.0 L -34.6 260.0 L -34.6 220.0 Z" /><path d="M 69.3 200.0 L 103.9 220.0 L 103.9 260.0 L 69.3 280.0 L 34.6 260.0 L 34.6 220.0 Z" /><path d="M 138.6 200.0 L 173.2 220.0 L 173.2 260.0 L 138.6 280.0 L 103.9 260.0 L 103.9 220.0 Z" /><path d="M 207.8 200.0 L 242.5 220.0 L 242.5 260.0 L 207.8 280.0 L 173.2 260.0 L 173.2 220.0 Z" /><path d="M 277.1 200.0 L 311.8 220.0 L 311.8 260.0 L 277.1 280.0 L 242.5 260.0 L 242.5 220.0 Z" /><path d="M 346.4 200.0 L 381.1 220.0 L 381.1 260.0 L 346.4 280.0 L 311.8 260.0 L 311.8 220.0 Z" /><path d="M -34.6 260.0 L 0.0 280.0 L 0.0 320.0 L -34.6 340.0 L -69.3 320.0 L -69.3 280.0 Z" /><path d="M 34.6 260.0 L 69.3 280.0 L 69.3 320.0 L 34.6 340.0 L -0.0 320.0 L 0.0 280.0 Z" /><path d="M 103.9 260.0 L 138.6 280.0 L 138.6 320.0 L 103.9 340.0 L 69.3 320.0 L 69.3 280.0 Z" /><path d="M 173.2 260.0 L 207.8 280.0 L 207.8 320.0 L 173.2 340.0 L 138.6 320.0 L 138.6 280.0 Z" /><path d="M 242.5 260.0 L 277.1 280.0 L 277.1 320.0 L 242.5 340.0 L 207.8 320.0 L 207.8 280.0 Z" /><path d="M 311.8 260.0 L 346.4 280.0 L 346.4 320.0 L 311.8 340.0 L 277.1 320.0 L 277.1 280.0 Z" /><path d="M 381.1 260.0 L 415.7 280.0 L 415.7 320.0 L 381.1 340.0 L 346.4 320.0 L 346.4 280.0 Z" /></g></svg>
+          <div class="label" style="position: absolute; left: 0; top: 296px; width: 310px; font-size: 24px; letter-spacing: 0.08em;">шестиугольники</div>
+        </div>
+        <div id="st-best" class="g stamp" style="left: 220px; top: 230px; font-size: 80px; white-space: nowrap; color: #3BD16F; border-color: #3BD16F; background: rgba(12,12,14,0.55);">самый выгодный</div>
+        <div id="cmp" class="g" style="left: 60px; top: 1252px; width: 960px; height: 430px; border-radius: 28px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);">
+          <svg viewBox="0 0 960 430" style="position: absolute; left: 0; top: 0; width: 960px; height: 430px;">
+            <g fill="rgba(242,235,221,0.10)" stroke="#F2EBDD" stroke-width="6" stroke-linejoin="round">
+              <path d="M 160 74.3 L 264.7 255.7 L 55.3 255.7 Z" />
+              <rect x="411.1" y="96.1" width="137.8" height="137.8" />
+            </g>
+            <path id="cmp-hex" d="M 885.5 165.0 L 842.8 239.1 L 757.2 239.1 L 714.5 165.0 L 757.2 90.9 L 842.8 90.9 Z" fill="rgba(245,184,46,0.30)" stroke="#F5B82E" stroke-width="6" stroke-linejoin="round" />
+            <g font-family="JBMono" font-weight="700" font-size="34" fill="#F2EBDD" text-anchor="middle">
+              <text x="160" y="300">S = 1</text><text x="480" y="300">S = 1</text><text x="800" y="300">S = 1</text>
+            </g>
+            <g font-family="JBMono" font-weight="700" font-size="40" text-anchor="middle">
+              <text class="pl" x="160" y="372" fill="rgba(242,235,221,0.75)" opacity="0">P ≈ 4,56</text>
+              <text class="pl" x="480" y="372" fill="rgba(242,235,221,0.75)" opacity="0">P = 4</text>
+              <text id="pl-hex" class="pl" x="800" y="372" fill="#3BD16F" opacity="0">P ≈ 3,72</text>
+            </g>
+          </svg>
+        </div>
+        <div id="p-7" class="g pill" style="left: 0; width: 1080px; text-align: center; top: 1290px; background: none; border: none; font-size: 34px;">на <span style="color: #3BD16F;">7%</span> меньше стенок, чем у квадратов</div>
+        <div id="card-darwin" class="g card card-right">
+          <div class="ph"><img src="assets/img/darwin.jpg" alt="" /></div>
+          <div class="card-name">Чарльз Дарвин</div>
+          <div class="card-sub">«Происхождение видов», 1859</div>
+        </div>
+        <div id="quote" class="g paper" style="left: 110px; top: 1255px; width: 860px; text-align: center;"><div class="paper-text">«…абсолютно совершенны в экономии труда и воска»</div><div class="paper-sign">Чарльз Дарвин о сотах</div></div>
+        <div id="censor" class="g censor"><span>Цензура</span><b>18+</b></div>
+        <div id="cta" class="g cta" style="left: 90px; top: 1130px; width: 900px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">ЕГЭ на 80+ — переходи ко мне</div>
+        </div>
+        <svg id="cta-arrow" class="g" viewBox="0 0 220 200" style="left: 70px; top: 1470px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-pik" src="assets/sfx/impact-bass-1.mp3" data-start="0.61" data-volume="0.40"></audio>
+      <audio id="sfx-lead" src="assets/sfx/whoosh-short.mp3" data-start="0.97" data-volume="0.24"></audio>
+      <audio id="sfx-sam" src="assets/sfx/impact-bass-1.mp3" data-start="3.80" data-volume="0.34"></audio>
+      <audio id="sfx-q" src="assets/sfx/pop.mp3" data-start="4.61" data-volume="0.30"></audio>
+      <audio id="sfx-comb" src="assets/sfx/sparkle.mp3" data-start="6.31" data-volume="0.26"></audio>
+      <audio id="sfx-honey" src="assets/sfx/whoosh-short.mp3" data-start="7.75" data-volume="0.26"></audio>
+      <audio id="sfx-circ" src="assets/sfx/pop.mp3" data-start="9.71" data-volume="0.30"></audio>
+      <audio id="sfx-sqr" src="assets/sfx/pop.mp3" data-start="11.51" data-volume="0.30"></audio>
+      <audio id="sfx-bee" src="assets/sfx/whoosh.mp3" data-start="13.67" data-volume="0.26"></audio>
+      <audio id="sfx-taxi" src="assets/sfx/pop.mp3" data-start="14.43" data-volume="0.28"></audio>
+      <audio id="sfx-marx" src="assets/sfx/whoosh-short.mp3" data-start="16.33" data-volume="0.28"></audio>
+      <audio id="sfx-eco" src="assets/sfx/pop.mp3" data-start="17.87" data-volume="0.30"></audio>
+      <audio id="sfx-math" src="assets/sfx/pop.mp3" data-start="18.57" data-volume="0.30"></audio>
+      <audio id="sfx-pack" src="assets/sfx/whoosh.mp3" data-start="19.79" data-volume="0.24"></audio>
+      <audio id="sfx-shake" src="assets/sfx/click-soft.mp3" data-start="22.23" data-volume="0.36"></audio>
+      <audio id="sfx-gaps" src="assets/sfx/error.mp3" data-start="23.87" data-volume="0.22"></audio>
+      <audio id="sfx-wax" src="assets/sfx/pop.mp3" data-start="24.85" data-volume="0.30"></audio>
+      <audio id="sfx-three" src="assets/sfx/impact-bass-1.mp3" data-start="29.09" data-volume="0.36"></audio>
+      <audio id="sfx-tri" src="assets/sfx/click.mp3" data-start="30.51" data-volume="0.36"></audio>
+      <audio id="sfx-sq" src="assets/sfx/click.mp3" data-start="31.35" data-volume="0.36"></audio>
+      <audio id="sfx-hex" src="assets/sfx/click.mp3" data-start="32.27" data-volume="0.36"></audio>
+      <audio id="sfx-best" src="assets/sfx/impact-bass-1.mp3" data-start="34.75" data-volume="0.30"></audio>
+      <audio id="sfx-cmp" src="assets/sfx/whoosh.mp3" data-start="36.61" data-volume="0.24"></audio>
+      <audio id="sfx-per" src="assets/sfx/ping.mp3" data-start="39.25" data-volume="0.30"></audio>
+      <audio id="sfx-seven" src="assets/sfx/pop.mp3" data-start="42.15" data-volume="0.30"></audio>
+      <audio id="sfx-darwin" src="assets/sfx/whoosh-short.mp3" data-start="43.47" data-volume="0.28"></audio>
+      <audio id="sfx-quote" src="assets/sfx/whoosh.mp3" data-start="44.71" data-volume="0.22"></audio>
+      <audio id="sfx-censor" src="assets/sfx/glitch-3.mp3" data-start="47.31" data-duration="0.9" data-fade-out="0.3" data-volume="0.22"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="51.27" data-volume="0.40"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[0.53, 2.72], [3.72, 5.97], [6.23, 9.32], [29.01, 30.67]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры ----------
+      const caps = document.getElementById("caps");
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        el.textContent = c.text;
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход, сработавший посреди входа, в покадровом рендере
+        // проигрывает недоигравшему fromTo — и слово висит до конца ролика
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) },
+                  { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: Math.min(0.09, c.t1 - c.t0), ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+      });
+
+
+      // ---------- хук: застройщики украдут идею ----------
+      slam("#w-pik", 0.63, { fromScale: 1.6 });
+      flash(0.63);
+      enter("#w-lead", 0.99, { fromScale: 0.9, dur: 0.25 });
+      leave(["#w-pik", "#w-lead"], 2.37, { y: -60 });
+      slam("#w-sam", 3.82, { fromScale: 1.5 });
+      leave("#w-sam", 4.52, { y: -60 });
+      slam("#q", 4.63, { fromScale: 1.6 });
+      leave("#q", 5.62, { y: -60 });
+
+      // ---------- соты шестиугольные: рисуются за головой и заливаются мёдом ----------
+      tl.set("#comb", { opacity: 1 }, 6.33);
+      tl.fromTo("#comb .hx", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.35, ease: "power1.inOut", stagger: 0.012 }, 6.33);
+      tl.to("#comb .hx", { fill: "rgba(245,184,46,0.78)", duration: 0.2, ease: "power1.out", stagger: { each: 0.008, from: "center" } }, 7.77);
+      leave("#comb", 8.97, { y: -60, scale: 1 });
+
+      // ---------- казалось бы, круги естественнее, квадраты проще ----------
+      enter("#t-circ", 9.73, { fromX: -220, fromScale: 0.9, rot: -3 });
+      enter("#t-sqr", 11.53, { fromX: 220, fromScale: 0.9, rot: 3 });
+      leave(["#t-circ", "#t-sqr"], 12.97, { y: 80 });
+
+      // ---------- чёрно-жёлтые товарищи-таксисты ----------
+      tl.fromTo("#bee", { opacity: 0, x: 420, y: -40, rotation: -8 }, { opacity: 1, x: 0, y: 0, rotation: 0, duration: 0.6, ease: "power2.out" }, 13.71);
+      tl.fromTo("#bee-wings", { scaleY: 1 }, { scaleY: 0.5, svgOrigin: "150 100", duration: 0.06, ease: "sine.inOut", yoyo: true, repeat: 41 }, 13.71);
+      tl.to("#bee", { y: 14, duration: 0.4, ease: "sine.inOut", yoyo: true, repeat: 3 }, 14.37);
+      enter("#taxi", 14.45, { fromScale: 0.6, rot: -4 });
+      leave("#taxi", 16.17, { y: -30, rot: -10 });
+      tl.to("#bee", { x: 520, y: -120, rotation: 12, opacity: 0, duration: 0.45, ease: "power2.in" }, 16.22);
+
+      // ---------- читали Маркса: экономика и математика ----------
+      card("#card-marx", 16.35, 19.67, "left");
+      enter("#p-eco", 17.89, { fromX: -220, fromScale: 0.9, rot: -3 });
+      enter("#p-math", 18.59, { fromX: 220, fromScale: 0.9, rot: 3 });
+      leave(["#p-eco", "#p-math"], 19.67, { y: 60 });
+
+      // ---------- вплотную, без щелей: круги так не встанут ----------
+      enter("#pack", 19.81, { fromY: 120, fromScale: 0.9, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#pack-g", { x: 0 }, { x: 10, duration: 0.06, ease: "sine.inOut", yoyo: true, repeat: 5, immediateRender: false }, 22.25);
+      tl.to("#pack-bg", { fill: "#F0352C", duration: 0.3, ease: "power2.out" }, 23.89);
+      enter("#p-wax", 24.87, { fromScale: 0.85, dur: 0.25 });
+      leave(["#pack", "#p-wax"], 25.77, { y: 80 });
+
+      // ---------- только три паркета ----------
+      slam("#w-3", 29.11, { fromScale: 1.5 });
+      leave("#w-3", 30.32, { y: -60 });
+      enter("#ti-tri", 30.53, { fromY: 120, fromScale: 0.8, rot: -3 });
+      enter("#ti-sq", 31.37, { fromY: 120, fromScale: 0.8 });
+      enter("#ti-hex", 32.29, { fromY: 120, fromScale: 0.8, rot: 3 });
+      leave(["#ti-tri", "#ti-sq"], 33.61, { y: 80 });
+      tl.to("#ti-hex", { x: -340, scale: 1.12, rotation: 0, duration: 0.4, ease: "power3.inOut" }, 33.77);
+      slam("#st-best", 34.77, { fromScale: 2.2, rot: -6, blur: 10 });
+      leave("#ti-hex", 35.27, { y: 80 });
+      leave("#st-best", 35.87, { scale: 0.6, y: 0, rot: -18 });
+
+      // ---------- при той же площади — самый короткий периметр ----------
+      enter("#cmp", 36.63, { fromY: 120, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.to("#cmp .pl", { opacity: 1, duration: 0.2, stagger: 0.12 }, 39.27);
+      tl.fromTo("#cmp-hex", { scale: 1 }, { scale: 1.08, svgOrigin: "800 165", duration: 0.25, ease: "sine.inOut", yoyo: true, repeat: 1, immediateRender: false }, 39.83);
+      leave("#cmp", 40.52, { y: 80 });
+      enter("#p-7", 42.17, { fromScale: 0.85, dur: 0.25 });
+      leave("#p-7", 43.22, { y: 60 });
+
+      // ---------- Дарвин: совершенство экономии ----------
+      card("#card-darwin", 43.49, 46.82, "right");
+      doc("#quote", 44.73, 46.82, { fromRot: -5, rot: 1 });
+      slam("#censor", 47.31, { fromScale: 1.5, rot: -3 });
+      leave("#censor", 48.52, { scale: 0.6, y: 0, rot: 8 });
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 51.27);
+      tl.set("#cta-arrow", { opacity: 1 }, 51.62);
+      draw("#arrow-path", 51.62, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 51.94);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 52.27);
+
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

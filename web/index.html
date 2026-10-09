@@ -1,0 +1,1079 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Монтаж Reels</title>
+<style>
+@font-face {
+  font-family: 'Montserrat Subs';
+  src: url('/api/font') format('truetype');
+  font-weight: 800;
+  font-display: swap;
+}
+
+:root {
+  --ink: #12151c;
+  --surface: #191e27;
+  --raised: #1f2632;
+  --line: #2a313d;
+  --text: #e8ecf2;
+  --muted: #8792a6;
+  --signal: #ffe24b;
+  --mint: #3be8b0;
+  --warn: #ff7a5c;
+  --body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── шапка ─────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 22px 32px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.wordmark {
+  font-family: 'Montserrat Subs', var(--body);
+  font-weight: 800;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.wordmark em { font-style: normal; color: var(--signal); }
+.topbar .env {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── раскладка ─────────────────────────────────────── */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 40px;
+  padding: 32px;
+  max-width: 1180px;
+  margin: 0 auto;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: 1fr; gap: 28px; }
+}
+
+.block { margin-bottom: 34px; }
+.block > h2 {
+  margin: 0 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── выбор исходника ───────────────────────────────── */
+.drop {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 26px;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.drop:hover, .drop.over {
+  border-color: var(--signal);
+  background: rgba(255, 226, 75, .05);
+  color: var(--text);
+}
+.drop strong { color: var(--text); font-weight: 600; }
+
+.sources { list-style: none; margin: 14px 0 0; padding: 0; }
+.sources li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 7px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.sources li:hover { border-color: #3a4353; }
+.sources li[aria-selected="true"] {
+  border-color: var(--signal);
+  background: rgba(255, 226, 75, .07);
+}
+.sources .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sources .meta { font-family: var(--mono); font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.sources .flag { font-size: 11px; color: var(--warn); flex-shrink: 0; }
+
+/* кнопки в строке файла: удалить, показать, скачать */
+.sources .mini, .sources .kill {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font-family: var(--body);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.sources li:hover .mini, .sources li:hover .kill { border-color: var(--line); }
+.sources .mini:hover { color: var(--text); border-color: #3d4657; }
+.sources .kill:hover { color: var(--warn); border-color: var(--warn); }
+/* второй клик подтверждает: удаление файла не должно случаться с одного промаха */
+.sources .kill.sure {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: rgba(255, 122, 92, .12);
+}
+
+.sources.done li { cursor: default; }
+.done-block { grid-column: 1 / -1; }
+.done-block[hidden] { display: none; }
+
+/* ── органы управления ─────────────────────────────── */
+.field { margin-bottom: 20px; }
+.field > label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-size: 14px;
+}
+.field .val { font-family: var(--mono); font-size: 12px; color: var(--signal); }
+.hint { font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+input[type=range] {
+  width: 100%;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--line);
+  border-radius: 2px;
+  outline-offset: 6px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--signal);
+  cursor: pointer;
+  border: 3px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--signal);
+}
+
+.scale-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+input[type=text] {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 14px;
+}
+input[type=text]:focus { outline: 2px solid var(--signal); outline-offset: -1px; border-color: transparent; }
+
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch {
+  width: 30px; height: 30px;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform .12s;
+}
+.swatch:hover { transform: scale(1.09); }
+.swatch[aria-pressed="true"] { border-color: var(--text); }
+
+.toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color .15s, color .15s, background .15s;
+  color: var(--muted);
+}
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--line);
+  transition: background .15s;
+}
+.toggle:has(input:checked) { color: var(--text); border-color: #3d4657; }
+.toggle:has(input:checked) .dot { background: var(--mint); }
+.toggle:has(input:focus-visible) { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* ── запуск ────────────────────────────────────────── */
+.launch {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.go {
+  flex: 1;
+  min-width: 200px;
+  padding: 15px 24px;
+  border: none;
+  border-radius: 9px;
+  background: var(--signal);
+  color: #171307;
+  font-family: 'Montserrat Subs', var(--body);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: filter .15s;
+}
+.go:hover:not(:disabled) { filter: brightness(1.08); }
+.go:disabled { opacity: .45; cursor: not-allowed; }
+
+.ghost {
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font-family: var(--body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.ghost:hover { color: var(--text); border-color: #3d4657; }
+
+/* ── превью кадра ──────────────────────────────────── */
+.rail { position: sticky; top: 32px; }
+@media (max-width: 900px) { .rail { position: static; } }
+
+.frame {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(150deg, #232a36 0%, #171c25 55%, #1e2530 100%);
+  border: 1px solid var(--line);
+}
+.frame::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 32%, rgba(255,255,255,.055), transparent 62%);
+  pointer-events: none;
+}
+.frame .persona {
+  position: absolute;
+  left: 50%; top: 27%;
+  transform: translateX(-50%);
+  width: 34%; aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255,255,255,.045);
+  border: 1px solid rgba(255,255,255,.07);
+}
+.frame .still {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: none;
+}
+.frame.has-still .still { display: block; }
+.frame.has-still .persona,
+.frame.has-still::after { display: none; }
+
+.scrub { margin-top: 12px; }
+.scrub label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; color: var(--muted); margin-bottom: 6px;
+}
+
+select {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 14px;
+  cursor: pointer;
+}
+select:focus { outline: 2px solid var(--signal); outline-offset: -1px; }
+
+.modes { display: flex; gap: 8px; flex-wrap: wrap; }
+.mode {
+  padding: 9px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-family: var(--body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.mode:hover { color: var(--text); border-color: #3d4657; }
+.mode[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--signal);
+  border-color: var(--signal);
+  font-weight: 600;
+}
+
+/* выключённый этап: настройки остаются видны, но помечены как неактивные */
+.dim { opacity: .35; pointer-events: none; }
+
+.linkish {
+  background: none; border: none; padding: 0; margin-top: 8px;
+  color: var(--muted); font-family: var(--body); font-size: 12.5px;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
+.linkish:hover { color: var(--signal); }
+.alarm { color: var(--warn); }
+.caption {
+  position: absolute;
+  left: 0; right: 0;
+  padding: 0 var(--pad, 10%);
+  text-align: center;
+  font-family: 'Montserrat Subs', var(--body);
+  font-weight: 800;
+  line-height: 1.16;
+  color: #fff;
+  text-shadow:
+    0 0 var(--edge, 4px) #000, 0 0 var(--edge, 4px) #000,
+    0 0 var(--edge, 4px) #000, 2px 3px 5px rgba(0,0,0,.55);
+  word-break: break-word;
+}
+.caption .w { transition: color .12s; }
+.caption .w.on { color: var(--signal); }
+
+.rail .note {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── ход работы и результат ────────────────────────── */
+.report { grid-column: 1 / -1; }
+.report:empty { display: none; }
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  padding: 20px 22px;
+  margin-top: 8px;
+}
+
+.console {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  color: var(--muted);
+  max-height: 230px;
+  overflow-y: auto;
+  margin: 0;
+}
+.console b { color: var(--text); font-weight: 400; }
+.console .ok { color: var(--mint); }
+.console .bad { color: var(--warn); }
+
+.working { display: inline-block; animation: blink 1.1s steps(2, start) infinite; }
+@keyframes blink { to { opacity: .25; } }
+
+/* карта реза: плотные куски — то, что осталось; прорехи — вырезанное */
+.cutmap { display: flex; gap: 2px; height: 26px; margin: 16px 0 10px; }
+.cutmap span { background: var(--mint); border-radius: 2px; opacity: .8; }
+.cutmap span.gap { background: var(--line); opacity: 1; }
+
+.result { display: grid; grid-template-columns: 200px 1fr; gap: 22px; align-items: start; }
+@media (max-width: 700px) { .result { grid-template-columns: 1fr; } }
+.result video { width: 100%; border-radius: 9px; background: #000; display: block; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 16px; }
+.stat .n { font-family: 'Montserrat Subs', var(--body); font-weight: 800; font-size: 25px; letter-spacing: -.01em; }
+.stat .n.trim { color: var(--mint); }
+.stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wordmark">Монтаж <em>Reels</em></div>
+  <div class="env" id="env">проверяю окружение…</div>
+</header>
+
+<main class="workspace">
+  <div>
+    <section class="block">
+      <h2>Исходник</h2>
+      <div class="drop" id="drop" tabindex="0" role="button">
+        <strong>Перетащи видео сюда</strong><br>или нажми, чтобы выбрать файл
+      </div>
+      <input type="file" id="file" accept="video/*" hidden>
+      <ul class="sources" id="sources"></ul>
+    </section>
+
+    <section class="block">
+      <h2>Что делать</h2>
+      <div class="modes" id="modes">
+        <button class="mode" data-mode="full">Всё</button>
+        <button class="mode" data-mode="subs">Только субтитры</button>
+        <button class="mode" data-mode="cut">Только рез</button>
+        <button class="mode" data-mode="raw">Ничего</button>
+      </div>
+      <div class="hint">Готовые наборы. Ниже любой этап включается и выключается по отдельности.</div>
+    </section>
+
+    <section class="block">
+      <h2>Темп</h2>
+      <div class="toggles" style="margin-bottom:18px">
+        <label class="toggle"><input type="checkbox" id="cut" checked><span class="dot"></span>Резать паузы</label>
+        <label class="toggle"><input type="checkbox" id="fillers" checked><span class="dot"></span>Резать «э-э» и «как бы»</label>
+        <label class="toggle"><input type="checkbox" id="motion" checked><span class="dot"></span>Менять крупность</label>
+      </div>
+      <div class="field" id="silence-field">
+        <label for="silence">Плотность реза <span class="val" id="silence-v">0.28 с</span></label>
+        <input type="range" id="silence" min="0.15" max="0.60" step="0.01" value="0.28">
+        <div class="scale-labels"><span>жёстко</span><span>щадяще</span></div>
+        <div class="hint" id="silence-hint">Пауза длиннее этого вырезается.</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Звук</h2>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="denoise" checked><span class="dot"></span>Чистить шум</label>
+        <label class="toggle"><input type="checkbox" id="normalize" checked><span class="dot"></span>Ровнять громкость</label>
+      </div>
+      <div class="hint">Выключишь оба — звук уйдёт в ролик ровно таким, как записан.</div>
+    </section>
+
+    <section class="block">
+      <h2>Субтитры</h2>
+      <div class="toggles" style="margin-bottom:18px">
+        <label class="toggle"><input type="checkbox" id="subs" checked><span class="dot"></span>Показывать субтитры</label>
+      </div>
+      <div id="subs-body">
+      <div class="field">
+        <label for="fontsel">Шрифт</label>
+        <select id="fontsel"></select>
+        <div class="hint" id="font-hint"></div>
+        <button class="linkish" id="addfont">Добавить свой шрифт (.ttf или .otf)</button>
+        <input type="file" id="fontfile" accept=".ttf,.otf,font/ttf,font/otf" hidden>
+      </div>
+      <div class="field">
+        <label for="fsize">Размер <span class="val" id="fsize-v">92</span></label>
+        <input type="range" id="fsize" min="56" max="140" step="2" value="92">
+      </div>
+      <div class="field">
+        <label for="mv">Высота над низом кадра <span class="val" id="mv-v">420</span></label>
+        <input type="range" id="mv" min="150" max="900" step="10" value="420">
+      </div>
+      <div class="field">
+        <label for="wpp">Слов в строке <span class="val" id="wpp-v">3</span></label>
+        <input type="range" id="wpp" min="1" max="6" step="1" value="3">
+      </div>
+      <div class="field">
+        <label>Подсветка текущего слова</label>
+        <div class="swatches" id="swatches"></div>
+      </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Хук</h2>
+      <div class="field">
+        <input type="text" id="hook" placeholder="Например: Так делают 90% учеников" maxlength="80">
+        <div class="hint">Крупная фраза поверх первых секунд. Оставь пустым, если не нужна.</div>
+      </div>
+    </section>
+
+    <div class="launch">
+      <button class="go" id="go" disabled>Смонтировать</button>
+      <label class="toggle"><input type="checkbox" id="best"><span class="dot"></span>Качество вместо скорости</label>
+      <button class="ghost" id="save">Закрепить настройки</button>
+    </div>
+  </div>
+
+  <aside class="rail">
+    <div class="frame" id="frame">
+      <img class="still" id="still" alt="">
+      <div class="persona"></div>
+      <div class="caption" id="caption"></div>
+    </div>
+    <div class="scrub">
+      <label for="at"><span>Кадр из видео</span><span class="val" id="at-v">35%</span></label>
+      <input type="range" id="at" min="0" max="95" step="5" value="35">
+    </div>
+    <p class="note" id="rail-note">Так лягут субтитры в кадре.<br>Шрифт тот же, что уйдёт в видео.</p>
+  </aside>
+
+  <section class="report" id="report"></section>
+
+  <section class="block done-block" id="done-block" hidden>
+    <h2>Готовые ролики</h2>
+    <ul class="sources done" id="done"></ul>
+    <div class="hint">Файлы лежат в output/. Удаление здесь стирает их с диска — распознанная речь при этом остаётся, повторный монтаж не будет ждать её заново.</div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let PHRASE = ['Дискриминант', 'равен', 'бэ', 'квадрат', 'минус', 'четыре', 'а', 'цэ'];
+let fontFamily = 'Montserrat ExtraBold';   // имя, по которому шрифт найдёт libass
+let fontCss = 'Montserrat Subs';           // имя, под которым он загружен в браузер
+let fontSeq = 0;
+const SWATCHES = [
+  ['FFE24B', 'жёлтый'], ['3BE8B0', 'мятный'], ['FF7A5C', 'коралловый'],
+  ['7AA2FF', 'синий'], ['FF6FD8', 'розовый'], ['FFFFFF', 'белый'],
+];
+let picked = null;      // выбранный исходник
+let activeColor = 'FFE24B';
+let busy = false;
+
+/* ── превью кадра ──────────────────────────────────── */
+function paintPreview() {
+  const frame = $('frame'), cap = $('caption');
+  const scale = frame.clientWidth / 1080;          // кадр 1080×1920 → превью
+  const size = +$('fsize').value, mv = +$('mv').value, per = +$('wpp').value;
+
+  cap.style.fontFamily = `'${fontCss}', ${getComputedStyle(document.body).fontFamily}`;
+  cap.style.fontSize = (size * scale) + 'px';
+  cap.style.bottom = (mv * scale) + 'px';
+  cap.style.setProperty('--edge', Math.max(2, 7 * scale * 2) + 'px');
+  cap.style.setProperty('--pad', (110 * scale / frame.clientWidth * 100) + '%');
+  cap.style.display = $('subs').checked ? 'block' : 'none';
+
+  const words = PHRASE.slice(0, per);
+  cap.innerHTML = words.map((w, i) => `<span class="w" data-i="${i}">${w}</span>`).join(' ');
+  cap.querySelectorAll('.w').forEach(el => el.style.setProperty('--signal', '#' + activeColor));
+}
+
+// слова загораются по очереди — как в готовом ролике
+let cursor = 0;
+setInterval(() => {
+  const words = $('caption').querySelectorAll('.w');
+  if (!words.length) return;
+  words.forEach(w => w.classList.remove('on'));
+  cursor = cursor % words.length;
+  words[cursor].classList.add('on');
+  words[cursor].style.color = '#' + activeColor;
+  words.forEach((w, i) => { if (i !== cursor) w.style.color = ''; });
+  cursor++;
+}, 620);
+
+/* ── управление ────────────────────────────────────── */
+function describeSilence(v) {
+  if (v <= 0.22) return 'Очень плотно. Речь без единого зазора — может звучать захлёбывающейся.';
+  if (v <= 0.32) return 'Бодрый темп. Хорошая отправная точка.';
+  if (v <= 0.42) return 'Умеренно. Паузы для смысла остаются.';
+  return 'Щадяще. Режутся только длинные провисания.';
+}
+
+['fsize', 'mv', 'wpp'].forEach(id => {
+  $(id).addEventListener('input', () => { $(id + '-v').textContent = $(id).value; paintPreview(); });
+});
+$('subs').addEventListener('change', paintPreview);
+$('silence').addEventListener('input', () => {
+  const v = (+$('silence').value).toFixed(2);
+  $('silence-v').textContent = v + ' с';
+  $('silence-hint').textContent = describeSilence(+v);
+});
+
+$('swatches').innerHTML = SWATCHES.map(([hex, name]) =>
+  `<button class="swatch" data-hex="${hex}" title="${name}" aria-pressed="${hex === activeColor}"
+           style="background:#${hex}"></button>`).join('');
+$('swatches').addEventListener('click', e => {
+  const b = e.target.closest('.swatch');
+  if (!b) return;
+  activeColor = b.dataset.hex;
+  [...$('swatches').children].forEach(s => s.setAttribute('aria-pressed', s === b));
+  paintPreview();
+});
+
+/* ── этапы: что делать, а что пропустить ───────────── */
+const STAGES = ['cut', 'fillers', 'motion', 'subs', 'denoise', 'normalize'];
+const MODES = {
+  full: { cut: 1, fillers: 1, motion: 1, subs: 1, denoise: 1, normalize: 1 },
+  subs: { cut: 0, fillers: 0, motion: 0, subs: 1, denoise: 0, normalize: 0 },
+  cut:  { cut: 1, fillers: 1, motion: 0, subs: 0, denoise: 1, normalize: 1 },
+  raw:  { cut: 0, fillers: 0, motion: 0, subs: 0, denoise: 0, normalize: 0 },
+};
+
+function stageState() { return STAGES.map(s => $(s).checked ? '1' : '0').join(''); }
+
+function syncStages() {
+  // настройки выключённого этапа гасим — незачем крутить то, что всё равно не сработает
+  $('silence-field').classList.toggle('dim', !$('cut').checked);
+  $('subs-body').classList.toggle('dim', !$('subs').checked);
+
+  const now = stageState();
+  const active = Object.keys(MODES).find(
+    n => STAGES.map(s => MODES[n][s] ? '1' : '0').join('') === now);
+  [...$('modes').children].forEach(b =>
+    b.setAttribute('aria-pressed', b.dataset.mode === active));
+
+  if (!busy) $('go').textContent = now === '000000' ? 'Перекодировать' : 'Смонтировать';
+  paintPreview();
+}
+
+$('modes').addEventListener('click', e => {
+  const b = e.target.closest('.mode');
+  if (!b) return;
+  const m = MODES[b.dataset.mode];
+  STAGES.forEach(s => $(s).checked = !!m[s]);
+  syncStages();
+});
+STAGES.forEach(s => $(s).addEventListener('change', syncStages));
+
+/* ── шрифты ────────────────────────────────────────── */
+async function loadFonts(selectFile) {
+  const { fonts } = await (await fetch('/api/fonts')).json();
+  const sel = $('fontsel');
+  if (!fonts.length) { sel.innerHTML = '<option>шрифтов не найдено</option>'; return; }
+
+  sel.innerHTML = fonts.map(f =>
+    `<option value="${f.file}" data-family="${f.family}" data-cyr="${f.cyrillic}">${f.family}</option>`
+  ).join('');
+
+  const wanted = selectFile || fonts.find(f => f.family === fontFamily)?.file || fonts[0].file;
+  sel.value = wanted;
+  await applyFont();
+}
+
+async function applyFont() {
+  const opt = $('fontsel').selectedOptions[0];
+  if (!opt) return;
+  fontFamily = opt.dataset.family;
+
+  const name = 'SubsFace' + (++fontSeq);
+  try {
+    const face = new FontFace(name, `url(/api/font?file=${encodeURIComponent(opt.value)})`);
+    await face.load();
+    document.fonts.add(face);
+    fontCss = name;
+  } catch {
+    $('font-hint').innerHTML = '<span class="alarm">Браузер не смог показать этот шрифт в превью.</span>';
+  }
+
+  $('font-hint').innerHTML = opt.dataset.cyr === 'true'
+    ? 'Кириллица на месте.'
+    : '<span class="alarm">В шрифте нет кириллицы — русские субтитры выйдут пустыми квадратами.</span>';
+
+  paintPreview();
+}
+
+$('fontsel').addEventListener('change', applyFont);
+$('addfont').addEventListener('click', () => $('fontfile').click());
+$('fontfile').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  $('font-hint').textContent = 'Читаю шрифт…';
+  const fd = new FormData();
+  fd.append('file', f);
+  const r = await (await fetch('/api/upload-font', { method: 'POST', body: fd })).json();
+  if (r.error) { $('font-hint').innerHTML = `<span class="alarm">${r.error}</span>`; return; }
+  await loadFonts(r.file);
+});
+
+/* ── кадр из видео в превью ────────────────────────── */
+let stillTimer = null;
+function loadStill() {
+  const frame = $('frame'), img = $('still');
+  if (!picked) { frame.classList.remove('has-still'); return; }
+  const at = +$('at').value / 100;
+  img.onload = () => frame.classList.add('has-still');
+  img.onerror = () => frame.classList.remove('has-still');
+  img.src = `/api/frame/${encodeURIComponent(picked)}?at=${at}`;
+}
+
+async function loadPhrase() {
+  if (!picked) return;
+  const r = await (await fetch('/api/phrase/' + encodeURIComponent(picked))).json();
+  if (r.words && r.words.length >= 3) {
+    PHRASE = r.words;
+    $('rail-note').innerHTML = 'Кадр и слова — из твоего видео.<br>Шрифт тот же, что уйдёт в ролик.';
+  }
+  paintPreview();
+}
+
+$('at').addEventListener('input', () => {
+  $('at-v').textContent = $('at').value + '%';
+  clearTimeout(stillTimer);
+  stillTimer = setTimeout(loadStill, 220);
+});
+
+/* ── исходники ─────────────────────────────────────── */
+const esc = s => String(s).replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function renderSources(items) {
+  const ul = $('sources');
+  if (!items.length) { ul.innerHTML = ''; return; }
+  ul.innerHTML = items.map(v => `
+    <li data-name="${esc(v.name)}" role="option" aria-selected="${v.name === picked}">
+      <span class="nm">${esc(v.name)}</span>
+      ${v.vertical === false ? '<span class="flag">горизонтальный</span>' : ''}
+      <span class="meta">${v.duration ? fmt(v.duration) : ''} · ${v.size_mb} МБ</span>
+      <button class="kill" title="Удалить исходник с диска">Удалить</button>
+    </li>`).join('');
+}
+
+function renderDone(items) {
+  const ul = $('done');
+  $('done-block').hidden = !items.length;
+  ul.innerHTML = items.map(v => `
+    <li data-name="${esc(v.name)}">
+      <span class="nm">${esc(v.name)}</span>
+      <span class="meta">${v.duration ? fmt(v.duration) : ''} · ${v.size_mb} МБ</span>
+      <button class="mini" data-act="reveal">В Finder</button>
+      <a class="mini" href="/api/video/output/${encodeURIComponent(v.name)}" download>Скачать</a>
+      <button class="kill" title="Удалить ролик с диска">Удалить</button>
+    </li>`).join('');
+}
+function fmt(s) { return Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0'); }
+
+/* первый клик по «Удалить» только взводит кнопку: файл уходит с диска насовсем */
+function armKill(btn, run) {
+  if (btn.dataset.sure === '1') { run(); return; }
+  btn.dataset.sure = '1';
+  btn.textContent = 'Точно?';
+  btn.classList.add('sure');
+  setTimeout(() => {
+    if (!btn.isConnected) return;
+    btn.dataset.sure = '';
+    btn.textContent = 'Удалить';
+    btn.classList.remove('sure');
+  }, 3500);
+}
+
+async function removeFile(name, folder) {
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('folder', folder);
+  const r = await (await fetch('/api/delete', { method: 'POST', body: fd })).json();
+  if (!r.ok) { alert(r.error || 'не вышло удалить файл'); return; }
+
+  if (folder === 'input' && picked === name) picked = null;
+  if (folder === 'output') {
+    // ролик показан в отчёте — убрать панель, чтобы не остался мёртвый плеер
+    document.querySelectorAll('#report video').forEach(v => {
+      if (decodeURIComponent(v.getAttribute('src')).endsWith('/' + name)) v.closest('.panel').remove();
+    });
+  }
+  refresh();
+}
+
+$('sources').addEventListener('click', e => {
+  const li = e.target.closest('li');
+  if (!li) return;
+
+  const kill = e.target.closest('.kill');
+  if (kill) { armKill(kill, () => removeFile(li.dataset.name, 'input')); return; }
+
+  picked = li.dataset.name;
+  [...$('sources').children].forEach(x => x.setAttribute('aria-selected', x === li));
+  $('go').disabled = busy;
+  loadStill();
+  loadPhrase();
+});
+
+$('done').addEventListener('click', e => {
+  const li = e.target.closest('li');
+  if (!li) return;
+  const kill = e.target.closest('.kill');
+  if (kill) { armKill(kill, () => removeFile(li.dataset.name, 'output')); return; }
+  if (e.target.closest('[data-act="reveal"]')) reveal(li.dataset.name);
+});
+
+async function refresh() {
+  const s = await (await fetch('/api/state')).json();
+  const was = picked;
+  if (!picked && s.inputs.length) picked = s.inputs[0].name;
+  if (picked && !s.inputs.some(v => v.name === picked)) picked = s.inputs[0]?.name || null;
+  renderSources(s.inputs);
+  renderDone(s.outputs);
+  if (picked && picked !== was) { loadStill(); loadPhrase(); }
+  else if (!picked) { $('frame').classList.remove('has-still'); }
+  $('go').disabled = !picked || busy;
+  $('env').textContent = `${plural(s.inputs.length, 'исходник', 'исходника', 'исходников')} · ` +
+                         `${plural(s.outputs.length, 'готовый', 'готовых', 'готовых')}`;
+}
+
+function word(n, one, few, many) {
+  const d10 = n % 10, d100 = n % 100;
+  return (d10 === 1 && d100 !== 11) ? one
+       : (d10 >= 2 && d10 <= 4 && (d100 < 12 || d100 > 14)) ? few
+       : many;
+}
+function plural(n, one, few, many) { return `${n} ${word(n, one, few, many)}`; }
+
+/* ── загрузка файла ────────────────────────────────── */
+const drop = $('drop');
+const DROP_IDLE = '<strong>Перетащи видео сюда</strong><br>или нажми, чтобы выбрать файл';
+let dropTimer = null;
+
+function dropSays(html, alarm = false) {
+  clearTimeout(dropTimer);
+  drop.innerHTML = alarm ? `<span class="alarm">${html}</span>` : html;
+}
+function dropIdle(after) {
+  clearTimeout(dropTimer);
+  dropTimer = setTimeout(() => { drop.innerHTML = DROP_IDLE; }, after);
+}
+
+drop.addEventListener('click', () => $('file').click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
+$('file').addEventListener('change', e => { if (e.target.files[0]) upload(e.target.files[0]); });
+
+// перетаскивание ловит вся страница: промах мимо рамки иначе уводит браузер на файл
+const typing = e => e.target.closest && e.target.closest('input[type="text"]');
+
+['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, e => {
+  if (typing(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  drop.classList.add('over');
+}));
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) drop.classList.remove('over'); });
+window.addEventListener('drop', e => {
+  if (typing(e)) return;
+  e.preventDefault();
+  drop.classList.remove('over');
+  takeDrop(e.dataTransfer);
+});
+
+function takeDrop(dt) {
+  // обычный файл из Finder
+  if (dt.files && dt.files[0]) { upload(dt.files[0]); return; }
+
+  // Chrome иногда отдаёт содержимое только через items
+  for (const item of Array.from(dt.items || [])) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      if (f) { upload(f); return; }
+    }
+  }
+
+  // Telegram и Почта кладут в перетаскивание путь, а не содержимое файла. Страница по
+  // такому пути ничего не прочитает — прочитает сервер, он на этой же машине.
+  const link = (dt.getData('text/uri-list') || dt.getData('text/plain') || '')
+    .split('\n').map(s => s.trim()).find(s => s && !s.startsWith('#')) || '';
+
+  if (link.startsWith('file:') || link.startsWith('/')) { importPath(link); return; }
+
+  if (/^https?:/i.test(link)) {
+    dropSays('Перетащилась ссылка, а не файл. Сохрани видео на диск и перетащи оттуда.', true);
+    dropIdle(8000);
+    return;
+  }
+  dropSays('Приложение отдало видео так, что браузер его не видит.<br>' +
+           'В Telegram: правой кнопкой по видео → «Сохранить как…», потом перетащи файл ' +
+           'из Finder. Или нажми сюда и выбери его.', true);
+  dropIdle(14000);
+}
+
+async function importPath(link) {
+  dropSays('<strong>Забираю файл…</strong>');
+  const fd = new FormData();
+  fd.append('path', link);
+  try {
+    const r = await (await fetch('/api/import-path', { method: 'POST', body: fd })).json();
+    if (r.error) { dropSays(esc(r.error), true); dropIdle(10000); return; }
+    picked = r.name;
+  } catch {
+    dropSays('Сервер не ответил — он ещё работает?', true);
+    dropIdle(10000);
+    return;
+  }
+  dropSays(DROP_IDLE);
+  refresh();
+}
+
+async function upload(f) {
+  dropSays(`<strong>Копирую ${esc(f.name)}…</strong>`);
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const r = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
+    if (r.error) { dropSays(esc(r.error), true); dropIdle(10000); return; }
+    picked = r.name;
+  } catch {
+    dropSays('Файл не долетел до сервера — попробуй ещё раз.', true);
+    dropIdle(10000);
+    return;
+  }
+  dropSays(DROP_IDLE);
+  refresh();
+}
+
+/* ── монтаж ────────────────────────────────────────── */
+$('go').addEventListener('click', async () => {
+  if (!picked || busy) return;
+  busy = true;
+  $('go').disabled = true;
+  $('go').textContent = 'Монтирую…';
+
+  const fd = new FormData();
+  fd.append('video', picked);
+  fd.append('max_silence', $('silence').value);
+  fd.append('font_size', $('fsize').value);
+  fd.append('margin_v', $('mv').value);
+  fd.append('words_per_phrase', $('wpp').value);
+  fd.append('color_active', activeColor);
+  fd.append('font', fontFamily);
+  fd.append('subs', $('subs').checked);
+  fd.append('motion', $('motion').checked);
+  fd.append('cut', $('cut').checked);
+  fd.append('denoise', $('denoise').checked);
+  fd.append('normalize', $('normalize').checked);
+  fd.append('audio_fix', $('denoise').checked || $('normalize').checked);
+  fd.append('remove_fillers', $('fillers').checked);
+  fd.append('hook', $('hook').value);
+  fd.append('quality', $('best').checked ? 'best' : 'fast');
+
+  const { job_id, error } = await (await fetch('/api/render', { method: 'POST', body: fd })).json();
+  if (error) { finish(); alert(error); return; }
+
+  $('report').innerHTML =
+    `<div class="panel"><pre class="console" id="console"><span class="working">▍</span></pre></div>`;
+  const box = $('console');
+  const es = new EventSource('/api/stream/' + job_id);
+
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if (d.line) {
+      const cls = d.line.includes('✓') ? 'ok' : (d.line.includes('✗') ? 'bad' : '');
+      box.insertAdjacentHTML('beforeend',
+        `<b class="${cls}">${d.line.replace(/</g, '&lt;')}</b>\n`);
+      box.scrollTop = box.scrollHeight;
+    }
+    if (d.finished) {
+      es.close();
+      finish();
+      if (d.output) showResult(d.output);
+      refresh();
+    }
+  };
+  es.onerror = () => { es.close(); finish(); };
+});
+
+function finish() {
+  busy = false;
+  $('go').disabled = !picked;
+  document.querySelector('.working')?.remove();
+  syncStages();
+}
+
+async function showResult(name) {
+  const plan = await (await fetch('/api/plan/' + name.replace('_reels.mp4', ''))).json();
+  let map = '', stats = '';
+
+  if (plan.segments) {
+    const total = plan.duration;
+    let prev = 0, cells = '';
+    plan.segments.forEach(([s, e]) => {
+      if (s > prev) cells += `<span class="gap" style="flex:${(s - prev) / total}"></span>`;
+      cells += `<span style="flex:${(e - s) / total}"></span>`;
+      prev = e;
+    });
+    if (prev < total) cells += `<span class="gap" style="flex:${(total - prev) / total}"></span>`;
+    map = `<div class="cutmap">${cells}</div>
+           <div class="hint">Мятным — что осталось, серым — вырезанные паузы.</div>`;
+
+    const cutPct = Math.round((1 - plan.kept / plan.duration) * 100);
+    const wasCut = plan.segments.length > 1 || plan.dropped_words > 0;
+
+    stats = '<div class="stats">' +
+      `<div class="stat"><div class="n">${fmt(plan.kept)}</div><div class="k">хронометраж</div></div>` +
+      (wasCut ? `
+        <div class="stat"><div class="n trim">−${cutPct}%</div><div class="k">срезано</div></div>
+        <div class="stat"><div class="n">${plan.segments.length}</div>
+          <div class="k">${word(plan.segments.length, 'кусок', 'куска', 'кусков')}</div></div>
+        <div class="stat"><div class="n">${plan.dropped_words}</div>
+          <div class="k">${word(plan.dropped_words, 'паразит', 'паразита', 'паразитов')}</div></div>` : '') +
+      '</div>';
+
+    if (!wasCut) map = '';   // карта реза без реза ничего не сообщает
+  }
+
+  $('report').insertAdjacentHTML('beforeend', `
+    <div class="panel">
+      <div class="result">
+        <video src="/api/video/output/${encodeURIComponent(name)}" controls playsinline></video>
+        <div>
+          ${stats}${map}
+          <div class="launch" style="padding-top:8px">
+            <button class="ghost" onclick="reveal('${name}')">Показать в Finder</button>
+            <a class="ghost" style="text-decoration:none;display:inline-block"
+               href="/api/video/output/${encodeURIComponent(name)}" download>Скачать</a>
+          </div>
+        </div>
+      </div>
+    </div>`);
+}
+
+async function reveal(name) {
+  const fd = new FormData();
+  fd.append('name', name);
+  await fetch('/api/reveal', { method: 'POST', body: fd });
+}
+
+$('save').addEventListener('click', async () => {
+  const r = await (await fetch('/api/save-preset', { method: 'POST' })).json();
+  $('save').textContent = r.ok ? 'Закреплено' : (r.error || 'Не вышло');
+  setTimeout(() => $('save').textContent = 'Закрепить настройки', 2200);
+});
+
+window.addEventListener('resize', () => { paintPreview(); loadStill(); });
+$('silence-hint').textContent = describeSilence(0.28);
+syncStages();
+loadFonts();
+refresh();
+</script>
+</body>
+</html>
