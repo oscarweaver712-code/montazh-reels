@@ -1,0 +1,12 @@
+# Основное окружение .venv. Версии — те, на которых пайплайн проверен самопроверкой.
+# Ставит Установка.command: uv pip install --python .venv/bin/python -r requirements.txt
+mlx-whisper==0.4.3                # распознавание речи на нейроускорителе Apple Silicon
+numpy==2.4.6
+scipy==1.18.0                     # track.py: сглаживание камеры
+torch==2.13.0                     # matte.py: маска Vision растягивается до размера кадра
+pyobjc-framework-Vision==12.2.2   # лица и маска человека (Apple Vision)
+pyobjc-framework-Quartz==12.2.2
+fonttools==4.63.0                 # проверка кириллицы в шрифтах
+fastapi==0.140.7                  # панель быстрого конвейера (server.py)
+uvicorn==0.51.0
+python-multipart==0.0.32
