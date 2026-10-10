@@ -1,0 +1,26 @@
+{
+ "id": "meme-chaos",
+ "name": "Мемный хаос",
+ "tier": "mainstream",
+ "summary": "Резкие наезды-тряски, стоп-кадры с подписью, мем-звуки, эмодзи. Энергия на максимум.",
+ "looks_like": "На шутке — стоп-кадр и подпись «он не знал…», резкий зум в лицо с тряской, вспышки, звук «бонк». Субтитры капсом со сменой цвета.",
+ "why_works": "Подростки досматривают ради следующей шутки; мемы делают ролик «своим» и заставляют пересылать друзьям.",
+ "risks": "Мемы стареют за недели, кринж убивает доверие. Подходит под лёгкие темы и сторителлинг, не под серьёзный разбор.",
+ "references": ["мемный монтаж TikTok/Reels", "CapCut-шаблоны с zoom shake"],
+ "best_for": ["охват", "пересылки", "сторителлинг"],
+ "formats": ["9:16", "1:1"],
+ "fit": {"reach": 5, "retention": 4, "trust": 1, "saves": 1, "sales": 1},
+ "effort": 3,
+ "needs": ["мем-звуки с лицензией (Pixabay)"],
+ "params": {
+  "pace": {"cut_pauses": true, "max_silence": 0.2, "change_every": 1.8},
+  "camera": {"base_zoom": 1.12, "punch": "often", "punch_level": 1.35, "push_in": false},
+  "captions": {"mode": "words", "case": "upper", "font": "montserrat", "size": 1.15, "position": "center",
+               "color": "#FFFFFF", "highlight": "#FF3BD4", "animation": "pop", "box": false},
+  "graphics": {"density": 3, "behind_text": false, "cards": true, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "many", "music": "none"},
+  "color": {"grade": "punchy", "brightness": -2},
+  "transitions": {"flash": true, "whip": true}
+ },
+ "director": "Наезды резкие (въезд 0, 1.3–1.4) на каждой шутке, стоп-кадр делается наездом + подписью-стикером. Эмодзи и подписи — как стикеры (.sticker), вход slam. Мем-звук на шутку, но не больше одного за полсекунды и на 12 дБ тише голоса."
+}

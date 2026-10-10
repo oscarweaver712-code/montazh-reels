@@ -1,0 +1,26 @@
+{
+ "id": "editorial-studio",
+ "name": "Редакционная студия",
+ "tier": "niche",
+ "summary": "Тёмный журнальный стиль: комната уходит в тень, спикер светится; мелкие капители и крупные слова с засечками; общий и крупный план чередуются.",
+ "looks_like": "Как интервью в студии на две камеры: общий план, на следующей фразе — крупный. Подписи мелкие, разрядкой, капсом; ключевое слово — большое белое с засечками.",
+ "why_works": "Дорогой вид без дорогой съёмки. Хорош для премиального позиционирования и продаж наставничества.",
+ "risks": "На тёмном исходнике лицо проваливается — нужен свет на спикере. Холодноват для школьников.",
+ "references": ["video-edit-skill: look studio", "журнальные интервью (Vogue, GQ)"],
+ "best_for": ["продажи", "доверие", "премиум"],
+ "formats": ["9:16", "16:9", "4:5", "1:1"],
+ "fit": {"reach": 3, "retention": 3, "trust": 5, "saves": 3, "sales": 5},
+ "effort": 3,
+ "needs": ["свет на лице при съёмке"],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.35, "change_every": 4.5},
+  "camera": {"base_zoom": 1.08, "punch": "often", "punch_level": 1.28, "push_in": false},
+  "captions": {"mode": "phrase", "case": "upper", "font": "manrope", "size": 0.6, "position": "lower",
+               "color": "#F2F2F2", "highlight": "#FFFFFF", "animation": "fade", "box": false},
+  "graphics": {"density": 1, "behind_text": true, "cards": false, "cutout": true, "lower_thirds": true},
+  "sound": {"sfx": "few", "music": "bed"},
+  "color": {"grade": "editorial", "brightness": -10},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Чередуй общий (база) и крупный план (punch 1.28, въезд 0, держать всю фразу) — фраза за фразой, как две камеры. Субтитры мелкие, капсом, разрядкой 0.2em. Ключевое слово — крупно, белым, Cormorant, за спиной. Без вспышек."
+}

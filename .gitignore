@@ -11,15 +11,23 @@ output/*
 # Но решения режиссёра и транскрипты — исходники ролика: по номерам слов из транскрипта
 # написаны text_fixes, и перераспознавание может сдвинуть нумерацию. Картинки из downloads/
 # искались и подбирались руками — их тоже храним.
+# Правила — для роликов с любыми именами, не только IMG_*. Служебные папки (_queue, _studio:
+# диалоги с мозгом, _views, _refs) и кэши (fonts, frames) остаются на машине.
 work/*
-!work/IMG_*.txt
-!work/IMG_*.words.json
-!work/IMG_*/
-work/IMG_*/*
-!work/IMG_*/edit.json
-!work/IMG_*/director.json
-!work/IMG_*/page.py
-!work/IMG_*/downloads/
+!work/*.txt
+!work/*.words.json
+!work/*/
+work/_*/
+work/fonts/
+work/frames/
+work/*/*
+!work/*/edit.json
+!work/*/director.json
+!work/*/director.*.json
+!work/*/brief.json
+!work/*/page.py
+!work/*/page.*.py
+!work/*/downloads/
 
 # окружения python: .venv основное, .venv-audio отдельное под torch (вместе ~3,6 ГБ)
 .venv*/
@@ -31,6 +39,9 @@ presets/fonts/Montserrat-var.ttf
 
 # временный пресет, который пишет панель
 presets/_ui.json
+
+# личные настройки агентов на этой машине (общие — .claude/settings.json, .codex/hooks.json)
+.claude/settings.local.json
 
 # новый конвейер: тяжёлое и пересобираемое не храним
 models/

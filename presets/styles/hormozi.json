@@ -1,0 +1,26 @@
+{
+ "id": "hormozi",
+ "name": "Хормози: жирные субтитры",
+ "tier": "mainstream",
+ "summary": "Главный герой — субтитры: КАПСОМ по 2–3 слова, текущее слово жёлтым, хлопок на каждом. Плотный рез и частые наезды.",
+ "looks_like": "Почти без графики. По центру нижней трети прыгают жирные слова капсом, активное подсвечено жёлтым; крупность меняется на каждой склейке, паузы вырезаны.",
+ "why_works": "Ролик смотрят без звука: субтитры держат внимание и задают темп. Дёшево в производстве — подходит для потока роликов каждый день.",
+ "risks": "Самый узнаваемый шаблон рынка — глаз «замыливается», серьёзная тема выглядит дешевле. Рез пауз противоречит правилу Валеры для режиссёрского монтажа — там он включается только с явного «да».",
+ "references": ["Alex Hormozi", "Submagic/Captions/OpusClip — пресет Hormozi", "video-use: bold-overlay"],
+ "best_for": ["охват", "удержание", "поток роликов"],
+ "formats": ["9:16", "1:1", "4:5", "16:9"],
+ "fit": {"reach": 5, "retention": 4, "trust": 2, "saves": 2, "sales": 3},
+ "effort": 1,
+ "needs": [],
+ "params": {
+  "pace": {"cut_pauses": true, "max_silence": 0.22, "change_every": 2.5},
+  "camera": {"base_zoom": 1.10, "punch": "often", "punch_level": 1.15, "push_in": false},
+  "captions": {"mode": "karaoke", "case": "upper", "font": "montserrat", "size": 1.05, "position": "lower",
+               "color": "#FFFFFF", "highlight": "#FFE24B", "animation": "pop", "box": false},
+  "graphics": {"density": 1, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "few", "music": "none"},
+  "color": {"grade": "punchy", "brightness": -4},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Графику почти не ставь: удар делают субтитры и наезды. Наезд (punches 1.15, въезд 0) на каждое ключевое число или вывод, не два подряд. Числа и проценты в субтитрах — цифрами. Один хлопок pop.mp3 на ключевые слова, не чаще раза в 2 секунды."
+}

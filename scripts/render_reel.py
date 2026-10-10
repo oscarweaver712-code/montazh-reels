@@ -11,6 +11,8 @@
 
   .venv/bin/python scripts/render_reel.py IMG_3317                # следующая версия: v2, v3…
   .venv/bin/python scripts/render_reel.py IMG_3317 --version v2
+  .venv/bin/python scripts/render_reel.py IMG_3317 --variant hormozi   # вариант для A/B →
+                                                     output/IMG_3317--hormozi_v1.mp4
 """
 import argparse
 import re
@@ -22,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import OUTPUT_DIR, ROOT, WORK_DIR
-from compose import HYPERFRAMES, STUDIO, compose
+from compose import HYPERFRAMES, STUDIO, compose, project_name
 from master import master
 from verify_page import verify
 
@@ -54,29 +56,31 @@ def run_logged(cmd: list, cwd: Path, log: Path) -> int:
         return proc.wait()
 
 
-def render_reel(stem: str, version: str) -> Path:
-    project = STUDIO / stem
+def render_reel(stem: str, version: str, variant: str | None = None) -> Path:
+    name = project_name(stem, variant)
+    project = STUDIO / name
+    page_py = f"work/{stem}/page.{variant}.py" if variant else f"work/{stem}/page.py"
     if not (project / "index.html").exists():
-        raise Failed(f"Нет страницы {project.relative_to(ROOT)}/index.html — сначала work/{stem}/page.py")
-    out = OUTPUT_DIR / f"{stem}_{version}.mp4"
+        raise Failed(f"Нет страницы {project.relative_to(ROOT)}/index.html — сначала {page_py}")
+    out = OUTPUT_DIR / f"{name}_{version}.mp4"
     if out.exists():
         raise Failed(f"{out.relative_to(ROOT)} уже есть — отданный ролик не перезаписываю, "
-                     f"возьми другую версию (--version {next_version(stem)})")
+                     f"возьми другую версию (--version {next_version(name)})")
     started = time.time()
-    print(f"▶ {stem} {version}", flush=True)
+    print(f"▶ {name} {version}", flush=True)
 
-    compose(stem)
+    compose(stem, variant=variant)
     try:
-        failed = verify(stem)
+        failed = verify(name)
     except (RuntimeError, ValueError, FileNotFoundError) as e:
         raise Failed(f"страницу не удалось проверить, рендер не запускаю: {e}")
     if failed:
         raise Failed("страница с ошибками, рендер не запускаю: " + "; ".join(failed))
 
-    raw = project / "renders" / f"{stem}_{version}.mp4"
+    raw = project / "renders" / f"{name}_{version}.mp4"
     raw.parent.mkdir(exist_ok=True)
     raw.unlink(missing_ok=True)             # прошлый файл с тем же именем не должен сойти за свежий
-    log = WORK_DIR / stem / f"render_{version}.log"
+    log = WORK_DIR / stem / (f"render_{variant}_{version}.log" if variant else f"render_{version}.log")
     print("  → рендер HyperFrames (одним воркером, машина остаётся живой)", flush=True)
     t0 = time.time()
     code = run_logged(["npx", "--yes", HYPERFRAMES, "render", "--workers", "1", "--strict",
@@ -109,14 +113,15 @@ def main():
     ap = argparse.ArgumentParser(description="Готовый ролик из проекта HyperFrames, с проверками")
     ap.add_argument("stem", help="имя ролика, например IMG_3317")
     ap.add_argument("--version", help="v1, v2… (по умолчанию — следующая свободная в output/)")
+    ap.add_argument("--variant", help="стиль варианта для A/B (проект studio/<имя>--<стиль>/)")
     args = ap.parse_args()
-    version = args.version or next_version(args.stem)
+    version = args.version or next_version(project_name(args.stem, args.variant))
     if not re.fullmatch(r"v\d+", version):
         ap.error("версия пишется как v2")
     try:
-        render_reel(args.stem, version)
+        render_reel(args.stem, version, args.variant)
     except Failed as e:
-        print(f"✗ {args.stem} {version}: {e}", flush=True)
+        print(f"✗ {project_name(args.stem, args.variant)} {version}: {e}", flush=True)
         sys.exit(1)
 
 

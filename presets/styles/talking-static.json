@@ -1,0 +1,26 @@
+{
+ "id": "talking-static",
+ "name": "Одна камера, без монтажа",
+ "tier": "contrarian",
+ "summary": "Один план, ни одной склейки, текст абзацами сбоку. Весь вес — на мысли и харизме.",
+ "looks_like": "Ты смотришь в камеру и говоришь. Сбоку, чуть выше центра, появляются абзацы текста — целыми предложениями, без прыжков.",
+ "why_works": "Так растут экспертные блоги на доверии: ролик воспринимается как разговор, а не как контент. По наблюдениям рынка в 2026 — формат многих личных брендов с миллионной выручкой.",
+ "risks": "Слабый спикер или вялый текст не спрятать монтажом. Холодный охват ниже, чем у динамичных стилей.",
+ "references": ["OpusClip: Talking-head static, 2026", "экспертные блоги на доверии"],
+ "best_for": ["доверие", "продажи", "экспертиза"],
+ "formats": ["9:16", "4:5", "16:9", "1:1"],
+ "fit": {"reach": 2, "retention": 3, "trust": 5, "saves": 3, "sales": 5},
+ "effort": 1,
+ "needs": [],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.6, "change_every": 0},
+  "camera": {"base_zoom": 1.0, "punch": "none", "punch_level": 1.0, "push_in": false},
+  "captions": {"mode": "sentence", "case": "natural", "font": "manrope", "size": 0.8, "position": "side",
+               "color": "#FFFFFF", "highlight": "#FFFFFF", "animation": "none", "box": false},
+  "graphics": {"density": 0, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "none", "music": "none"},
+  "color": {"grade": "natural", "brightness": -6},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Камера стоит (без слежения и наездов), графики нет. Субтитры — абзацами по предложению, чуть выше центра, сбоку от лица, сменяются целиком. Режем только мусор в начале и конце."
+}

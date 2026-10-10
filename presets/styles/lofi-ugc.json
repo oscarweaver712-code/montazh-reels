@@ -1,0 +1,26 @@
+{
+ "id": "lofi-ugc",
+ "name": "Лоуфай, как с телефона",
+ "tier": "contrarian",
+ "summary": "Нарочито простой ролик: родной текст Instagram в белых плашках, естественный цвет, почти без монтажа. Выглядит как сторис, а не как реклама.",
+ "looks_like": "Как будто снято и выложено с телефона за пять минут: белые плашки с чёрным текстом (как встроенный текст Reels), никаких эффектов, свет из окна.",
+ "why_works": "Против усталости от глянца: в 2026 «некрасивый» контент часто обгоняет продакшн по доверию и продажам — выглядит честно. Можно выпускать много и быстро.",
+ "risks": "Без сильной мысли выглядит как ленивый ролик. Не подходит для имиджевых кампаний.",
+ "references": ["UGC-реклама DTC-брендов", "OpusClip: UGC review, 2026", "joyspace: Why ugly content beats professional ads"],
+ "best_for": ["продажи", "доверие", "поток роликов"],
+ "formats": ["9:16", "4:5"],
+ "fit": {"reach": 3, "retention": 3, "trust": 5, "saves": 2, "sales": 5},
+ "effort": 1,
+ "needs": [],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.45, "change_every": 6.0},
+  "camera": {"base_zoom": 1.0, "punch": "none", "punch_level": 1.0, "push_in": false},
+  "captions": {"mode": "sentence", "case": "natural", "font": "manrope", "size": 0.75, "position": "center",
+               "color": "#111111", "highlight": "#111111", "animation": "none", "box": true},
+  "graphics": {"density": 0, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "none", "music": "none"},
+  "color": {"grade": "natural", "brightness": 0},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Никакой графики, кроме 1–2 плашек родного вида (белый фон, чёрный текст, скруглённые углы) с главной мыслью. Камера стоит. Цвет — как снято, только приведение диапазона. Задача — не испортить честность кадра."
+}

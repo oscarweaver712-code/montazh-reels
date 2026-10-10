@@ -6,8 +6,13 @@
 
   {
     "trim": [6.2, 63.6],     # откуда и докуда дубль; границы сами уезжают в тишину
-    "cut_pauses": false       # паузы внутри пока не режем — дубль идёт сплошняком
+    "cut_pauses": false,      # паузы внутри пока не режем — дубль идёт сплошняком
+    "format": "16:9"          # формат ролика (formats.py); по умолчанию — из брифа или 9:16
   }
+
+Если пропорции исходника и формата расходятся (горизонтальный урок под Reels), кадр
+перекадрируется по лицу (reframe.py), а не режется по центру. Если у ролика есть бриф
+(work/<имя>/brief.json, его пишет студия), цвет берётся из стиля брифа.
 
   .venv/bin/python scripts/prep.py input/IMG_3279.MOV
 
@@ -22,9 +27,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import formats
+import styles
 from common import (WORK_DIR, detect_silence, ffmpeg_bin, load_preset, measure_noise_floor, probe,
                     snap_segments)
 from cut import remap_words
+from reframe import reframe
 from render import render
 from transcribe import run_transcribe
 
@@ -134,6 +142,16 @@ def load_edit(stem: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def pick_format(stem: str, edit: dict) -> str:
+    """Формат дубля: явный в edit.json → первый из брифа → 9:16."""
+    if edit.get("format"):
+        return formats.get(edit["format"])["id"]
+    brief = styles.load_brief(stem)
+    if brief.get("exists"):
+        return formats.get(brief["formats"][0])["id"]
+    return formats.DEFAULT
+
+
 def refresh_words(video: Path, out_dir: Path, edit: dict) -> None:
     """Слова на шкале уже собранного дубля — по его сегментам, без пересборки видео."""
     meta_path = out_dir / "aroll.json"
@@ -171,7 +189,16 @@ def main():
     edit = load_edit(stem)
     info = probe(video)
     fps = preset["video"].get("fps", 30)
-    print(f"\n▶ {video.name}: {info['width']}×{info['height']}, {info['duration']:.1f} с")
+    try:
+        fmt = pick_format(stem, edit)
+        brief = styles.load_brief(stem)
+        if brief.get("exists"):
+            style = styles.effective(styles.load_style(brief["style"]), brief.get("overrides"))
+            preset["look"] = styles.look(style)
+    except (ValueError, styles.StyleError) as error:
+        sys.exit(f"✗ {error}")
+    preset["video"]["width"], preset["video"]["height"] = formats.size(fmt)
+    print(f"\n▶ {video.name}: {info['width']}×{info['height']}, {info['duration']:.1f} с → формат {fmt}")
 
     data = run_transcribe(video)
     words = data["words"]
@@ -205,7 +232,12 @@ def main():
         print(f"  → уровень шума в паузах: {noise:.0f} дБ")
 
     out = out_dir / "aroll.mp4"
-    render(video, out, segments, preset, ass_path=None, noise_floor=noise)
+    try:
+        # исходник других пропорций — кадр по лицу; звук и тайминги у него те же
+        picture = reframe(video, fmt)
+    except RuntimeError as error:
+        sys.exit(f"✗ {error}")
+    render(picture, out, segments, preset, ass_path=None, noise_floor=noise)
 
     bleeps = []
     for a, b in edit.get("bleep") or []:
@@ -222,7 +254,7 @@ def main():
     (out_dir / "aroll.json").write_text(json.dumps({
         "source": str(video), "segments": segments, "fps": fps,
         "duration": sum(e - s for s, e in segments),
-        "look": preset.get("look"),
+        "look": preset.get("look"), "format": fmt,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  ✓ готово за {time.time() - started:.0f} с → {out.relative_to(WORK_DIR.parent)}")
 

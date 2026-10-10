@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" ] && \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$CLAUDE_PROJECT_DIR/scripts/studio_up.py\" || true",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python scripts/*)",
+      "Bash(npx --yes hyperframes@0.8.141 *)",
+      "Bash(ffprobe *)",
+      "Bash(ls *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ]
+  }
+}

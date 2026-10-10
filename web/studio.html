@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Монтажная</title>
+<style>
+/* Шрифты берутся из presets/fonts через сервер: студия работает и без интернета */
+@font-face { font-family: "Unbounded"; src: url("/api/font?file=Unbounded-ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "JB Mono"; src: url("/api/font?file=JetBrainsMono.ttf") format("truetype"); font-weight: 100 800; font-display: swap; }
+
+/* Световой стол: холодная подсветка, чернила, красный огонёк записи. Тиры стилей —
+   цвета настроечной таблицы (жёлтый, циан, маджента, синий), приглушённые до читаемости. */
+:root {
+  --table: #E6EAEE;
+  --sheet: #FBFCFD;
+  --ink: #14171C;
+  --mute: #5C6572;
+  --rule: #CCD2D9;
+  --soft: #EEF1F4;
+  --rec: #D92E28;
+  --rec-ink: #FFFFFF;
+  --ok: #1F8A4C;
+  --t-mainstream: #B49A00;
+  --t-rising: #008C99;
+  --t-niche: #A2178E;
+  --t-contrarian: #2F43C9;
+  --display: "Unbounded", "Arial Black", sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JB Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --table: #0E1115; --sheet: #161A20; --ink: #E6EAF0; --mute: #8D97A4; --rule: #262C35;
+    --soft: #1C2128; --rec: #FF4A3F; --ok: #3DD47F;
+    --t-mainstream: #E3C629; --t-rising: #2BC3CF; --t-niche: #E05ACB; --t-contrarian: #7D8CFF;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --table: #0E1115; --sheet: #161A20; --ink: #E6EAF0; --mute: #8D97A4; --rule: #262C35;
+  --soft: #1C2128; --rec: #FF4A3F; --ok: #3DD47F;
+  --t-mainstream: #E3C629; --t-rising: #2BC3CF; --t-niche: #E05ACB; --t-contrarian: #7D8CFF;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--table); color: var(--ink); font: 14px/1.45 var(--body); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* полоса настроечной таблицы — единственный «декор» */
+.bars { height: 4px; display: grid; grid-template-columns: repeat(7, 1fr); }
+.bars i:nth-child(1) { background: #BFBFBF; } .bars i:nth-child(2) { background: #BFBF00; }
+.bars i:nth-child(3) { background: #00BFBF; } .bars i:nth-child(4) { background: #00BF00; }
+.bars i:nth-child(5) { background: #BF00BF; } .bars i:nth-child(6) { background: #BF0000; }
+.bars i:nth-child(7) { background: #0000BF; }
+
+header.top { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--rule); background: var(--sheet); flex-wrap: wrap; }
+.wordmark { font-family: var(--display); font-weight: 800; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; }
+.wordmark b { color: var(--rec); }
+.tc { font-family: var(--mono); font-size: 13px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.grow { flex: 1; }
+.top a { color: var(--mute); text-decoration: none; font-size: 13px; }
+.top a:hover { color: var(--ink); }
+
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 2px; background: var(--soft); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: 999px; cursor: pointer; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+.seg button[aria-pressed="true"] { background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,0.12); font-weight: 600; }
+.seg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mute); display: inline-block; }
+.dot.on { background: var(--ok); }
+.dot.rec { background: var(--rec); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rec) 25%, transparent); }
+
+main.desk { display: grid; grid-template-columns: 290px minmax(0, 1fr) 420px; gap: 1px; background: var(--rule); min-height: calc(100vh - 4px - 53px - 46px); }
+main.desk > section { background: var(--table); padding: 18px 18px 28px; min-width: 0; }
+@media (max-width: 1260px) { main.desk { grid-template-columns: 270px minmax(0, 1fr); } #brain { grid-column: 1 / -1; } }
+@media (max-width: 780px) { main.desk { grid-template-columns: 1fr; } header.top { padding: 10px 16px; } main.desk > section { padding: 16px; } }
+
+h2 { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mute); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+h2 .count { color: var(--ink); }
+.block { margin-bottom: 22px; }
+.hint { color: var(--mute); font-size: 12.5px; }
+
+/* ролики: каждый — плёнка из шести кадров-этапов */
+.drop { border: 1.5px dashed var(--rule); border-radius: var(--radius); padding: 12px; text-align: center; color: var(--mute); font-size: 12.5px; margin-bottom: 12px; cursor: pointer; background: var(--sheet); }
+.drop.over { border-color: var(--rec); color: var(--ink); }
+.reels { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.reel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 9px 11px; cursor: pointer; display: grid; gap: 6px; }
+.reel:hover { border-color: var(--mute); }
+.reel[aria-current="true"] { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--rec); }
+.reel-head { display: flex; align-items: baseline; gap: 8px; }
+.reel-name { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+.reel-meta { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--mute); }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; background: var(--ink); padding: 3px 3px; border-radius: 3px; position: relative; }
+.strip span { height: 16px; border-radius: 2px; background: color-mix(in srgb, var(--sheet) 16%, var(--ink)); font: 700 9px/16px var(--mono); text-align: center; color: color-mix(in srgb, var(--sheet) 45%, var(--ink)); }
+.strip span.done { background: var(--sheet); color: var(--ink); }
+.strip span.out { background: var(--rec); color: var(--rec-ink); }
+.reel-brief { font-size: 11.5px; color: var(--mute); }
+
+/* середина: плеер, выхлоп, стили */
+.subject { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.subject h1 { font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: 0.01em; margin: 0; }
+.stage { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+.screen { background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 9 / 16; max-height: 62vh; display: grid; place-items: center; }
+.screen.wide { aspect-ratio: 16 / 9; }
+.screen video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.screen .empty { color: #8a919c; font-size: 12.5px; padding: 20px; text-align: center; }
+.cuts { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.cuts li { display: flex; align-items: center; gap: 8px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 8px; font-size: 12.5px; }
+.cuts li[aria-current="true"] { border-color: var(--ink); }
+.cuts .nm { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: pointer; }
+.cuts .sz { font-family: var(--mono); font-size: 11px; color: var(--mute); }
+.icon { border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 12px; color: var(--mute); }
+.icon:hover { color: var(--ink); border-color: var(--mute); }
+
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 14px 16px; }
+.goals { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px 16px; }
+.goal label { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.goal output { font-family: var(--mono); font-weight: 700; }
+input[type="range"] { width: 100%; accent-color: var(--rec); }
+
+.formats { display: flex; gap: 8px; flex-wrap: wrap; }
+.fmt { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; cursor: pointer; background: var(--soft); font-size: 12.5px; user-select: none; }
+.fmt[aria-pressed="true"] { background: var(--sheet); border-color: var(--ink); font-weight: 600; }
+.fmt .frame { border: 1.5px solid currentColor; border-radius: 2px; display: inline-block; }
+.fmt .where { color: var(--mute); font-weight: 400; }
+
+/* Подпись: спектр смелости. Слева мейнстрим, справа антитренд; точки — стили (чем крупнее,
+   тем лучше под цели); красная вертикаль — плейхед смелости, его можно тащить. */
+.spectrum { position: relative; height: 150px; border-radius: 8px; overflow: hidden; border: 1px solid var(--rule); background: var(--soft); touch-action: none; cursor: ew-resize; }
+.zone { position: absolute; top: 0; bottom: 0; }
+.zone b { position: absolute; left: 8px; bottom: 6px; font: 700 10px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.sdot { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid var(--sheet); cursor: pointer; padding: 0; transition: width .25s, height .25s, opacity .25s; }
+.sdot[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sdot .tip { position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); background: var(--ink); color: var(--sheet); font: 600 11px var(--body); padding: 3px 7px; border-radius: 5px; white-space: nowrap; opacity: 0; pointer-events: none; }
+.sdot:hover .tip, .sdot:focus-visible .tip { opacity: 1; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--rec); pointer-events: none; }
+.playhead::before { content: ""; position: absolute; top: 0; left: -6px; border: 7px solid transparent; border-top-color: var(--rec); }
+.playhead span { position: absolute; top: 4px; left: 8px; font: 700 10.5px var(--mono); color: var(--rec); white-space: nowrap; }
+
+.styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 12px; }
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 13px; display: grid; gap: 7px; align-content: start; }
+.card.main { border-color: var(--ink); box-shadow: inset 0 3px 0 var(--rec); }
+.card-head { display: flex; gap: 8px; align-items: baseline; }
+.card h3 { font-family: var(--display); font-weight: 800; font-size: 14px; line-height: 1.2; margin: 0; flex: 1; }
+.score { font: 700 12px var(--mono); }
+.tier { font: 700 10px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.card p { margin: 0; font-size: 12.5px; }
+.card .risk { color: var(--mute); }
+.fit { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.fit div { font: 10px var(--mono); color: var(--mute); }
+.fit i { display: block; height: 4px; border-radius: 2px; background: var(--rule); margin-top: 2px; }
+.fit i b { display: block; height: 100%; border-radius: 2px; background: var(--ink); }
+.card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--rule); background: var(--soft); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+details.more summary { cursor: pointer; font-size: 12px; color: var(--mute); }
+details.more p { margin-top: 6px; }
+
+textarea { width: 100%; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); padding: 8px 10px; resize: vertical; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.btn { border: 1px solid var(--ink); background: var(--sheet); border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
+.btn:hover { background: var(--soft); }
+.btn.rec { background: var(--rec); border-color: var(--rec); color: var(--rec-ink); }
+.btn.rec:hover { filter: brightness(1.06); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.say { font-size: 12.5px; color: var(--mute); }
+.say.err { color: var(--rec); }
+
+/* мозг */
+#brain { display: flex; flex-direction: column; gap: 10px; }
+.brain-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.brain-head select { border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); padding: 4px 8px; max-width: 100%; }
+.log { flex: 1; min-height: 320px; max-height: calc(100vh - 290px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+@media (max-width: 1260px) { .log { max-height: 520px; } }
+.msg { border-radius: var(--radius); padding: 10px 12px; font-size: 13.5px; }
+.msg.user { background: var(--ink); color: var(--sheet); align-self: flex-end; max-width: 88%; white-space: pre-wrap; }
+.msg.bot { background: var(--sheet); border: 1px solid var(--rule); }
+.msg.bot p { margin: 0 0 8px; } .msg.bot p:last-child { margin-bottom: 0; }
+.msg.bot code { font-family: var(--mono); font-size: 12px; background: var(--soft); padding: 1px 4px; border-radius: 4px; }
+.msg.bot ul { margin: 0 0 8px 18px; padding: 0; }
+.who { font: 700 10.5px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+.tools { margin: 6px 0; }
+.tools summary { cursor: pointer; font: 12px var(--mono); color: var(--mute); }
+.tool { font: 11.5px/1.4 var(--mono); color: var(--mute); padding: 2px 0 2px 10px; border-left: 2px solid var(--rule); margin: 3px 0; word-break: break-word; }
+.tool.ok { border-left-color: var(--ok); } .tool.bad { border-left-color: var(--rec); color: var(--rec); }
+.note-err { color: var(--rec); font-size: 12.5px; }
+.result { font: 11px var(--mono); color: var(--mute); margin-top: 6px; }
+.composer { display: grid; gap: 8px; }
+.composer textarea { min-height: 70px; }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; }
+.empty-chat { color: var(--mute); font-size: 13px; padding: 14px; border: 1px dashed var(--rule); border-radius: var(--radius); }
+
+/* очередь внизу */
+footer.queue { position: sticky; bottom: 0; background: var(--sheet); border-top: 1px solid var(--rule); padding: 10px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 12.5px; z-index: 5; }
+footer.queue .lbl { font: 700 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--mute); }
+.job { font-family: var(--mono); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+.job.cur { color: var(--ink); font-weight: 700; }
+.job.fail { color: var(--rec); }
+.pend { display: inline-flex; gap: 4px; align-items: center; border: 1px solid var(--rule); border-radius: 999px; padding: 1px 4px 1px 9px; font: 11.5px var(--mono); }
+.pend button { border: 0; background: none; cursor: pointer; color: var(--mute); padding: 0 4px; }
+.lastline { color: var(--mute); font-family: var(--mono); font-size: 11.5px; max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<header class="top">
+  <div class="wordmark">Монтаж<b>ная</b></div>
+  <span class="tc" id="clock">00:00:00:00</span>
+  <div class="grow"></div>
+  <div class="seg" role="group" aria-label="Мозг монтажа" id="engines">
+    <button type="button" data-engine="claude" aria-pressed="false"><span class="dot"></span>Claude</button>
+    <button type="button" data-engine="codex" aria-pressed="false"><span class="dot"></span>Codex</button>
+  </div>
+  <div class="seg" role="group" aria-label="Доступ мозга" id="modes">
+    <button type="button" data-mode="safe" aria-pressed="true" title="Правка файлов и скрипты проекта. Удалять, ставить пакеты и пушить мозг не сможет.">Безопасно</button>
+    <button type="button" data-mode="full" aria-pressed="false" title="Без ограничений: мозг делает всё сам, ничего не спрашивая.">Полный доступ</button>
+  </div>
+  <a href="/quick">Быстрая панель →</a>
+</header>
+
+<main class="desk">
+  <section aria-labelledby="h-reels">
+    <h2 id="h-reels">Ролики <span class="count" id="reel-count"></span></h2>
+    <div class="drop" id="drop" tabindex="0" role="button">Перетащи видео сюда или нажми — оно ляжет в <b>input/</b></div>
+    <input type="file" id="file" accept="video/*" multiple hidden>
+    <ul class="reels" id="reels"></ul>
+    <p class="hint" style="margin-top: 12px;">Кадры плёнки — этапы: <b>Т</b>екст, <b>Д</b>убль, <b>Л</b>ицо, <b>М</b>аска, <b>Г</b>рафика, <b>Р</b>олик.</p>
+  </section>
+
+  <section aria-labelledby="subject-title" id="center">
+    <div class="subject">
+      <h1 id="subject-title">Выбери ролик</h1>
+      <span class="tc" id="subject-meta"></span>
+    </div>
+
+    <div class="stage">
+      <div>
+        <div class="screen" id="screen"><div class="empty">Здесь будет готовый ролик или исходник</div></div>
+        <ul class="cuts" id="cuts"></ul>
+      </div>
+
+      <div>
+        <div class="block panel">
+          <h2>Какой выхлоп нужен</h2>
+          <div class="goals" id="goals"></div>
+        </div>
+
+        <div class="block">
+          <h2>Формат</h2>
+          <div class="formats" id="formats"></div>
+        </div>
+
+        <div class="block">
+          <h2>Спектр стилей</h2>
+          <div class="spectrum" id="spectrum" aria-label="Смелость выбора стиля"></div>
+          <p class="hint" style="margin: 6px 0 0">Тащи красную линию: левее — проверенное рынком, правее — смелее. Чем крупнее точка, тем лучше стиль под твои цели; клик по точке делает стиль основным.</p>
+          <div class="styles" id="styles"></div>
+          <button type="button" class="chip" id="all-styles" style="margin-top:10px">Показать все стили</button>
+        </div>
+
+        <div class="block">
+          <h2>Заметки режиссёру</h2>
+          <textarea id="notes" rows="2" placeholder="Например: хук — «90% учеников теряют баллы здесь», в конце кодовое слово «экономика»"></textarea>
+          <div class="actions">
+            <button type="button" class="btn rec" id="go-brain">Смонтировать с мозгом</button>
+            <button type="button" class="btn" id="go-fast" title="Рез, субтитры и цвет по стилю — без графики, за пару минут">Быстрый монтаж в стиле</button>
+            <button type="button" class="btn" id="save-brief">Сохранить бриф</button>
+            <span class="say" id="say" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="brain" aria-labelledby="h-brain">
+    <h2 id="h-brain">Мозг <span class="count" id="brain-state"></span></h2>
+    <div class="brain-head">
+      <select id="threads" aria-label="Разговор"></select>
+      <button type="button" class="icon" id="new-thread">Новый разговор</button>
+      <button type="button" class="icon" id="stop" hidden>Остановить</button>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="composer">
+      <div class="quick" id="quick">
+        <button type="button" class="chip" data-q="Смонтируй новые из input/ по их брифам. Тяжёлое — через очередь.">Новые из input/</button>
+        <button type="button" class="chip" data-q="Сделай варианты для A/B по брифу выбранного ролика: каждый стиль — отдельным проектом, рендер через очередь.">Варианты A/B</button>
+        <button type="button" class="chip" data-q="Посмотри последний выпуск выбранного ролика по кадрам и скажи, что улучшить: темп, графика, субтитры, звук.">Разбор выпуска</button>
+      </div>
+      <textarea id="input" placeholder="Напиши мозгу: «убери карточку на 12-й секунде», «сделай горизонталь для YouTube»…"></textarea>
+      <div class="actions" style="margin-top:0">
+        <button type="button" class="btn rec" id="send">Отправить</button>
+        <span class="say" id="brain-say" role="status"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="queue" aria-label="Очередь тяжёлых задач">
+  <span class="lbl">Очередь</span>
+  <span id="q-state" class="job">—</span>
+  <span id="q-line" class="lastline"></span>
+  <span class="grow"></span>
+  <span id="q-pending"></span>
+  <span id="q-done" class="job"></span>
+</footer>
+
+<script>
+"use strict";
+const TOKEN = window.STUDIO_TOKEN || "";
+const $ = (id) => document.getElementById(id);
+const GOAL_NAMES = { reach: "Охват", retention: "Удержание", trust: "Доверие", saves: "Сохранения", sales: "Продажи" };
+const TIER_NAMES = { mainstream: "мейнстрим", rising: "на подъёме", niche: "ниша", contrarian: "антитренд" };
+const TIER_ORDER = ["mainstream", "rising", "niche", "contrarian"];
+const TIER_X = { mainstream: [0.02, 0.25], rising: [0.25, 0.5], niche: [0.5, 0.75], contrarian: [0.75, 0.98] };
+const FORMATS = { "9:16": [9, 16], "16:9": [16, 9], "1:1": [1, 1], "4:5": [4, 5] };
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("studio." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("studio." + k, JSON.stringify(v)); } catch { /* приватное окно — ок */ } },
+};
+
+const S = {
+  videos: [], stem: store.get("stem", null), brief: null, styles: [], showAll: false,
+  engine: store.get("engine", "claude"), mode: store.get("mode", "safe"), engines: {},
+  thread: store.get("thread", null), threads: [], es: null, live: null, playing: null,
+};
+
+async function api(path, { method = "GET", json, form } = {}) {
+  const opts = { method, headers: {} };
+  if (method !== "GET") opts.headers["X-Studio-Token"] = TOKEN;
+  if (json !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(json); }
+  if (form) opts.body = form;
+  const res = await fetch(path, opts);
+  let data = null;
+  try { data = await res.json(); } catch { data = null; }
+  if (!res.ok) throw new Error((data && (data.detail || data.error)) || `сервер ответил ${res.status}`);
+  return data;
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function tc(sec) {
+  if (sec == null) return "—";
+  const s = Math.max(0, sec), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = Math.floor(s % 60), f = Math.floor((s % 1) * 30);
+  return [h, m, x, f].map((n) => String(n).padStart(2, "0")).join(":");
+}
+function mmss(sec) { sec = Math.round(sec || 0); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
+function say(id, text, err = false) { const el = $(id); el.textContent = text; el.classList.toggle("err", err); }
+
+/* ---------- часы-таймкод: ощущение монтажки, а не админки ---------- */
+const t0 = performance.now();
+function tick() { $("clock").textContent = tc((performance.now() - t0) / 1000); requestAnimationFrame(tick); }
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) requestAnimationFrame(tick);
+
+/* ---------- ролики ---------- */
+const STEPS = [["transcribed", "Т"], ["prepped", "Д"], ["tracked", "Л"], ["cutout", "М"], ["page", "Г"]];
+function renderReels() {
+  const ul = $("reels");
+  $("reel-count").textContent = S.videos.length || "";
+  if (!S.videos.length) { ul.innerHTML = `<li class="hint">В input/ пусто. Перетащи сюда первое видео.</li>`; return; }
+  ul.innerHTML = S.videos.map((v) => {
+    const frames = STEPS.map(([k, l]) => `<span class="${v.steps[k] ? "done" : ""}" title="${esc(k)}">${l}</span>`).join("")
+      + `<span class="${v.outputs.length ? "out" : ""}" title="готовых: ${v.outputs.length}">Р</span>`;
+    const brief = v.brief.exists ? `${esc(styleName(v.brief.style))} · ${v.brief.formats.join(" ")}${v.brief.variants.length ? ` · A/B ×${v.brief.variants.length}` : ""}` : "брифа нет";
+    return `<li class="reel" tabindex="0" data-stem="${esc(v.stem)}" aria-current="${v.stem === S.stem}">
+      <div class="reel-head"><span class="reel-name">${esc(v.stem)}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
+      <div class="strip">${frames}</div>
+      <div class="reel-brief">${brief}</div></li>`;
+  }).join("");
+}
+$("reels").addEventListener("click", (e) => { const li = e.target.closest(".reel"); if (li) selectVideo(li.dataset.stem); });
+$("reels").addEventListener("keydown", (e) => { const li = e.target.closest(".reel"); if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); selectVideo(li.dataset.stem); } });
+
+function styleName(id) { const s = S.styles.find((x) => x.id === id); return s ? s.name : id; }
+function current() { return S.videos.find((v) => v.stem === S.stem) || null; }
+
+async function selectVideo(stem) {
+  S.stem = stem; store.set("stem", stem);
+  renderReels();
+  const v = current();
+  $("subject-title").textContent = stem;
+  $("subject-meta").textContent = v ? `${v.width}×${v.height} · ${tc(v.duration)} · ${v.size_mb} МБ` : "";
+  try {
+    const { brief } = await api(`/api/studio/brief/${encodeURIComponent(stem)}`);
+    S.brief = brief;
+  } catch (e) { say("say", e.message, true); }
+  fillBrief();
+  renderCuts(true);
+  refreshStyles();
+}
+
+/* ---------- выпуски и плеер ---------- */
+function renderCuts(autoplay) {
+  const v = current(), list = $("cuts");
+  if (!v) { list.innerHTML = ""; return; }
+  const items = v.outputs.map((o) => ({ folder: "output", ...o }));
+  items.push({ folder: "input", name: v.name, size_mb: v.size_mb, source: true });
+  if (autoplay || !S.playing || !items.some((i) => i.name === S.playing.name)) play(items[0]);
+  list.innerHTML = items.map((o) => `<li aria-current="${S.playing && S.playing.name === o.name}">
+      <span class="nm" data-play="${esc(o.folder)}|${esc(o.name)}" title="${esc(o.name)}">${o.source ? "исходник · " : ""}${esc(o.name)}</span>
+      <span class="sz">${o.size_mb} МБ</span>
+      ${o.sheet ? `<a class="icon" href="/api/studio/file/output/${encodeURIComponent(o.sheet)}" target="_blank" title="Сетка кадров">кадры</a>` : ""}
+      <button type="button" class="icon" data-reveal="${esc(o.folder)}|${esc(o.name)}" title="Показать в Finder">Finder</button></li>`).join("");
+}
+function play(item) {
+  if (!item) return;
+  S.playing = item;
+  const screen = $("screen");
+  const v = current();
+  const wide = /16x9/.test(item.name) || (item.source && v && v.width > v.height);
+  screen.classList.toggle("wide", !!wide);
+  screen.innerHTML = `<video controls playsinline preload="metadata" src="/api/studio/file/${item.folder}/${encodeURIComponent(item.name)}"></video>`;
+}
+$("cuts").addEventListener("click", async (e) => {
+  const p = e.target.closest("[data-play]");
+  if (p) { const [folder, name] = p.dataset.play.split("|"); play({ folder, name, source: folder === "input" }); renderCuts(false); }
+  const r = e.target.closest("[data-reveal]");
+  if (r) { const [folder, name] = r.dataset.reveal.split("|"); try { await api("/api/studio/reveal", { method: "POST", json: { folder, name } }); } catch (err) { say("say", err.message, true); } }
+});
+
+/* ---------- бриф: цели, формат, стиль ---------- */
+function fillBrief() {
+  S.brief = S.brief || { goals: {}, formats: ["9:16"], variants: [], boldness: 0.3, notes: "", style: "viral-behind", overrides: {} };
+  const b = S.brief;
+  $("goals").innerHTML = Object.entries(GOAL_NAMES).map(([k, name]) => `<div class="goal">
+      <label for="g-${k}">${name} <output id="o-${k}">${b.goals[k] ?? 0}</output></label>
+      <input type="range" id="g-${k}" min="0" max="5" step="1" value="${b.goals[k] ?? 0}" data-goal="${k}"></div>`).join("");
+  $("formats").innerHTML = Object.entries(FORMATS).map(([f, [w, h]]) => {
+    const k = 14 / Math.max(w, h);
+    return `<button type="button" class="fmt" data-fmt="${f}" aria-pressed="${b.formats.includes(f)}">
+      <span class="frame" style="width:${Math.round(w * k)}px;height:${Math.round(h * k)}px"></span>${f}
+      <span class="where">${{ "9:16": "Reels, Shorts", "16:9": "YouTube", "1:1": "лента", "4:5": "лента IG" }[f]}</span></button>`;
+  }).join("");
+  $("notes").value = b.notes || "";
+}
+$("goals").addEventListener("input", (e) => {
+  const k = e.target.dataset.goal; if (!k) return;
+  $(`o-${k}`).textContent = e.target.value;
+  S.brief.goals[k] = Number(e.target.value);
+  refreshStyles();
+});
+$("formats").addEventListener("click", (e) => {
+  const b = e.target.closest(".fmt"); if (!b || !S.brief) return;
+  const f = b.dataset.fmt, on = S.brief.formats.includes(f);
+  if (on && S.brief.formats.length === 1) { say("say", "Хотя бы один формат должен остаться"); return; }
+  S.brief.formats = on ? S.brief.formats.filter((x) => x !== f) : [...S.brief.formats, f];
+  b.setAttribute("aria-pressed", String(!on));
+  refreshStyles();
+});
+
+let styleTimer = null;
+function refreshStyles() {
+  clearTimeout(styleTimer);
+  styleTimer = setTimeout(async () => {
+    const b = S.brief; if (!b) return;
+    const goals = Object.entries(b.goals).map(([k, v]) => `${k}=${v}`).join(",");
+    try {
+      const { styles } = await api(`/api/studio/styles?goals=${encodeURIComponent(goals)}&bold=${b.boldness}&format=${encodeURIComponent(b.formats[0])}`);
+      S.styles = styles;
+      renderSpectrum(); renderStyles(); renderReels();
+    } catch (e) { say("say", e.message, true); }
+  }, 120);
+}
+
+function hash(s) { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+function renderSpectrum() {
+  const box = $("spectrum"), b = S.brief;
+  const zones = TIER_ORDER.map((t, i) => `<div class="zone" style="left:${i * 25}%;width:25%;background:color-mix(in srgb, var(--t-${t}) ${8 + i * 2}%, transparent)"><b style="color:var(--t-${t})">${TIER_NAMES[t]}</b></div>`).join("");
+  const top = Math.max(...S.styles.map((s) => s.score), 1);
+  const dots = S.styles.map((s) => {
+    const [a, z] = TIER_X[s.tier], h = hash(s.id);
+    const x = a + (z - a) * (0.15 + (h % 1000) / 1000 * 0.7);
+    const y = 0.3 + ((h >>> 10) % 1000) / 1000 * 0.45;
+    const size = 10 + 22 * Math.pow(s.score / top, 3);
+    const main = b && b.style === s.id;
+    return `<button type="button" class="sdot" data-style="${esc(s.id)}" aria-pressed="${main}" aria-label="${esc(s.name)}, балл ${s.score}"
+      style="left:${(x * 100).toFixed(1)}%;top:${(y * 100).toFixed(1)}%;width:${size.toFixed(0)}px;height:${size.toFixed(0)}px;background:var(--t-${s.tier});opacity:${(0.35 + 0.65 * s.score / top).toFixed(2)}">
+      <span class="tip">${esc(s.name)} · ${s.score}</span></button>`;
+  }).join("");
+  const bold = b ? b.boldness : 0.3;
+  box.innerHTML = zones + dots + `<div class="playhead" style="left:calc(${(bold * 100).toFixed(1)}% - 1px)"><span>смелость ${Math.round(bold * 100)}%</span></div>`;
+}
+function setBoldFromEvent(e) {
+  const r = $("spectrum").getBoundingClientRect();
+  S.brief.boldness = Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * 20) / 20;
+  const ph = $("spectrum").querySelector(".playhead");
+  if (ph) { ph.style.left = `calc(${S.brief.boldness * 100}% - 1px)`; ph.querySelector("span").textContent = `смелость ${Math.round(S.brief.boldness * 100)}%`; }
+}
+$("spectrum").addEventListener("pointerdown", (e) => {
+  if (!S.brief) return;
+  if (e.target.closest(".sdot")) { pickMain(e.target.closest(".sdot").dataset.style); return; }
+  $("spectrum").setPointerCapture(e.pointerId); setBoldFromEvent(e);
+  const move = (ev) => setBoldFromEvent(ev);
+  const up = () => { $("spectrum").removeEventListener("pointermove", move); refreshStyles(); };
+  $("spectrum").addEventListener("pointermove", move);
+  $("spectrum").addEventListener("pointerup", up, { once: true });
+});
+$("spectrum").tabIndex = 0;
+$("spectrum").addEventListener("keydown", (e) => {
+  if (!S.brief || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  e.preventDefault();
+  S.brief.boldness = Math.min(1, Math.max(0, S.brief.boldness + (e.key === "ArrowRight" ? 0.05 : -0.05)));
+  refreshStyles();
+});
+
+function renderStyles() {
+  const b = S.brief; if (!b) return;
+  const list = S.showAll ? S.styles : S.styles.slice(0, 4);
+  const ensure = [b.style, ...b.variants].filter((id) => !list.some((s) => s.id === id)).map((id) => S.styles.find((s) => s.id === id)).filter(Boolean);
+  $("styles").innerHTML = [...list, ...ensure].map((s) => {
+    const fit = Object.entries(GOAL_NAMES).map(([k, n]) => `<div>${n.slice(0, 4)}<i><b style="width:${s.fit[k] * 20}%"></b></i></div>`).join("");
+    const main = b.style === s.id, ab = b.variants.includes(s.id);
+    const fmtWarn = b.formats.some((f) => !s.formats.includes(f)) ? `<p class="risk">Под ${b.formats.filter((f) => !s.formats.includes(f)).join(", ")} стиль не рассчитан — выйдет, но слабее.</p>` : "";
+    return `<article class="card${main ? " main" : ""}">
+      <div class="card-head"><h3>${esc(s.name)}</h3><span class="score">${s.score}</span></div>
+      <span class="tier" style="color:var(--t-${s.tier})">${TIER_NAMES[s.tier]}</span>
+      <p>${esc(s.summary)}</p>
+      <div class="fit">${fit}</div>
+      ${fmtWarn}
+      <details class="more"><summary>Как выглядит и чем рискуем</summary>
+        <p>${esc(s.looks_like)}</p><p>${esc(s.why_works)}</p><p class="risk">Риск: ${esc(s.risks)}</p>
+        <p class="risk">Откуда: ${esc(s.references.join(", "))}</p>
+        ${s.needs.length ? `<p class="risk">Нужно: ${esc(s.needs.join("; "))}</p>` : ""}</details>
+      <div class="card-actions">
+        <button type="button" class="chip" data-main="${esc(s.id)}" aria-pressed="${main}">${main ? "Основной стиль" : "Сделать основным"}</button>
+        <button type="button" class="chip" data-ab="${esc(s.id)}" aria-pressed="${ab}" ${main ? "disabled" : ""}>${ab ? "В A/B ✓" : "Добавить в A/B"}</button>
+      </div></article>`;
+  }).join("");
+  $("all-styles").textContent = S.showAll ? "Только лучшие под цель" : `Показать все стили (${S.styles.length})`;
+}
+function pickMain(id) {
+  S.brief.style = id; S.brief.variants = S.brief.variants.filter((v) => v !== id);
+  renderSpectrum(); renderStyles();
+}
+$("styles").addEventListener("click", (e) => {
+  const m = e.target.closest("[data-main]"); if (m) pickMain(m.dataset.main);
+  const a = e.target.closest("[data-ab]");
+  if (a && !a.disabled) {
+    const id = a.dataset.ab, on = S.brief.variants.includes(id);
+    S.brief.variants = on ? S.brief.variants.filter((v) => v !== id) : [...S.brief.variants, id];
+    renderStyles();
+  }
+});
+$("all-styles").addEventListener("click", () => { S.showAll = !S.showAll; renderStyles(); });
+
+async function saveBrief(quiet) {
+  if (!S.stem || !S.brief) throw new Error("Сначала выбери ролик слева");
+  S.brief.notes = $("notes").value;
+  const { brief } = await api(`/api/studio/brief/${encodeURIComponent(S.stem)}`, { method: "POST", json: S.brief });
+  S.brief = brief;
+  if (!quiet) say("say", "Бриф сохранён — его прочтёт и мозг, и сборка");
+  poll();
+  return brief;
+}
+$("save-brief").addEventListener("click", async () => { try { await saveBrief(); } catch (e) { say("say", e.message, true); } });
+
+$("go-fast").addEventListener("click", async () => {
+  try {
+    const b = await saveBrief(true);
+    for (const f of b.formats) await api("/api/studio/fast", { method: "POST", json: { stem: S.stem, style: b.style, format: f } });
+    say("say", `В очереди: быстрый монтаж «${styleName(b.style)}» × ${b.formats.length}. Готовое появится в списке выпусков.`);
+    poll();
+  } catch (e) { say("say", e.message, true); }
+});
+
+$("go-brain").addEventListener("click", async () => {
+  try {
+    const b = await saveBrief(true);
+    const variants = b.variants.length ? ` Плюс варианты для A/B: ${b.variants.map(styleName).join(", ")} — каждый отдельным проектом (compose/render_reel --variant).` : "";
+    const text = `Смонтируй ${S.stem} по брифу (work/${S.stem}/brief.json): стиль «${styleName(b.style)}», форматы ${b.formats.join(", ")}.${variants} Тяжёлое — через очередь. В конце коротко отчитайся: что где на экране, что спорно, как откатить.`;
+    if (!S.thread || threadEngine() !== S.engine) await newThread(`${S.stem}: монтаж`);
+    await send(text);
+  } catch (e) { say("say", e.message, true); }
+});
+
+/* ---------- мозг ---------- */
+function threadEngine() { const t = S.threads.find((x) => x.id === S.thread); return t ? t.engine : null; }
+function setEngine(name) {
+  S.engine = name; store.set("engine", name);
+  document.querySelectorAll("#engines button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.engine === name)));
+}
+function setMode(mode) {
+  S.mode = mode; store.set("mode", mode);
+  document.querySelectorAll("#modes button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+}
+$("engines").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && !b.disabled) setEngine(b.dataset.engine); });
+$("modes").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setMode(b.dataset.mode); });
+
+async function loadEngines() {
+  try {
+    const { engines } = await api("/api/brain/engines");
+    S.engines = engines;
+    document.querySelectorAll("#engines button").forEach((b) => {
+      const info = engines[b.dataset.engine] || {};
+      b.disabled = !info.available;
+      b.title = info.available ? `${info.version || ""}` : "не установлен на этой машине";
+      b.querySelector(".dot").classList.toggle("on", !!info.available);
+    });
+    if (!(engines[S.engine] || {}).available) {
+      const other = Object.keys(engines).find((k) => engines[k].available);
+      if (other) setEngine(other);
+    } else setEngine(S.engine);
+  } catch (e) { say("brain-say", e.message, true); }
+}
+
+async function loadThreads(selectId) {
+  const { threads } = await api("/api/brain/threads");
+  S.threads = threads;
+  if (selectId) S.thread = selectId;
+  if (S.thread && !threads.some((t) => t.id === S.thread)) S.thread = null;
+  if (!S.thread && threads.length) S.thread = threads[0].id;
+  store.set("thread", S.thread);
+  $("threads").innerHTML = threads.length ? threads.map((t) => `<option value="${t.id}" ${t.id === S.thread ? "selected" : ""}>${t.engine === "codex" ? "Codex" : "Claude"} · ${esc(t.title)}</option>`).join("")
+    : `<option value="">Разговоров пока нет</option>`;
+  if (S.thread) await openThread(S.thread); else renderLog([]);
+}
+$("threads").addEventListener("change", (e) => { if (e.target.value) openThread(e.target.value); });
+
+async function newThread(title) {
+  const t = await api("/api/brain/threads", { method: "POST", json: { engine: S.engine, stem: S.stem, title: title || "" } });
+  await loadThreads(t.id);
+  return t;
+}
+$("new-thread").addEventListener("click", async () => { try { await newThread(); } catch (e) { say("brain-say", e.message, true); } });
+
+function md(text) {
+  const lines = esc(text).split("\n");
+  let html = "", list = false;
+  for (const raw of lines) {
+    let l = raw.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    if (/^\s*[-•*]\s+/.test(l)) { if (!list) { html += "<ul>"; list = true; } html += `<li>${l.replace(/^\s*[-•*]\s+/, "")}</li>`; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    if (l.trim()) html += `<p>${l}</p>`;
+  }
+  return html + (list ? "</ul>" : "");
+}
+
+function botHtml(m) {
+  const evs = m.events || [];
+  const tools = evs.filter((e) => e.type === "tool");
+  const done = Object.fromEntries(evs.filter((e) => e.type === "tool_done").map((e) => [e.id, e]));
+  const parts = [];
+  const texts = evs.filter((e) => e.type === "text");
+  if (tools.length) {
+    parts.push(`<details class="tools"><summary>Действий: ${tools.length}${tools.some((t) => done[t.id] && done[t.id].error) ? " · есть ошибки" : ""}</summary>${tools.map((t) => {
+      const d = done[t.id];
+      return `<div class="tool ${d ? (d.error ? "bad" : "ok") : ""}">${esc(t.name)} · ${esc(t.summary)}${d && d.error && d.output ? `<br>${esc(d.output)}` : ""}</div>`;
+    }).join("")}</details>`);
+  }
+  texts.forEach((t) => parts.push(md(t.text)));
+  evs.filter((e) => e.type === "error" || e.type === "note").forEach((e) => parts.push(`<p class="note-err">${esc(e.text)}</p>`));
+  const res = evs.find((e) => e.type === "result");
+  if (res) {
+    const bits = [];
+    if (res.cost != null) bits.push(`≈ $${Number(res.cost).toFixed(2)} по API-ценам`);
+    if (res.denied && res.denied.length) bits.push(`не разрешено: ${res.denied.map(esc).join("; ")} — включи «Полный доступ», если так и надо`);
+    if (bits.length) parts.push(`<div class="result">${bits.join(" · ")}</div>`);
+  }
+  if (!parts.length) parts.push(`<p class="hint">Думаю…</p>`);
+  const who = m.engine === "codex" ? "Codex" : "Claude";
+  return `<div class="msg bot"><div class="who"><span class="dot ${m.live ? "rec" : "on"}"></span>${who}</div>${parts.join("")}</div>`;
+}
+
+function renderLog(messages) {
+  const log = $("log");
+  if (!messages.length) {
+    log.innerHTML = `<div class="empty-chat">Выбери ролик, настрой выхлоп и нажми «Смонтировать с мозгом» — или просто напиши сюда. Мозг работает в папке проекта по тем же правилам, что и в терминале.</div>`;
+    return;
+  }
+  log.innerHTML = messages.map((m) => m.role === "user" ? `<div class="msg user">${esc(m.text)}</div>` : botHtml(m)).join("");
+  log.scrollTop = log.scrollHeight;
+}
+
+async function openThread(id) {
+  S.thread = id; store.set("thread", id);
+  if (S.es) { S.es.close(); S.es = null; }
+  const t = await api(`/api/brain/threads/${id}`);
+  S.messages = t.messages;
+  if (t.running) {
+    const last = S.messages[S.messages.length - 1];
+    S.live = last && last.role === "assistant" ? last : { role: "assistant", engine: t.engine, events: [] };
+    if (S.live !== last) S.messages.push(S.live);
+    S.live.events = []; S.live.live = true;
+    stream(id);
+  }
+  renderLog(S.messages);
+  busy(!!t.running);
+}
+
+function busy(on) {
+  $("stop").hidden = !on; $("send").disabled = on; $("go-brain").disabled = on;
+  $("brain-state").textContent = on ? "работает" : "";
+}
+
+function stream(id) {
+  if (S.es) S.es.close();
+  const es = new EventSource(`/api/brain/stream/${id}?since=0`);
+  S.es = es;
+  es.onmessage = (msg) => {
+    const ev = JSON.parse(msg.data);
+    if (ev.type === "done" || ev.type === "idle") {
+      es.close(); S.es = null; busy(false);
+      loadThreads(id).catch(() => {}); poll();
+      return;
+    }
+    if (S.live) { S.live.events.push(ev); renderLog(S.messages); }
+  };
+  es.onerror = () => { /* сервер переподключит сам; при окончании хода придёт done */ };
+}
+
+async function send(text) {
+  if (!text.trim()) return;
+  if (!S.thread) await newThread();
+  if (threadEngine() && threadEngine() !== S.engine) {
+    await newThread();                       // у каждого мозга своя память — разговор новый
+  }
+  await api("/api/brain/send", { method: "POST", json: { thread: S.thread, text, mode: S.mode, stem: S.stem } });
+  S.messages = S.messages || [];
+  S.messages.push({ role: "user", text });
+  S.live = { role: "assistant", engine: S.engine, events: [], live: true };
+  S.messages.push(S.live);
+  renderLog(S.messages);
+  busy(true);
+  stream(S.thread);
+  say("brain-say", "");
+}
+$("send").addEventListener("click", async () => {
+  const text = $("input").value;
+  try { await send(text); $("input").value = ""; } catch (e) { say("brain-say", e.message, true); }
+});
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("send").click(); } });
+$("quick").addEventListener("click", (e) => { const b = e.target.closest("[data-q]"); if (b) { $("input").value = b.dataset.q; $("input").focus(); } });
+$("stop").addEventListener("click", async () => { try { await api(`/api/brain/stop/${S.thread}`, { method: "POST" }); } catch (e) { say("brain-say", e.message, true); } });
+
+/* ---------- очередь ---------- */
+function renderQueue(q) {
+  const cur = q.current;
+  $("q-state").className = "job" + (cur ? " cur" : "");
+  $("q-state").innerHTML = cur ? `<span class="dot rec"></span>${esc(cur.job)} · ${tc(cur.elapsed)}`
+    : q.pending.length ? (q.alive ? "ждёт своей очереди" : `<button type="button" class="icon" id="wake">Запустить очередь</button>`) : "пусто — машина свободна";
+  $("q-line").textContent = cur && cur.log.length ? cur.log[cur.log.length - 1] : "";
+  $("q-pending").innerHTML = q.pending.map((p) => `<span class="pend">${esc(p)}<button type="button" data-cancel="${esc(p)}" aria-label="Убрать ${esc(p)} из очереди">×</button></span>`).join(" ");
+  const fail = q.failed[0], ok = q.done[0];
+  const recent = [fail && (!ok || fail.at > ok.at) ? `<span class="job fail" title="${esc((fail.log || []).join("\n"))}">✗ ${esc(fail.job)}</span>` : "",
+                  ok ? `<span class="job">✓ ${esc(ok.job)}</span>` : ""].join(" ");
+  $("q-done").innerHTML = recent;
+}
+document.querySelector("footer.queue").addEventListener("click", async (e) => {
+  const c = e.target.closest("[data-cancel]");
+  try {
+    if (c) renderQueue(await api(`/api/studio/queue/cancel/${encodeURIComponent(c.dataset.cancel)}`, { method: "POST" }));
+    if (e.target.id === "wake") renderQueue(await api("/api/studio/queue/wake", { method: "POST" }));
+  } catch (err) { say("say", err.message, true); }
+});
+
+/* ---------- загрузка видео ---------- */
+const drop = $("drop");
+drop.addEventListener("click", () => $("file").click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
+$("file").addEventListener("change", (e) => upload([...e.target.files]));
+["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => document.addEventListener(t, () => drop.classList.remove("over")));
+document.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  const files = [...(e.dataTransfer.files || [])];
+  if (files.length) return upload(files);
+  const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
+  if (uri) {
+    const fd = new FormData(); fd.append("path", uri.trim().split("\n")[0]);
+    try { const r = await api("/api/import-path", { method: "POST", form: fd }); if (r.error) throw new Error(r.error); await poll(); selectVideo(r.name.replace(/\.[^.]+$/, "")); }
+    catch (err) { say("say", err.message, true); }
+  }
+});
+async function upload(files) {
+  for (const f of files) {
+    say("say", `Загружаю ${f.name}…`);
+    const fd = new FormData(); fd.append("file", f);
+    try { await api("/api/upload", { method: "POST", form: fd }); }
+    catch (e) { say("say", e.message, true); return; }
+  }
+  say("say", "Готово: видео в input/");
+  await poll();
+  selectVideo(files[0].name.replace(/\.[^.]+$/, ""));
+}
+
+/* ---------- опрос состояния ---------- */
+async function poll() {
+  try {
+    const st = await api("/api/studio/state");
+    const before = JSON.stringify(S.videos.map((v) => [v.stem, v.outputs.length, v.steps, v.brief]));
+    S.videos = st.videos;
+    if (JSON.stringify(S.videos.map((v) => [v.stem, v.outputs.length, v.steps, v.brief])) !== before) {
+      renderReels();
+      if (S.stem && current()) renderCuts(false);
+    }
+    renderQueue(st.queue);
+  } catch (e) { $("q-state").textContent = "сервер студии не отвечает — запусти его снова"; }
+}
+
+(async function start() {
+  setMode(S.mode);
+  await loadEngines();
+  await poll();
+  if (!S.stem || !current()) S.stem = S.videos[0] ? S.videos[0].stem : null;
+  if (S.stem) await selectVideo(S.stem); else { S.brief = null; renderReels(); }
+  try { await loadThreads(); } catch (e) { say("brain-say", e.message, true); }
+  setInterval(poll, 3000);
+})();
+</script>
+</body>
+</html>

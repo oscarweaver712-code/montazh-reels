@@ -1,0 +1,26 @@
+{
+ "id": "pov-story",
+ "name": "POV-сценка",
+ "tier": "rising",
+ "summary": "Ролик как сценка от первого лица: «POV: ты открываешь вариант ЕГЭ и видишь…». Обращение к зрителю, поворот в конце.",
+ "looks_like": "Сверху висит строка POV, спикер играет ситуацию, в кадр снизу «въезжают» предметы и надписи. Финал — поворот или разгадка.",
+ "why_works": "Зритель узнаёт себя в первой строке и досматривает ради развязки. 25–35 секунд — идеальная длина для досмотров.",
+ "risks": "Требует сценария под формат — из обычного объяснения POV не вырезать. Затянутый поворот убивает досмотр.",
+ "references": ["POV-сценки TikTok/Reels", "OpusClip: POV scenario, 2026"],
+ "best_for": ["охват", "досмотры", "вовлечение"],
+ "formats": ["9:16"],
+ "fit": {"reach": 4, "retention": 5, "trust": 3, "saves": 2, "sales": 2},
+ "effort": 3,
+ "needs": ["сценарий, снятый под POV"],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.3, "change_every": 3.5},
+  "camera": {"base_zoom": 1.12, "punch": "rare", "punch_level": 1.18, "push_in": true},
+  "captions": {"mode": "phrase", "case": "lower", "font": "manrope", "size": 0.95, "position": "chest",
+               "color": "#FFFFFF", "highlight": "#FFE24B", "animation": "fade", "box": false},
+  "graphics": {"density": 2, "behind_text": false, "cards": true, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "few", "music": "bed"},
+  "color": {"grade": "warm", "brightness": -6},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Первая секунда — строка «POV: …» вверху (в безопасной зоне, ниже 220 px), держится весь ролик или до поворота. Медленный наезд (push-in) через всю сценку, на повороте — резкий наезд и пауза в графике. Музыкальная подложка тихо, на 20–24 дБ под голосом."
+}

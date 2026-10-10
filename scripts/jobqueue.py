@@ -10,8 +10,15 @@
   .venv/bin/python scripts/jobqueue.py --idle 900      # живёт, пока очередь не пустует 15 мин
 
 Каждая строка вывода — событие (старт, конец, ошибка): за ним удобно следить.
+
+Обработчик на машине один: второй запуск видит замок (work/_queue/runner.lock) и тихо
+выходит. Так студия может «будить» очередь сколько угодно раз, а тяжёлый процесс всё равно
+идёт один. Что выполняется сейчас — work/_queue/current.json (его показывает студия).
 """
 import argparse
+import fcntl
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -25,9 +32,39 @@ from common import ROOT, WORK_DIR
 QUEUE = WORK_DIR / "_queue"
 
 
+LOCK = QUEUE / "runner.lock"
+CURRENT = QUEUE / "current.json"
+
+
 def next_job() -> Path | None:
     jobs = sorted(p for p in QUEUE.glob("*.sh") if p.is_file())
     return jobs[0] if jobs else None
+
+
+def take_lock():
+    """Замок обработчика: файл держится открытым, пока процесс жив. None — уже занят."""
+    QUEUE.mkdir(parents=True, exist_ok=True)
+    handle = open(LOCK, "a+")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def runner_alive() -> bool:
+    """Живёт ли обработчик очереди (замок занят другим процессом)."""
+    handle = take_lock()
+    if handle is None:
+        return True
+    fcntl.flock(handle, fcntl.LOCK_UN)
+    handle.close()
+    return False
 
 
 def main():
@@ -37,6 +74,11 @@ def main():
 
     for sub in ("logs", "done", "failed"):
         (QUEUE / sub).mkdir(parents=True, exist_ok=True)
+    lock = take_lock()
+    if lock is None:
+        print("обработчик очереди уже работает — второй не нужен", flush=True)
+        return
+    CURRENT.unlink(missing_ok=True)
     print(f"очередь: {QUEUE.relative_to(ROOT)}", flush=True)
 
     idle_since = time.time()
@@ -52,9 +94,14 @@ def main():
         running = QUEUE / "logs" / f"{job.stem}.log"
         started = time.time()
         print(f"▶ {job.stem}", flush=True)
-        with open(running, "w", encoding="utf-8") as log:
-            result = subprocess.run(["/bin/bash", str(job)], cwd=ROOT, stdout=log,
-                                    stderr=subprocess.STDOUT)
+        CURRENT.write_text(json.dumps({"job": job.stem, "started": started, "pid": os.getpid()}),
+                           encoding="utf-8")
+        try:
+            with open(running, "w", encoding="utf-8") as log:
+                result = subprocess.run(["/bin/bash", str(job)], cwd=ROOT, stdout=log,
+                                        stderr=subprocess.STDOUT)
+        finally:
+            CURRENT.unlink(missing_ok=True)
         spent = time.time() - started
         target = QUEUE / ("done" if result.returncode == 0 else "failed") / job.name
         shutil.move(str(job), target)

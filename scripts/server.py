@@ -2,9 +2,19 @@
 """Локальный веб-интерфейс монтажа. Поднимается на этой машине, наружу не смотрит.
 
   .venv/bin/python scripts/server.py     → http://127.0.0.1:8765
+
+  /        студия: ролики, бриф и стили, очередь, мозг (Claude или Codex) — web/studio.html
+  /quick   быстрая панель: рез пауз, субтитры, голос — web/index.html
+
+Сервер умеет запускать агента с правом править файлы, поэтому он закрыт от чужих
+страниц: принимает запросы только на 127.0.0.1/localhost (защита от DNS rebinding), а
+всё, что что-то меняет (POST), — только с ключом, который знает лишь наша страница.
+Чужой сайт в соседней вкладке ключ не прочтёт: страницы с другого адреса браузер
+к ответам не пускает, а заголовок с ключом без нашего разрешения не отправит.
 """
 import asyncio
 import json
+import secrets
 import shutil
 import subprocess
 import sys
@@ -12,23 +22,54 @@ import uuid
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (FONT_DIR, INPUT_DIR, OUTPUT_DIR, PRESET_DIR, ROOT,
                     ffmpeg_bin, ffprobe_bin, load_preset, probe)
+import studio_api
 
 WEB_DIR = ROOT / "web"
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
+TOKEN = secrets.token_urlsafe(24)         # новый на каждый запуск сервера
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 app = FastAPI(title="Монтаж Reels")
+app.include_router(studio_api.router)
 jobs: dict[str, dict] = {}
+
+
+@app.middleware("http")
+async def local_only(request: Request, call_next):
+    """Только эта машина и только наша страница: Host, Origin и ключ на изменения."""
+    host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]")
+    if host not in LOCAL_HOSTS:
+        return JSONResponse({"error": "студия отвечает только на 127.0.0.1"}, status_code=403)
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).hostname not in LOCAL_HOSTS:
+            return JSONResponse({"error": "запрос с чужой страницы"}, status_code=403)
+        if not secrets.compare_digest(request.headers.get("x-studio-token", ""), TOKEN):
+            return JSONResponse({"error": "нет ключа студии — обнови страницу"}, status_code=403)
+    return await call_next(request)
+
+
+def page(name: str) -> str:
+    """Страница с ключом студии: без него её запросы на изменения не пройдут."""
+    html = (WEB_DIR / name).read_text(encoding="utf-8")
+    tag = f'<script>window.STUDIO_TOKEN = "{TOKEN}";</script>'
+    return html.replace("<head>", "<head>\n  " + tag, 1)
 
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    return page("studio.html")
+
+
+@app.get("/quick", response_class=HTMLResponse)
+def quick():
+    return page("index.html")
 
 
 @app.get("/api/state")

@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import formats
 from common import WORK_DIR, ffmpeg_bin, ffprobe_bin
 
 # Пустота у края — это ровный чёрный фон страницы (Y≈16) без единой фактуры. Тёмный стол или
@@ -56,9 +57,12 @@ def edge_lumas(path: Path, width: int, height: int, step: float) -> list:
     return result
 
 
-def contact_sheet(path: Path, out: Path, step: float = 2.5) -> Path:
+def contact_sheet(path: Path, out: Path, step: float = 2.5, width: int = 1080, height: int = 1920) -> Path:
+    # плитка в пропорциях ролика: вертикаль 216×384 в 8 колонок, горизонталь 384×216 в 5
+    tile_w, tile_h = (216, int(216 * height / width) // 2 * 2) if height >= width else (384, int(384 * height / width) // 2 * 2)
+    cols = 8 if height >= width else 5
     subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-i", str(path), "-vf",
-                    f"fps=1/{step},scale=216:384,tile=8x3:padding=4:color=white",
+                    f"fps=1/{step},scale={tile_w}:{tile_h},tile={cols}x{24 // cols}:padding=4:color=white",
                     "-frames:v", "1", str(out)], check=True, capture_output=True)
     return out
 
@@ -67,6 +71,7 @@ def main():
     ap = argparse.ArgumentParser(description="Проверка готового ролика")
     ap.add_argument("video")
     ap.add_argument("--stem", help="имя исходника: длина сверяется с work/<имя>/aroll.json")
+    ap.add_argument("--format", help="ожидаемый формат (9:16, 16:9, 1:1, 4:5); по умолчанию из дубля")
     args = ap.parse_args()
 
     video = Path(args.video).resolve()
@@ -85,10 +90,15 @@ def main():
     width, height = int(v["width"]), int(v["height"])
     duration = float(info["format"]["duration"])
 
-    check((width, height) == (1080, 1920), "кадр 1080×1920", f"{width}×{height}")
-    check(v.get("r_frame_rate") in ("30/1", "30000/1000"), "30 кадров в секунду", v.get("r_frame_rate", "?"))
+    meta = None
     if args.stem:
         meta = json.loads((WORK_DIR / args.stem / "aroll.json").read_text(encoding="utf-8"))
+    # формат — из дубля (aroll.json пишет prep.py); у старых роликов его нет — это 9:16
+    fmt = args.format or (meta or {}).get("format") or formats.DEFAULT
+    want_w, want_h = formats.size(fmt)
+    check((width, height) == (want_w, want_h), f"кадр {want_w}×{want_h} ({fmt})", f"{width}×{height}")
+    check(v.get("r_frame_rate") in ("30/1", "30000/1000"), "30 кадров в секунду", v.get("r_frame_rate", "?"))
+    if meta:
         drift = abs(duration - meta["duration"])
         check(drift <= 2 / 30, "длина совпадает с дублем", f"{duration:.3f} с против {meta['duration']:.3f} с")
     check(has_audio, "звуковая дорожка на месте")
@@ -109,7 +119,7 @@ def main():
                             capture_output=True, text=True)
     check(not decode.stderr.strip(), "файл декодируется без ошибок", decode.stderr.strip()[:80] or "чисто")
 
-    sheet = contact_sheet(video, video.with_suffix(".sheet.jpg"))
+    sheet = contact_sheet(video, video.with_suffix(".sheet.jpg"), width=width, height=height)
     print(f"  · сетка кадров: {sheet}")
     if failed:
         print(f"\n✗ провалено: {len(failed)} — ролик не отдавать, пока не разберёмся")

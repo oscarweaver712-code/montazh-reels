@@ -10,3 +10,4 @@ fonttools==4.63.0                 # проверка кириллицы в шр�
 fastapi==0.140.7                  # панель быстрого конвейера (server.py)
 uvicorn==0.51.0
 python-multipart==0.0.32
+httpx==0.28.1                     # selfcheck: проверка защиты студии (TestClient)

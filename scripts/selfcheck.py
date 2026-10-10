@@ -872,6 +872,280 @@ def check_render(report: Report, preset: dict, n_segments: int, tmp: Path):
     print(f"  · заняло {spent:.0f} с, ролик {out.stat().st_size / 1048576:.0f} МБ")
 
 
+def check_agents(report: Report):
+    """Claude и Codex читают одни и те же правила и один скилл.
+
+    Раньше правила и скилл жили двумя копиями: поправил одну — Claude и Codex начинали
+    монтировать по-разному, молча. Теперь CLAUDE.md подключает AGENTS.md, а скилл Claude —
+    ссылка на скилл Codex. Хуки старта обоих агентов поднимают студию, но не внутри агентов,
+    которых запускает сама студия (иначе каждый ответ мозга открывал бы вкладку).
+    """
+    print("\nClaude и Codex: одни правила")
+    claude_md = (ROOT / "CLAUDE.md").read_text(encoding="utf-8").strip()
+    report.check(claude_md == "@AGENTS.md", "CLAUDE.md подключает AGENTS.md, а не хранит копию",
+                 claude_md[:40])
+    agents_md = ROOT / "AGENTS.md"
+    report.check(agents_md.exists() and "Инварианты" in agents_md.read_text(encoding="utf-8"),
+                 "правила проекта лежат в AGENTS.md")
+    claude_skill, codex_skill = ROOT / ".claude/skills/reels", ROOT / ".agents/skills/reels"
+    same = claude_skill.resolve() == codex_skill.resolve() and (codex_skill / "SKILL.md").exists()
+    report.check(same, "скилл reels один на оба агента (ссылка, не копия)",
+                 str(claude_skill.resolve().relative_to(ROOT)) if claude_skill.exists() else "нет скилла")
+    head = (codex_skill / "SKILL.md").read_text(encoding="utf-8").split("\n", 3)[:3] if same else []
+    report.check(len(head) == 3 and head[0] == "---" and head[1].startswith("name: reels"),
+                 "у скилла есть заголовок name/description", " | ".join(head)[:60])
+
+    hooks = []
+    for path, key in ((ROOT / ".claude/settings.json", "hooks"), (ROOT / ".codex/hooks.json", "hooks")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            hooks += [h["command"] for g in data[key]["SessionStart"] for h in g["hooks"]]
+        except (OSError, KeyError, json.JSONDecodeError) as e:
+            hooks.append(f"ошибка {path.name}: {e}")
+    report.check(len(hooks) == 2 and all("studio_up.py" in h and "|| true" in h for h in hooks),
+                 "хуки старта Claude и Codex поднимают студию и не роняют сессию", "; ".join(h[:50] for h in hooks))
+
+    env = dict(os.environ, REELS_STUDIO_CHILD="1")
+    child = subprocess.run([sys.executable, str(ROOT / "scripts/studio_up.py")], input="{}",
+                           capture_output=True, text=True, env=env, timeout=20)
+    report.check(child.returncode == 0 and not child.stdout.strip(),
+                 "агент, запущенный студией, студию не открывает", child.stdout.strip()[:80] or "тихо")
+
+
+def check_styles(report: Report):
+    """Каталог стилей валиден, а сломанный стиль — громкая ошибка, а не 9:16 молча."""
+    import copy as _copy
+    import styles
+
+    print("\nСтили монтажа")
+    try:
+        catalog = styles.all_styles()
+        presets = [styles.to_fast_preset(st, fmt) for st in catalog for fmt in st["formats"]]
+        problem = ""
+    except styles.StyleError as e:
+        catalog, presets, problem = [], [], str(e)
+    tiers = {st["tier"] for st in catalog}
+    report.check(len(catalog) >= 10 and tiers == set(styles.TIERS),
+                 "каталог: стили всех тиров — от мейнстрима до антитренда",
+                 problem or f"{len(catalog)} стилей, тиры: {', '.join(sorted(tiers))}")
+    sizes_ok = all((p["video"]["width"], p["video"]["height"]) in
+                   [(f["width"], f["height"]) for f in styles.formats.FORMATS.values()] for p in presets)
+    report.check(bool(presets) and sizes_ok, "каждый стиль собирается в пресет под каждый свой формат",
+                 f"{len(presets)} пресетов")
+
+    broken = _copy.deepcopy(catalog[0]) if catalog else {}
+    caught = 0
+    for field, value in (("captions.mode", "бегущая строка"), ("color.grade", "кислотный"),
+                         ("camera.base_zoom", 1.8)):
+        try:
+            styles.effective(broken, {field: value})
+        except styles.StyleError:
+            caught += 1
+    report.check(caught == 3, "ошибка в стиле — громкий отказ (режим субтитров, грейд, зум)",
+                 f"поймано {caught} из 3")
+
+    best = styles.recommend({"reach": 5, "retention": 5, "trust": 0, "saves": 0, "sales": 0}, 0.0)[0][1]
+    calm = styles.recommend({"reach": 0, "retention": 0, "trust": 5, "saves": 2, "sales": 5}, 1.0)[0][1]
+    report.check(best["tier"] == "mainstream" and calm["tier"] in ("niche", "contrarian"),
+                 "подбор слушает цели и смелость: охват — мейнстрим, доверие со смелостью — ниша",
+                 f"{best['id']} / {calm['id']}")
+
+
+def check_grades(report: Report, tmp: Path):
+    """Грейд стиля не выталкивает чёрное ниже 16 и белое выше 235.
+
+    eq=contrast крутит яркость вокруг 128 полного диапазона: чёрное уходило в 6, белое в
+    242 — на телефоне это срезанные тени и пересвет. Контраст считается кривой внутри 16–235.
+    """
+    import re as _re
+    from look import GRADES, look_filter
+
+    print("\nЦвет стилей")
+    def level(color: str, chain: str) -> float:
+        out = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-f", "lavfi", "-i",
+                              f"color=c={color}:s=320x320:d=0.1", "-vf",
+                              f"scale=out_range=tv,format=yuv420p{',' + chain if chain else ''},"
+                              "crop=120:120:100:100,signalstats,metadata=print:file=-",
+                              "-frames:v", "1", "-f", "null", "-"], capture_output=True, text=True).stdout
+        found = _re.search(r"YAVG=([\d.]+)", out)
+        return float(found.group(1)) if found else -1.0
+    bad = []
+    for name in GRADES:
+        chain = look_filter({"brightness": -8, "grade": name})
+        black, white = level("black", chain), level("white", chain)
+        # выше 235 и ниже 16 — брак; виньетка «редакционного» белое честно приглушает (до ~220)
+        if not (15 <= black <= 17.5 and 200 <= white <= 235.5):
+            bad.append(f"{name}: {black:.0f}/{white:.0f}")
+    report.check(not bad, "грейды держат стандартный диапазон 16–235", "; ".join(bad) or f"{len(GRADES)} грейдов")
+    naive = level("black", "eq=contrast=1.12")
+    report.check(naive < 15, "проверка ловит наивный контраст (eq=contrast роняет чёрное)", f"чёрное {naive:.0f}")
+
+
+def check_formats(report: Report, tmp: Path):
+    """Горизонталь и перекадрирование: окно любой формы внутри исходника, кадр едет за лицом."""
+    import formats
+    from kit import STYLE, build_page
+    from reframe import apply, reframe_path
+    from track import coverage_violations
+
+    print("\nФорматы и перекадрирование")
+    # горизонтальный исходник, лицо гуляет от края до края — вертикальное окно не вылезает
+    xs = [80 + 1760 * (0.5 - 0.5 * np.cos(i / 239 * np.pi)) for i in range(240)]
+    faces = synthetic_faces(xs, [420.0] * 240, width=1920, height=1080, size=200)
+    try:
+        window, camera = reframe_path(faces, "9:16")
+        holes = coverage_violations(camera, 1920, 1080, window=window)
+        wrong = coverage_violations(camera, 1920, 1080)       # без окна — будто окно во весь кадр
+    except RuntimeError as e:
+        window, camera, holes, wrong = None, [], [str(e)], []
+    report.check(window is not None and abs(window[0] / window[1] - 9 / 16) < 1e-6 and not holes,
+                 "вертикальное окно из горизонтали всегда внутри исходника", f"окно {window}, дыр {len(holes)}")
+    report.check(bool(wrong) or not camera, "проверка окна различает формы (иначе она не про то)",
+                 f"с неверным окном: {len(wrong)} кадров «вне»")
+
+    # настоящий ffmpeg: полоса едет по горизонтальному кадру, а в вертикальном стоит у центра
+    src = tmp / "bar.mov"
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x202020:s=1280x720:r=30:d=4",
+                    "-f", "lavfi", "-i", "color=c=white:s=60x720:r=30:d=4", "-f", "lavfi", "-i", "sine=f=440:d=4",
+                    "-filter_complex", "[0][1]overlay=x='100+t*250':y=0[v]", "-map", "[v]", "-map", "2:a",
+                    "-c:v", "libx264", "-crf", "16", "-c:a", "pcm_s16le", str(src)], check=True)
+    bar = synthetic_faces([130 + i / 30 * 250 for i in range(120)], [360.0] * 120, width=1280, height=720, size=80)
+    out = tmp / "bar.9x16.mov"
+
+    def centers(path: Path, w: int, h: int) -> list:
+        found = []
+        for at in (1.0, 2.0, 3.0):
+            raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
+                                  "-vf", "format=gray", "-f", "rawvideo", "-"], capture_output=True).stdout
+            img = np.frombuffer(raw, np.uint8).reshape(h, w)
+            cols = np.where(img[h // 2 - 40:h // 2 + 40].mean(axis=0) > 128)[0]
+            found.append(float(cols.mean()) if len(cols) else -1.0)
+        return found
+    try:
+        window, camera = reframe_path(bar, "9:16")
+        apply(src, out, camera, window, 30, "9:16", 1280, 720)
+        got = centers(out, 1080, 1920)
+        probe_out = subprocess.run([ffprobe_bin(), "-v", "error", "-show_entries", "stream=width,height",
+                                    "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.split()
+    except (RuntimeError, subprocess.CalledProcessError, ValueError) as e:
+        got, probe_out = [], [str(e)[:80]]
+    src_moves = centers(src, 1280, 720)
+    report.check(probe_out[:1] == ["1080,1920"] and bool(got) and all(abs(c - 540) < 240 for c in got),
+                 "перекадрирование ведёт кадр за объектом (полоса у центра вертикали)",
+                 f"исходник: {', '.join(f'{c:.0f}' for c in src_moves)} → вертикаль: {', '.join(f'{c:.0f}' for c in got)}")
+
+    # страница: вертикаль байт в байт прежняя, горизонталь — своя сцена
+    portrait = build_page("т", 2.0, "", "", "", [], [], cta_at=1.0)
+    landscape = build_page("т", 2.0, "", "", "", [], [], cta_at=1.0, fmt="16:9")
+    report.check(STYLE in portrait and 'data-width="1080" data-height="1920"' in portrait,
+                 "вертикальная страница собирается как раньше")
+    report.check('data-width="1920" data-height="1080"' in landscape and "width: 1080px; height: 1920px" not in landscape
+                 and formats.get("16:9")["resolution"] in landscape,
+                 "горизонтальная страница — сцена 1920×1080 без вертикальных остатков")
+
+
+def check_style_captions(report: Report, tmp: Path):
+    """Субтитры стилей (караоке, фразы, плашки) тоже не залипают в покадровом рендере."""
+    import styles
+    from compose import MIN_FLASH, caption_chunks
+    from kit import build_page
+    from verify_page import run_timeline
+
+    print("\nСубтитры стилей")
+    words = [{"word": w, "start": a, "end": b} for w, a, b in (
+        ("Почему", 0.10, 0.40), ("знак", 0.42, 0.60), ("равенства,", 0.61, 1.00), ("это", 1.80, 1.95),
+        ("тест?", 1.96, 2.40), ("Нет.", 3.50, 3.80), ("Всё", 3.81, 3.83), ("дело", 3.84, 4.10))]
+    ok_modes = []
+    for mode in ("karaoke", "phrase", "sentence"):
+        chunks = caption_chunks(words, {}, 5.0, mode, "natural")
+        short = [c for c in chunks if c["t1"] - c["t0"] < MIN_FLASH]
+        karaoke_ok = mode != "karaoke" or all(c["t0"] <= w["t0"] < c["t1"] for c in chunks for w in c["words"])
+        ok_modes.append(not short and karaoke_ok and chunks)
+    report.check(all(ok_modes), "режимы субтитров: без вспышек короче 0.15 с, караоке внутри своих фраз",
+                 ", ".join(m for m, ok in zip(("караоке", "фразы", "предложения"), ok_modes) if not ok) or "чисто")
+
+    project = tmp / "style-page"
+    (project / "assets").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    caps = [{"t0": 0.50, "t1": 1.20, "text": "обычная", "accent": False,
+             "words": [{"text": "обычная", "t0": 0.5}]},
+            {"t0": 1.807, "t1": 1.847, "text": "мы", "accent": False, "words": [{"text": "мы", "t0": 1.807}]}]
+    (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n",
+                                         encoding="utf-8")
+    bad, caught = [], False
+    for style_id in ("hormozi", "lofi-ugc", "video-essay"):
+        kc = styles.kit_captions(styles.load_style(style_id))
+        page = build_page("т", 3.0, "", "", "", [], [], cta_at=2.5, fmt="16:9", captions=kc)
+        (project / "index.html").write_text(page, encoding="utf-8")
+        try:
+            res = run_timeline(project / "index.html")
+        except (RuntimeError, ValueError) as e:
+            bad.append(f"{style_id}: {e}")
+            continue
+        stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", []) if i["el"].startswith("субтитр")]
+        if not res.get("ok") or stuck or res.get("pageErrors"):
+            bad.append(f"{style_id}: {', '.join(stuck) or res.get('pageErrors') or res.get('crash')}")
+        if style_id == "video-essay":           # вход 0.14 с без ограничения — «мы» обязан залипнуть
+            broken = page.replace("const d = Math.min(0.14, c.t1 - c.t0);", "const d = 0.14;")
+            (project / "index.html").write_text(broken, encoding="utf-8")
+            res = run_timeline(project / "index.html")
+            caught = broken != page and any(i["el"] == "субтитр «мы»" for i in res.get("stuck", []))
+    report.check(not bad, "субтитры стилей не залипают (Хормози, лоуфай, видео-эссе)", "; ".join(bad) or "чисто")
+    report.check(caught, "проверка ловит вход стиля длиннее вспышки")
+
+
+def check_studio(report: Report):
+    """Студия отвечает только этой машине и только своей странице.
+
+    Сервер умеет запускать агента с правом править файлы. Чужой сайт в соседней вкладке
+    не должен суметь ни запустить его, ни поменять бриф: нужен ключ, который знает лишь
+    наша страница, а Host — только 127.0.0.1/localhost (защита от DNS rebinding).
+    """
+    from fastapi.testclient import TestClient
+    import brain
+    import jobqueue
+    from server import TOKEN, app
+
+    print("\nСтудия: доступ и мозг")
+    web = TestClient(app, base_url="http://127.0.0.1:8765")
+    page = web.get("/")
+    report.check(page.status_code == 200 and TOKEN in page.text, "страница студии отдаётся с ключом")
+    no_key = web.post("/api/brain/threads", json={"engine": "claude"})
+    foreign = web.post("/api/brain/threads", json={"engine": "claude"},
+                       headers={"X-Studio-Token": TOKEN, "Origin": "https://evil.example"})
+    rebound = TestClient(app, base_url="http://evil.example").get("/api/studio/state")
+    allowed = web.post("/api/studio/brief/НЕТ_ТАКОГО_РОЛИКА", json={}, headers={"X-Studio-Token": TOKEN})
+    report.check(no_key.status_code == 403 and foreign.status_code == 403 and rebound.status_code == 403,
+                 "без ключа, с чужой страницы и с чужого адреса — отказ",
+                 f"{no_key.status_code}/{foreign.status_code}/{rebound.status_code}")
+    report.check(allowed.status_code == 404, "с ключом запрос проходит до дела", f"код {allowed.status_code}")
+
+    claude = brain.parse_line("claude", json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Готово"}, {"type": "tool_use", "id": "t1", "name": "Bash",
+                                              "input": {"command": "ls work"}}]}}))
+    codex = brain.parse_line("codex", json.dumps({"type": "item.started", "item": {
+        "id": "i1", "type": "mcp_tool_call", "server": "node_repl", "tool": "js", "arguments": {}}}))
+    report.check([e["type"] for e in claude] == ["text", "tool"] and codex and codex[0]["type"] == "tool",
+                 "события Claude и Codex доходят до чата (и действия через MCP тоже)")
+    cmd_safe = brain.command("claude", "x", mode="safe") if brain.find_binary("claude") else ["--permission-mode"]
+    report.check("--dangerously-skip-permissions" not in cmd_safe and "--permission-mode" in cmd_safe,
+                 "безопасный режим мозга не снимает ограничения")
+    report.check(brain.child_env().get(brain.CHILD_ENV) == "1", "агент студии помечен для хука старта")
+
+    first = jobqueue.take_lock()
+    if first is None:
+        # рядом работает настоящий обработчик — его замок и есть проверка
+        report.check(jobqueue.runner_alive(), "обработчик очереди один: второй видит замок",
+                     "проверено на работающей очереди")
+        return
+    second = jobqueue.take_lock()
+    alive = jobqueue.runner_alive()
+    first.close()
+    report.check(second is None and alive and not jobqueue.runner_alive(),
+                 "обработчик очереди один: второй видит замок")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Самопроверка пайплайна монтажа")
     ap.add_argument("--long", action="store_true", help="200 сегментов вместо 60")
@@ -883,6 +1157,8 @@ def main():
     report = Report()
 
     check_module_names(report)
+    check_agents(report)
+    check_styles(report)
     check_snapping(report)
     check_plan_alignment(report, preset)
     check_camera(report)
@@ -892,6 +1168,10 @@ def main():
     check_cleanup_on_failure(report, preset)
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:
         check_page_timeline(report, Path(tmpdir))
+        check_style_captions(report, Path(tmpdir))
+        check_formats(report, Path(tmpdir))
+        check_grades(report, Path(tmpdir))
+        check_studio(report)
         check_web_import(report, Path(tmpdir))
         check_cut_keeps_speech(report, preset, Path(tmpdir))
         check_voice(report, preset, Path(tmpdir))

@@ -1,0 +1,26 @@
+{
+ "id": "video-essay",
+ "name": "Видео-эссе",
+ "tier": "rising",
+ "summary": "Спокойный умный монтаж как у Vox: подписи-плашки, графики и карты каждые 8–10 секунд, тихая музыка под голосом.",
+ "looks_like": "Спикер чередуется с поясняющей графикой: схема, таймлайн, цитата из документа. Плашки с именами и датами внизу. Субтитры — целыми фразами, без прыжков.",
+ "why_works": "Сохраняют и пересылают как полезное. Выделяется на фоне орущих роликов, работает и в горизонтали на YouTube.",
+ "risks": "Медленный старт теряет холодную аудиторию: первая фраза обязана быть сильной. Требует больше графики на минуту, чем кажется.",
+ "references": ["Vox", "Johnny Harris", "OpusClip: Vox/video essay, 2026", "video-use: natural-sentence"],
+ "best_for": ["сохранения", "доверие", "YouTube"],
+ "formats": ["16:9", "9:16", "4:5"],
+ "fit": {"reach": 3, "retention": 4, "trust": 5, "saves": 5, "sales": 3},
+ "effort": 4,
+ "needs": ["схемы, карты, документы под каждую мысль"],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.4, "change_every": 8.0},
+  "camera": {"base_zoom": 1.06, "punch": "rare", "punch_level": 1.1, "push_in": true},
+  "captions": {"mode": "sentence", "case": "natural", "font": "manrope", "size": 0.8, "position": "lower",
+               "color": "#FFFFFF", "highlight": "#FFFFFF", "animation": "fade", "box": false},
+  "graphics": {"density": 2, "behind_text": false, "cards": true, "cutout": false, "lower_thirds": true},
+  "sound": {"sfx": "few", "music": "bed"},
+  "color": {"grade": "cinematic", "brightness": -6},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Одна поясняющая графика на 8–10 секунд, держится не меньше 5 секунд и успевает прочитаться. Плашки (lower thirds) — имя, дата, источник. Медленные наезды на документы внутри графики. Без вспышек и тряски. Музыка тихо, уходит перед финальной фразой."
+}

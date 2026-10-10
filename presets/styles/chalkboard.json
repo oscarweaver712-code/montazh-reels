@@ -1,0 +1,26 @@
+{
+ "id": "chalkboard",
+ "name": "Учебная доска",
+ "tier": "niche",
+ "summary": "Решение рождается на экране: формулы и чертёж строятся по шагам синхронно с голосом, спикер сбоку.",
+ "looks_like": "Половину кадра занимает тетрадный лист или доска, на нём по шагам появляются условие, формулы, стрелки, ответ в клеточках бланка ЕГЭ. Спикер говорит рядом.",
+ "why_works": "Самый сохраняемый формат для учёбы: к ролику возвращаются перед экзаменом. Показывает экспертность без слов «я эксперт».",
+ "risks": "Формулы обязаны быть верными — проверять каждую цифру. Мало охвата у холодной аудитории без сильного хука.",
+ "references": ["3Blue1Brown", "Manim", "разборы ЕГЭ в Shorts", "video-use: Manim slots"],
+ "best_for": ["сохранения", "доверие", "разбор задачи"],
+ "formats": ["9:16", "16:9", "4:5"],
+ "fit": {"reach": 2, "retention": 4, "trust": 5, "saves": 5, "sales": 4},
+ "effort": 4,
+ "needs": ["точное условие задачи и решение"],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.4, "change_every": 4.0},
+  "camera": {"base_zoom": 1.08, "punch": "rare", "punch_level": 1.12, "push_in": false},
+  "captions": {"mode": "phrase", "case": "lower", "font": "manrope", "size": 0.85, "position": "top",
+               "color": "#FFFFFF", "highlight": "#FFE24B", "animation": "fade", "box": true},
+  "graphics": {"density": 3, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "few", "music": "none"},
+  "color": {"grade": "natural", "brightness": -8},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Лист .notebook или .legal на нижние 55% кадра, формулы .hand/.formula появляются по шагам ровно на слове (вход кончается на слове). Ответ — в клеточках бланка .ege. Каждую формулу и ответ сверь и запиши проверку в docstring page.py. Субтитры сверху, в плашке — снизу занято доской."
+}

@@ -141,17 +141,25 @@ def _lazy_follow(series: np.ndarray, dead: float) -> np.ndarray:
 
 
 def clamp_centers(zoom: np.ndarray, cx: np.ndarray, cy: np.ndarray,
-                  width: int, height: int) -> tuple:
-    """Окно камеры обязано целиком лежать внутри исходника — отсюда и полный кадр."""
-    half_w, half_h = width / (2 * zoom), height / (2 * zoom)
+                  width: int, height: int, window: tuple | None = None) -> tuple:
+    """Окно камеры обязано целиком лежать внутри исходника — отсюда и полный кадр.
+
+    window — размер окна при зуме 1.0 (formats.window). По умолчанию равен исходнику:
+    пропорции ролика и съёмки совпадают. Горизонтальный исходник под вертикаль даёт
+    узкое окно во всю высоту — и ему есть куда ехать вбок за лицом.
+    """
+    win_w, win_h = window or (width, height)
+    half_w, half_h = win_w / (2 * zoom), win_h / (2 * zoom)
     return (np.clip(cx, half_w, width - half_w), np.clip(cy, half_h, height - half_h))
 
 
-def coverage_violations(camera: list, width: int, height: int, eps: float = 1e-6) -> list:
+def coverage_violations(camera: list, width: int, height: int, eps: float = 1e-6,
+                        window: tuple | None = None) -> list:
     """Номера кадров, где окно камеры выходит за исходник (там была бы пустота)."""
+    win_w, win_h = window or (width, height)
     bad = []
     for i, (z, cx, cy) in enumerate(camera):
-        half_w, half_h = width / (2 * z), height / (2 * z)
+        half_w, half_h = win_w / (2 * z), win_h / (2 * z)
         if (z < 1 - eps or cx - half_w < -eps or cx + half_w > width + eps
                 or cy - half_h < -eps or cy + half_h > height + eps):
             bad.append(i)
@@ -195,7 +203,7 @@ def solve_camera(faces: dict, cfg: dict | None = None, punches: list | None = No
     for a, b in zip(bounds, bounds[1:]):
         piece = dict(faces, frames=frames[a:b])
         camera += _solve_piece(piece, cfg, punches, offset=a / faces["fps"])
-    bad = coverage_violations(camera, faces["width"], faces["height"])
+    bad = coverage_violations(camera, faces["width"], faces["height"], window=cfg.get("window"))
     if bad:
         raise RuntimeError(
             f"Камера вылезла за край исходника на {len(bad)} кадрах (первый — {bad[0]}). "
@@ -206,6 +214,7 @@ def solve_camera(faces: dict, cfg: dict | None = None, punches: list | None = No
 def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float) -> list:
     """Камера на одном куске без склеек."""
     width, height, fps = faces["width"], faces["height"], faces["fps"]
+    win_w, win_h = cfg.get("window") or (width, height)
     frames = faces["frames"]
     n = len(frames)
     if n == 0:
@@ -227,24 +236,29 @@ def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float) ->
 
     # оператор: пропускает покачивания, едет за заметным сдвигом — и доезжает плавно
     follow = max(0.5, cfg["follow_sec"] * fps)
-    tx = gaussian_filter1d(_lazy_follow(px, cfg["dead_zone_x"] * width), follow, mode="nearest")
-    ty = gaussian_filter1d(_lazy_follow(py, cfg["dead_zone_y"] * height), follow, mode="nearest")
+    # мёртвая зона — доля ОКНА: в узком окне вертикали из горизонтали шаг заметнее
+    tx = gaussian_filter1d(_lazy_follow(px, cfg["dead_zone_x"] * win_w), follow, mode="nearest")
+    ty = gaussian_filter1d(_lazy_follow(py, cfg["dead_zone_y"] * win_h), follow, mode="nearest")
 
-    goal_x = cfg["target_x"] * width
-    goal_y = (cfg["target_y"] * height if cfg["target_y"] is not None
-              else float(np.median(py)))
+    # Где держать лицо — доля окна. По вертикали по умолчанию там, где оно было при
+    # съёмке; если окно ниже исходника (горизонталь из вертикали) — на верхней трети.
+    fx = cfg["target_x"]
+    if cfg["target_y"] is not None:
+        fy = cfg["target_y"]
+    elif abs(win_h - height) < 1:
+        fy = float(np.median(py)) / height
+    else:
+        fy = 0.38
 
     zoom = zoom_plan(n, fps, cfg["base_zoom"], punches, offset)
 
-    # Сколько надо приблизить, чтобы лицо встало в цель и окно не вылезло.
-    # Центр окна c = лицо − (цель − середина)/z должен лежать в [W/2z, W − W/2z].
+    # Сколько надо приблизить, чтобы лицо встало в цель и окно не вылезло. Лицо стоит
+    # на доле f окна шириной S/z: левый край окна = лицо − f·S/z ≥ 0, правый ≤ размер.
     need = np.ones(n)
-    for coord, goal, size in ((tx, goal_x, width), (ty, goal_y, height)):
-        offset = goal - size / 2
-        # левая/верхняя граница: coord − offset/z ≥ size/2z  →  z ≥ (size/2 + offset)/coord
+    for coord, frac, win, size in ((tx, fx, win_w, width), (ty, fy, win_h, height)):
         with np.errstate(divide="ignore", invalid="ignore"):
-            low = np.where(coord > 0, (size / 2 + offset) / coord, np.inf)
-            high = np.where(size - coord > 0, (size / 2 - offset) / (size - coord), np.inf)
+            low = np.where(coord > 0, frac * win / coord, np.inf)
+            high = np.where(size - coord > 0, (1 - frac) * win / (size - coord), np.inf)
         need = np.maximum(need, np.maximum(low, high))
     need = np.minimum(need, cfg["max_zoom"])
     # Приближение начинается заранее и отпускает медленно: смотрим на 1.2 с вперёд и назад.
@@ -255,18 +269,18 @@ def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float) ->
                              fps * 0.5, mode="nearest")
     zoom = np.clip(np.maximum(zoom, need), 1.0, max(cfg["max_zoom"], zoom.max()))
 
-    cx = tx - (goal_x - width / 2) / zoom
-    cy = ty - (goal_y - height / 2) / zoom
-    cx, cy = clamp_centers(zoom, cx, cy, width, height)
+    cx = tx - (fx - 0.5) * win_w / zoom
+    cy = ty - (fy - 0.5) * win_h / zoom
+    cx, cy = clamp_centers(zoom, cx, cy, width, height, (win_w, win_h))
     # упор в край даёт излом траектории — сглаживаем и прижимаем ещё раз
     cx = gaussian_filter1d(cx, fps * 0.12, mode="nearest")
     cy = gaussian_filter1d(cy, fps * 0.12, mode="nearest")
-    cx, cy = clamp_centers(zoom, cx, cy, width, height)
+    cx, cy = clamp_centers(zoom, cx, cy, width, height, (win_w, win_h))
 
-    return _finish(zoom, cx, cy, width, height)
+    return _finish(zoom, cx, cy, width, height, (win_w, win_h))
 
 
-def _finish(zoom, cx, cy, width: int, height: int) -> list:
+def _finish(zoom, cx, cy, width: int, height: int, window: tuple | None = None) -> list:
     """Путь камеры на выход: [(зум, центр_x, центр_y)], округлённый для camera.js.
 
     Округление не имеет права вытолкнуть окно за край. Окно, прижатое к краю, после
@@ -274,10 +288,11 @@ def _finish(zoom, cx, cy, width: int, height: int) -> list:
     Поэтому зум округляется вверх — окно от этого только меньше, — а центр прижимается
     к краю уже с этим зумом и округляется внутрь.
     """
+    win_w, win_h = window or (width, height)
     out = []
     for z, x, y in zip(zoom, cx, cy):
         z = math.ceil(round(float(z) * 1e5, 6)) / 1e5
-        hw, hh = width / (2 * z), height / (2 * z)
+        hw, hh = win_w / (2 * z), win_h / (2 * z)
         x = min(max(round(float(x), 3), math.ceil(hw * 1000) / 1000), math.floor((width - hw) * 1000) / 1000)
         y = min(max(round(float(y), 3), math.ceil(hh * 1000) / 1000), math.floor((height - hh) * 1000) / 1000)
         out.append((z, x, y))

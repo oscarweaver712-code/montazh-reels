@@ -1,0 +1,27 @@
+{
+ "id": "split-brainrot",
+ "name": "Сплит с залипалкой",
+ "tier": "mainstream",
+ "summary": "Экран пополам: сверху спикер, снизу залипательное видео (паркур из игры, мыло, гидравлический пресс). Субтитры по фразе прыгают по центру.",
+ "looks_like": "Верхняя половина — ты крупно, нижняя — бесконечный «залипательный» геймплей без звука. На стыке половин жирные субтитры.",
+ "why_works": "Второй слой держит взгляд школьника, даже когда тема скучная: досматриваемость высокая. Формат родной для ЦА 15–18 лет.",
+ "risks": "Снижает доверие к эксперту и выглядит как переработка чужого контента. Футаж снизу — только свой или с лицензией. Для взрослой аудитории — минус.",
+ "references": ["TikTok-сплиты с Subway Surfers/Minecraft parkour", "OpusClip: Brainrot stack, 2026"],
+ "best_for": ["охват у школьников", "удержание"],
+ "formats": ["9:16"],
+ "fit": {"reach": 5, "retention": 5, "trust": 1, "saves": 1, "sales": 2},
+ "effort": 2,
+ "needs": ["залипательное видео для низа — своё или с лицензией (Pexels/Pixabay)"],
+ "params": {
+  "pace": {"cut_pauses": true, "max_silence": 0.24, "change_every": 2.0},
+  "camera": {"base_zoom": 1.18, "punch": "rare", "punch_level": 1.25, "push_in": false},
+  "captions": {"mode": "phrase", "case": "upper", "font": "montserrat", "size": 1.0, "position": "center",
+               "color": "#FFFFFF", "highlight": "#3BE8B0", "animation": "pop", "box": false},
+  "graphics": {"density": 1, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "none", "music": "none"},
+  "color": {"grade": "punchy", "brightness": -4},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "direction_layout": "split-top",
+ "director": "Сцена делится пополам: камера спикера в верхних 960 px, в нижних 960 px — залипательный футаж из work/<имя>/downloads/ без звука (muted), зациклен. Субтитры по центру на стыке. Чужие ролики снизу не ставить — только лицензированные."
+}

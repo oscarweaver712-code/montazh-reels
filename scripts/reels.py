@@ -3,6 +3,11 @@
 
   .venv/bin/python scripts/reels.py input/urok.mp4
   .venv/bin/python scripts/reels.py input/urok.mp4 --hook "Так делают 90% учеников"
+  .venv/bin/python scripts/reels.py input/urok.mp4 --style hormozi             # стиль целиком
+  .venv/bin/python scripts/reels.py input/urok.mp4 --style video-essay --format 16:9
+
+Стиль (presets/styles/*.json) задаёт рез, крупность, субтитры и цвет; формат — размер
+кадра. Исходник других пропорций перекадрируется по лицу, а не режется по центру.
 """
 import argparse
 import sys
@@ -11,9 +16,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import formats
+import styles
 from common import (INPUT_DIR, OUTPUT_DIR, WORK_DIR, detect_silence, has_libass,
                     load_preset, measure_noise_floor, probe)
 from cut import plan_cut
+from reframe import reframe
 from render import render
 from subs import write_ass
 from transcribe import run_transcribe
@@ -23,8 +31,30 @@ def mmss(seconds: float) -> str:
     return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
 
 
-def process(video: Path, args) -> Path:
+def build_preset(args) -> dict:
+    """Пресет прогона: из стиля (если задан) или из файла пресета, плюс формат кадра."""
+    fmt = args.format or formats.DEFAULT
+    formats.get(fmt)
+    if args.style:
+        return styles.to_fast_preset(styles.load_style(args.style), fmt, base=args.preset)
     preset = load_preset(args.preset)
+    if fmt != formats.DEFAULT:
+        width, height = formats.size(fmt)
+        k = height / preset["video"]["height"]
+        preset["video"]["width"], preset["video"]["height"] = width, height
+        # субтитры заданы под высоту 1920: на кадре ниже они уменьшаются пропорционально
+        for key in ("font_size", "margin_v", "outline"):
+            preset["subs"][key] = max(1, int(round(preset["subs"][key] * k)))
+    preset["format"] = fmt
+    return preset
+
+
+def process(video: Path, args) -> Path:
+    try:
+        preset = build_preset(args)
+    except (ValueError, styles.StyleError) as e:
+        sys.exit(f"  ✗ {e}")
+    fmt = preset.get("format", formats.DEFAULT)
 
     if args.no_cut:
         preset["cut"]["enabled"] = False
@@ -44,10 +74,14 @@ def process(video: Path, args) -> Path:
     if not info["has_audio"]:
         sys.exit("  ✗ в файле нет звуковой дорожки — монтировать нечего")
 
-    if not info["vertical"]:
-        print("  ⚠ исходник горизонтальный: кадр обрежется по центру в 9:16")
-
     started = time.time()
+    picture = video
+    if not formats.same_aspect(info["width"], info["height"], fmt):
+        # другие пропорции — окно ведёт камера за лицом; звук и тайминги у файла те же
+        try:
+            picture = reframe(video, fmt)
+        except RuntimeError as e:
+            sys.exit(f"  ✗ {e}")
 
     # распознавание нужно только для реза и субтитров — иначе это минута впустую
     needs_speech = preset["cut"].get("enabled", True) or preset["subs"].get("enabled", True)
@@ -106,9 +140,12 @@ def process(video: Path, args) -> Path:
             )
             print(f"  → субтитры: {len(plan['words'])} слов")
 
-    out_name = args.out or f"{video.stem}_reels.mp4"
+    suffix = f"_{args.style}" if args.style else "_reels"
+    if fmt != formats.DEFAULT:
+        suffix += "_" + fmt.replace(":", "x")
+    out_name = args.out or f"{video.stem}{suffix}.mp4"
     out_path = OUTPUT_DIR / out_name
-    render(video, out_path, segments, preset, ass_path, noise_floor=noise_floor)
+    render(picture, out_path, segments, preset, ass_path, noise_floor=noise_floor)
 
     size_mb = out_path.stat().st_size / 1_048_576
     print(f"  ✓ готово за {time.time() - started:.0f} с → output/{out_path.name}  ({size_mb:.1f} МБ, {mmss(kept)})")
@@ -128,6 +165,8 @@ def main():
     parser.add_argument("--no-motion", action="store_true", help="без смены крупности")
     parser.add_argument("--no-audio", action="store_true", help="не трогать звук")
     parser.add_argument("--encoder", help="h264_videotoolbox (быстро) или libx264 (качественнее)")
+    parser.add_argument("--style", help="стиль из presets/styles (hormozi, video-essay, …)")
+    parser.add_argument("--format", help="формат кадра: 9:16 (по умолчанию), 16:9, 1:1, 4:5")
     args = parser.parse_args()
 
     if args.video:

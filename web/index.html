@@ -443,6 +443,7 @@ select:focus { outline: 2px solid var(--signal); outline-offset: -1px; }
 
 <header class="topbar">
   <div class="wordmark">Монтаж <em>Reels</em></div>
+  <a href="/" style="color: var(--muted); font-size: 13px; text-decoration: none;">← в студию</a>
   <div class="env" id="env">проверяю окружение…</div>
 </header>
 
@@ -562,8 +563,14 @@ select:focus { outline: 2px solid var(--signal); outline-offset: -1px; }
 </main>
 
 <script>
+// Ключ студии на каждый запрос: сервер без него не примет ничего, что меняет файлы
+// (защита от чужих страниц в соседних вкладках). Ключ подставляет сервер при отдаче страницы.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) =>
+  nativeFetch(url, { ...opts, headers: { ...(opts.headers || {}), 'X-Studio-Token': window.STUDIO_TOKEN || '' } });
+
 const $ = id => document.getElementById(id);
-let PHRASE = ['Дискриминант', 'равен', 'бэ', 'квадрат', 'минус', 'четыре', 'а', 'цэ'];
+let PHRASE =['Дискриминант', 'равен', 'бэ', 'квадрат', 'минус', 'четыре', 'а', 'цэ'];
 let fontFamily = 'Montserrat ExtraBold';   // имя, по которому шрифт найдёт libass
 let fontCss = 'Montserrat Subs';           // имя, под которым он загружен в браузер
 let fontSeq = 0;

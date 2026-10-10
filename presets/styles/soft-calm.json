@@ -1,0 +1,26 @@
+{
+ "id": "soft-calm",
+ "name": "Мягкий спокойный",
+ "tier": "niche",
+ "summary": "Тёплый грейд, тихие субтитры, которые проявляются, а не прыгают; одна главная фраза за раздел — курсивом с засечками.",
+ "looks_like": "Уютная картинка, мягкие наезды, строчные субтитры с растворением. Главная фраза каждого блока — жёлтым курсивом с искорками.",
+ "why_works": "Расслабляет и вызывает симпатию: зритель остаётся ради человека, а не ради эффектов. Хорошо для родителей и мотивационных роликов.",
+ "risks": "Без сильной мысли превращается в «приятно, но пролистал». Мало ударов — нужен хороший текст.",
+ "references": ["video-edit-skill: look soft", "лайфстайл-блогеры"],
+ "best_for": ["доверие", "родители", "мотивация"],
+ "formats": ["9:16", "4:5", "1:1"],
+ "fit": {"reach": 3, "retention": 3, "trust": 4, "saves": 3, "sales": 3},
+ "effort": 2,
+ "needs": [],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.4, "change_every": 5.0},
+  "camera": {"base_zoom": 1.08, "punch": "rare", "punch_level": 1.12, "push_in": true},
+  "captions": {"mode": "phrase", "case": "lower", "font": "manrope", "size": 0.85, "position": "chest",
+               "color": "#FFFFFF", "highlight": "#FFD54A", "animation": "fade", "box": false},
+  "graphics": {"density": 1, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "sound": {"sfx": "few", "music": "bed"},
+  "color": {"grade": "warm", "brightness": -4},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Одна главная фраза на раздел — курсивом Cormorant цвета #FFD54A, вход растворением со смазом, держать 2–3 секунды. Наезды мягкие (въезд 1–1.5 с). Звук — только sparkle.mp3 на главной фразе, тихо."
+}

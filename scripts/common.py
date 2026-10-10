@@ -197,8 +197,8 @@ def ts(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:05.2f}"
 
 
-def ass_color(hex_rgb: str) -> str:
-    """#RRGGBB → &H00BBGGRR& (в ASS порядок байтов обратный)."""
+def ass_color(hex_rgb: str, alpha: int = 0) -> str:
+    """#RRGGBB → &HAABBGGRR& (в ASS порядок байтов обратный, alpha 0 — непрозрачно)."""
     hex_rgb = hex_rgb.lstrip("#")
     r, g, b = hex_rgb[0:2], hex_rgb[2:4], hex_rgb[4:6]
-    return f"&H00{b}{g}{r}&"
+    return f"&H{alpha:02X}{b}{g}{r}&"

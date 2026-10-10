@@ -1,0 +1,27 @@
+{
+ "id": "greenscreen",
+ "name": "Объясняю на фоне",
+ "tier": "mainstream",
+ "summary": "Спикер вырезан и стоит в нижней трети, за ним меняются картинки: задача, скрин, график, документ — каждые 4–6 секунд.",
+ "looks_like": "Как новостные объяснялки: на весь экран — то, о чём речь (условие задачи ЕГЭ, страница учебника, график), спикер вырезан и говорит снизу. Фон сменяется на каждой новой мысли.",
+ "why_works": "Показывает, а не только говорит: зритель видит саму задачу. Отлично ложится на разборы — условие на экране, решение голосом.",
+ "risks": "Нужны хорошие фоны под каждую мысль — без них это просто спикер на картинке. Маска иногда теряет предметы в руках.",
+ "references": ["новостные объяснялки (greenscreen explainer)", "OpusClip: Greenscreen explain, 2026", "video-edit-skill: split/cover"],
+ "best_for": ["разбор задачи", "новости", "сохранения"],
+ "formats": ["9:16", "16:9", "4:5"],
+ "fit": {"reach": 4, "retention": 4, "trust": 4, "saves": 4, "sales": 3},
+ "effort": 4,
+ "needs": ["маска человека (matte.py --cutout)", "фон под каждую мысль: скрин задачи, учебник, график"],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.35, "change_every": 5.0},
+  "camera": {"base_zoom": 1.0, "punch": "rare", "punch_level": 1.1, "push_in": false},
+  "captions": {"mode": "phrase", "case": "natural", "font": "manrope", "size": 0.9, "position": "top",
+               "color": "#FFFFFF", "highlight": "#FFE24B", "animation": "fade", "box": true},
+  "graphics": {"density": 2, "behind_text": false, "cards": false, "cutout": true, "lower_thirds": true},
+  "sound": {"sfx": "few", "music": "none"},
+  "color": {"grade": "natural", "brightness": -6},
+  "transitions": {"flash": false, "whip": true}
+ },
+ "direction_layout": "cutout-bottom",
+ "director": "Фон (#plate) на всю сцену, вырезанный спикер (#cam-fg) уменьшен до нижних 45% кадра. Каждая новая мысль — новый фон со сменой через смаз (whip). Условие задачи, цифры и формулы — крупно и читаемо (≥ 40 px). Субтитры фразами вверху, в плашке, чтобы не спорить с фоном."
+}

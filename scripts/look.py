@@ -27,6 +27,22 @@ from common import FONT_DIR, WORK_DIR, ffmpeg_bin
 BLACK, WHITE = 16, 235
 SPAN = WHITE - BLACK
 
+# Грейды стилей (presets/styles/*.json → color.grade). Мягкие: кожа не должна уезжать
+# в оранжевый или зелёный, проверяется глазами на лице, а не на тестовой таблице.
+# Контраст считается кривой внутри 16–235, а не через eq=contrast: тот вращает яркость
+# вокруг 128 полного диапазона и выталкивает чёрное ниже 16, белое выше 235 — на
+# телефоне это срезанные тени и пересвет. Насыщенность и баланс цвета диапазон не трогают.
+GRADES = {
+    "natural": {},                                                     # как снято
+    "warm": {"balance": "rm=0.04:gm=0.01:bm=-0.04:rh=0.03:bh=-0.03", "saturation": 1.04},
+    "punchy": {"contrast": 1.08, "saturation": 1.12},                  # под экран телефона
+    "cinematic": {"balance": "rs=-0.03:bs=0.04:rh=0.04:bh=-0.03", "contrast": 1.05,
+                  "saturation": 0.9},                                  # лёгкий teal/orange
+    "editorial": {"balance": "bs=0.03:rh=0.02", "contrast": 1.12, "saturation": 0.85,
+                  "vignette": "PI/3.6"},                               # тень уходит, лицо светится
+    "bw": {"contrast": 1.1, "saturation": 0.0},
+}
+
 
 def brightness_gamma(brightness: float) -> float:
     """−50…+50 → показатель степени для кривой средних тонов.
@@ -44,15 +60,37 @@ def range_filter() -> str:
 
 
 def look_filter(look: dict | None) -> str:
-    """Кривая яркости поверх уже приведённого диапазона. Пустая строка — трогать нечего."""
+    """Кривая яркости и грейд стиля поверх уже приведённого диапазона. Пустая строка — трогать нечего."""
     if not look or not look.get("enabled", True):
         return ""
+    chain = []
     brightness = float(look.get("brightness", 0))
-    if abs(brightness) < 1e-6:
-        return ""
-    gamma = brightness_gamma(brightness)
-    # запятые внутри выражения экранированы: иначе граф фильтров примет их за разделители
-    return (f"lutyuv=y={BLACK}+{SPAN}*pow(clip((val-{BLACK})/{SPAN}\\,0\\,1)\\,{gamma:.5f})")
+    if abs(brightness) >= 1e-6:
+        gamma = brightness_gamma(brightness)
+        # запятые внутри выражения экранированы: иначе граф фильтров примет их за разделители
+        chain.append(f"lutyuv=y={BLACK}+{SPAN}*pow(clip((val-{BLACK})/{SPAN}\\,0\\,1)\\,{gamma:.5f})")
+    chain += grade_chain(look.get("grade") or "natural")
+    return ",".join(chain)
+
+
+def grade_chain(name: str) -> list:
+    """Фильтры грейда; на выходе снова стандартный диапазон 16–235, 8 бит 4:2:0."""
+    if name not in GRADES:
+        raise ValueError(f"Грейд «{name}» не знаю. Есть: {', '.join(GRADES)}")
+    g, chain = GRADES[name], []
+    if g.get("balance"):
+        # баланс цвета считается в RGB: возвращаемся в 16–235 явно, а не как решит ffmpeg
+        chain.append(f"colorbalance={g['balance']},scale=out_range=tv,format=yuv420p")
+    contrast = float(g.get("contrast", 1.0))
+    if abs(contrast - 1.0) > 1e-6:
+        chain.append(f"lutyuv=y={BLACK}+{SPAN}*clip(0.5+((val-{BLACK})/{SPAN}-0.5)*{contrast:g}\\,0\\,1)")
+    saturation = g.get("saturation")
+    if saturation is not None and abs(float(saturation) - 1.0) > 1e-6:
+        chain.append(f"eq=saturation={float(saturation):g}")
+    if g.get("vignette"):
+        # виньетка множит яркость и уводит чёрное ниже 16 — зажимаем обратно в диапазон
+        chain.append(f"vignette=angle={g['vignette']},lutyuv=y=clip(val\\,{BLACK}\\,{WHITE})")
+    return chain
 
 
 def expected_luma(y_tv: float, brightness: float) -> float:

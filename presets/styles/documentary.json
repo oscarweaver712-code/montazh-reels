@@ -1,0 +1,26 @@
+{
+ "id": "documentary",
+ "name": "Документальный реализм",
+ "tier": "niche",
+ "summary": "Кино вместо клипа: медленные наезды, один грейд на весь ролик, мало текста, тишина как приём.",
+ "looks_like": "Спокойная камера с медленным наездом через всю мысль, тёплый киношный грейд с лёгкой виньеткой. Субтитры — только целыми фразами внизу или нет вовсе. Ключевая мысль — одна строка шрифтом с засечками.",
+ "why_works": "Выделяется в ленте, где все кричат: сразу сигнал качества. Хорошо держит длинные истории и личные ролики.",
+ "risks": "Медленный темп проигрывает в первые 2 секунды, если хук слабый. Грейд перекрашивает кожу — проверять на лице.",
+ "references": ["OpusClip: Documentary realism, 2026", "video-use: warm_cinematic"],
+ "best_for": ["доверие", "личный бренд", "истории"],
+ "formats": ["16:9", "9:16", "4:5"],
+ "fit": {"reach": 3, "retention": 3, "trust": 5, "saves": 3, "sales": 4},
+ "effort": 3,
+ "needs": [],
+ "params": {
+  "pace": {"cut_pauses": false, "max_silence": 0.5, "change_every": 7.0},
+  "camera": {"base_zoom": 1.06, "punch": "none", "punch_level": 1.08, "push_in": true},
+  "captions": {"mode": "sentence", "case": "natural", "font": "cormorant", "size": 0.85, "position": "lower",
+               "color": "#F2EBDD", "highlight": "#F2EBDD", "animation": "fade", "box": false},
+  "graphics": {"density": 1, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": true},
+  "sound": {"sfx": "none", "music": "bed"},
+  "color": {"grade": "cinematic", "brightness": -10},
+  "transitions": {"flash": false, "whip": false}
+ },
+ "director": "Медленный наезд (punch 1.0→1.08 с въездом на всю мысль) вместо резких ударов. Графики минимум: одна строка-цитата шрифтом Cormorant на главной мысли, плашка с именем в начале. Никаких вспышек, тряски и хлопков. Музыкальная подложка тихо."
+}

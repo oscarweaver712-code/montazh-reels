@@ -47,6 +47,15 @@ def build_ass(words: list, cfg: dict, video_cfg: dict, hook: dict | None = None)
     pop = cfg.get("pop_in", True)
     upper = cfg.get("uppercase", False)
     accent_words = {w.lower() for w in cfg.get("accent_words", [])}
+    # Плашка под текстом (стили «лоуфай», «объясняю на фоне»): в ASS это BorderStyle=3 —
+    # непрозрачная коробка цвета обводки, толщина обводки — поля коробки. Тёмный текст без
+    # плашки на тёмной одежде не читается (IMG_3305, стиль лоуфай).
+    box = bool(cfg.get("box"))
+    border_style = 3 if box else 1
+    box_color = (ass_color(cfg.get("box_color", "0C0C0E"), int(cfg.get("box_alpha", 0)))
+                 if box else "&H00000000")
+    outline = cfg.get("box_pad", 14) if box else cfg.get("outline", 7)
+    shadow = 0 if box else cfg.get("shadow", 3)
 
     head = [
         "[Script Info]",
@@ -62,8 +71,8 @@ def build_ass(words: list, cfg: dict, video_cfg: dict, hook: dict | None = None)
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Sub,{cfg.get('font', 'Montserrat ExtraBold')},{cfg.get('font_size', 92)},"
-        f"{base},&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,"
-        f"{cfg.get('outline', 7)},{cfg.get('shadow', 3)},2,"
+        f"{base},&H000000FF,{box_color},&H80000000,0,0,0,0,100,100,0,0,{border_style},"
+        f"{outline},{shadow},2,"
         f"{cfg.get('margin_h', 110)},{cfg.get('margin_h', 110)},{cfg.get('margin_v', 420)},1",
         f"Style: Hook,{cfg.get('font', 'Montserrat ExtraBold')},{(hook or {}).get('font_size', 110)},"
         f"{ass_color((hook or {}).get('color', 'FFFFFF'))},&H000000FF,&H00000000,&H90000000,0,0,0,0,"
