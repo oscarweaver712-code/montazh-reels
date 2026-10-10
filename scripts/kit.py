@@ -63,8 +63,10 @@ CAPTION_BOX = {
 CAPTION_SIZE = {"words": 58, "karaoke": 64, "phrase": 52, "sentence": 44}
 FORMAT_SCALE = {"9:16": 1.0, "4:5": 0.92, "1:1": 0.86, "16:9": 0.86}
 # Финальная плашка: (left, top) карточки и (left, top) стрелки
+# В горизонтали лицо стоит по центру — плашка уходит в правую нижнюю часть, не на рот
+# (проверено по кадрам IMG_3305 в 16:9: по центру она закрывала лицо).
 CTA_AT = {"9:16": (90, 1130, 70, 1470), "4:5": (90, 700, 70, 1040), "1:1": (90, 470, 70, 810),
-          "16:9": (510, 400, 490, 740)}
+          "16:9": (1000, 560, 880, 870)}
 EXTRA_FONTS = {"Montserrat": "Montserrat-ExtraBold.ttf", "Unbounded": "Unbounded-ExtraBold.ttf",
                "Rubik": "Rubik-Black.ttf", "Golos": "GolosText-Black.ttf", "Alumni": "AlumniSans-Black.ttf"}
 
@@ -166,10 +168,12 @@ def caption_js(caps: dict) -> str:
 def build_page(title: str, duration: float, behind: str, front: str, beats: str, sounds: list,
                fg_windows: list, cta_at: float, plate_img: str | None = None,
                plate_style: str = "", extra_css: str = "", cta_small: str = "смотри у меня в профиле",
-               fmt: str = "9:16", captions: dict | None = None) -> str:
+               fmt: str = "9:16", captions: dict | None = None, cutout: bool = True) -> str:
     """Собирает index.html. Время — по дублю (aroll), секунды.
 
     fmt — формат сцены (formats.py), captions — субтитры стиля (styles.kit_captions).
+    cutout=False — без слоя вырезанного человека: стилю без текста за спиной не нужна
+    маска (matte.py — самые долгие 4 минуты подготовки).
     """
     d = f"{duration:.3f}"
     width, height = formats.size(fmt)
@@ -183,7 +187,13 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
         cta_html = (cta_html.replace("left: 90px; top: 1130px;", f"left: {cl}px; top: {ct}px;")
                     .replace("left: 70px; top: 1470px;", f"left: {al}px; top: {at}px;"))
     style_css = stage_style(fmt) + (caption_css(captions, fmt) if captions else "")
+    if not cutout and fg_windows:
+        raise ValueError("Окна вырезки (fg_windows) без слоя вырезки: передай cutout=True и сделай matte.py")
     helpers = HELPERS if not captions else HELPERS.replace(CAPTIONS_JS, caption_js(captions))
+    cutout_html = ('      <div id="cam-fg" class="cam">\n'
+                   '        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline\n'
+                   f'               data-start="0" data-duration="{d}" data-track-index="1"></video>\n'
+                   '      </div>') if cutout else '      <div id="cam-fg" class="cam"></div>' 
     t = cta_at
     cta_js = (CTA_JS.replace("58.40", f"{t:.2f}").replace("58.75", f"{t + 0.35:.2f}")
               .replace("59.07", f"{t + 0.67:.2f}").replace("59.4", f"{t + 1.0:.2f}"))
@@ -209,10 +219,7 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
 {plate}      <div id="behind" class="layer">
 {behind}
       </div>
-      <div id="cam-fg" class="cam">
-        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
-               data-start="0" data-duration="{d}" data-track-index="1"></video>
-      </div>
+{cutout_html}
       <div id="front" class="layer">
         <div id="caps"></div>
 {front}

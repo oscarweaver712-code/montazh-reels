@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -276,7 +277,9 @@ def fast_job(data: dict = Body(...)):
         raise HTTPException(404, f"Нет исходника {stem} в input/")
     tag = fmt.replace(":", "x")
     name = f"30-fast-{stem}-{style_id}-{tag}-{int(time.time()) % 100000}"
-    cmd = (f'.venv/bin/python scripts/reels.py "input/{source.name}" --style {style_id} --format {fmt}')
+    # имя файла — в кавычки оболочки как есть: задача очереди — это скрипт bash
+    cmd = (f".venv/bin/python scripts/reels.py {shlex.quote('input/' + source.name)} "
+           f"--style {shlex.quote(style_id)} --format {shlex.quote(fmt)}")
     return {"job": enqueue(name, cmd), **queue_state()}
 
 

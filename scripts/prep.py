@@ -200,6 +200,18 @@ def main():
     preset["video"]["width"], preset["video"]["height"] = formats.size(fmt)
     print(f"\n▶ {video.name}: {info['width']}×{info['height']}, {info['duration']:.1f} с → формат {fmt}")
 
+    # У ролика один дубль. Пересборка в другом формате молча заменила бы дубль готового
+    # ролика другой формы — и его страница, камера и маска поехали бы. Второй формат того
+    # же видео — отдельный ролик (жёсткая ссылка на исходник места не занимает).
+    meta_path = out_dir / "aroll.json"
+    if meta_path.exists():
+        was = json.loads(meta_path.read_text(encoding="utf-8")).get("format") or formats.DEFAULT
+        if was != fmt:
+            sys.exit(f"✗ Дубль {stem} уже собран в {was}, а сейчас просят {fmt}. Чтобы не сломать готовый "
+                     f"ролик, второй формат делай отдельным: ln \"{video}\" \"{video.with_name(stem + '_' + fmt.replace(':', 'x') + video.suffix)}\" "
+                     f"и prep по новому имени (в его edit.json — \"format\": \"{fmt}\"). "
+                     f"Или удали work/{stem}/aroll.* , если старый формат больше не нужен.")
+
     data = run_transcribe(video)
     words = data["words"]
     silences = detect_silence(video, preset["cut"].get("silence_db", -35),
