@@ -48,6 +48,8 @@ uv pip install --python .venv/bin/python -r requirements.txt || fail "Не по�
 step "Модели: речь (~1,6 ГБ), лица, маска человека, текст в кадре (один раз)"
 .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$WHISPER')" \
   || fail "Не скачалась модель $WHISPER — проверь интернет и запусти установку снова."
+.venv/bin/python scripts/transcribe.py --check \
+  || fail "Распознавание речи не запускается на этой машине — пришли вывод выше тому, кто ведёт проект."
 .venv/bin/python scripts/models.py || fail "Не скачались модели — проверь интернет и запусти установку снова."
 .venv/bin/python -c "import easyocr; easyocr.Reader(['ru', 'en'], gpu=False, verbose=False)" >/dev/null \
   || fail "Не скачалась модель распознавания текста (EasyOCR) — проверь интернет."

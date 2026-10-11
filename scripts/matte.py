@@ -47,8 +47,10 @@ class MediaPipeMatte:
         cv2.setNumThreads(host.encoder_threads())
         self.cv2, self.mp = cv2, mp
         self.width, self.height = width, height
+        # модель — байтами, а не путём: MediaPipe на Windows не открывает путь с кириллицей
+        model = models.ensure("selfie_multiclass", download=False).read_bytes()
         options = vision.ImageSegmenterOptions(
-            base_options=BaseOptions(model_asset_path=str(models.ensure("selfie_multiclass", download=False))),
+            base_options=BaseOptions(model_asset_buffer=model),
             running_mode=vision.RunningMode.VIDEO, output_confidence_masks=True, output_category_mask=False)
         self.segmenter = vision.ImageSegmenter.create_from_options(options)
         self.ms = 0
@@ -115,7 +117,8 @@ class RvmMatte:
         self.torch = torch
         self.device = torch.device("mps" if torch.backends.mps.is_available() else
                                    "cuda" if torch.cuda.is_available() else "cpu")
-        self.model = torch.jit.load(str(model), map_location=self.device).eval()
+        with open(model, "rb") as f:                   # открывает питон: путь с кириллицей на Windows
+            self.model = torch.jit.load(f, map_location=self.device).eval()
         self.state = [None] * 4
         self.downsample = downsample
         self.width, self.height = width, height

@@ -52,6 +52,8 @@ Check "Не поставились пакеты Python — проверь инт
 Step "Модели: речь (~1,6 ГБ), лица, маска человека, текст в кадре (один раз)"
 & $Python -c "from huggingface_hub import snapshot_download; snapshot_download('mobiuslabsgmbh/faster-whisper-large-v3-turbo')"
 Check "Не скачалась модель распознавания речи — проверь интернет и запусти установку снова."
+& $Python scripts\transcribe.py --check
+Check "Распознавание речи не запускается на этой машине — пришли вывод выше тому, кто ведёт проект."
 & $Python scripts\models.py
 Check "Не скачались модели — проверь интернет и запусти установку снова."
 & $Python -c "import easyocr; easyocr.Reader(['ru', 'en'], gpu=False, verbose=False)" | Out-Null

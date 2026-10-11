@@ -70,7 +70,9 @@ def detect_faces(video: Path, analysis_width: int = 540) -> dict:
     frame_bytes = w * h * 3
     if not YUNET.exists():
         raise RuntimeError(f"Нет модели поиска лиц {YUNET.relative_to(ROOT)} — репозиторий скачан не целиком")
-    detector = cv2.FaceDetectorYN.create(str(YUNET), "", (w, h), 0.6, 0.3, 50)
+    # модель — байтами, а не путём: OpenCV на Windows не открывает путь с кириллицей («Монтаж Reels»)
+    detector = cv2.FaceDetectorYN.create("onnx", np.frombuffer(YUNET.read_bytes(), np.uint8),
+                                         np.empty(0, np.uint8), (w, h), 0.6, 0.3, 50)
     sx, sy = width / w, height / h
 
     # stderr — в файл, а не в канал: его читают только в конце, и на битом исходнике с

@@ -97,9 +97,10 @@ class Watcher:
             return rows
 
     def _sample(self) -> tuple:
-        rows, kids = [], {}
+        rows, kids, parent = [], {}, {}
         for pid, ppid, rss, comm in self._rows():
             kids.setdefault(ppid, []).append(pid)
+            parent[pid] = ppid
             rows.append((pid, rss, comm))
 
         mine, stack = set(), [self.root]
@@ -109,11 +110,14 @@ class Watcher:
                     mine.add(kid)
                     stack.append(kid)
 
+        # ffmpeg, запущенный другим ffmpeg, — та же работа: обёртки choco и scoop (shim) на
+        # Windows запускают настоящий ffmpeg своим ребёнком. Два ffmpeg рядом — это два.
+        ffmpeg = {pid for pid, _rss, comm in rows if pid in mine and "ffmpeg" in comm}
         total = procs = 0
-        for pid, rss, comm in rows:
-            if pid in mine and "ffmpeg" in comm:
+        for pid, rss, _comm in rows:
+            if pid in ffmpeg:
                 total += rss
-                procs += 1
+                procs += parent.get(pid) not in ffmpeg
         return total / 1024, procs
 
     def _loop(self):

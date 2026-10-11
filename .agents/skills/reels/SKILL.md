@@ -205,6 +205,8 @@ npx --yes hyperframes@0.8.141 snapshot --no-end --describe false --at 1.7,5.2,..
 не влияет. Не пиши в командах `open`, `/bin/bash`, `.sh` — их на Windows нет; системное — в
 `scripts/host.py`. Если Claude на Windows не видит скилл (git положил вместо ссылки текстовый
 файл), — `.venv\Scripts\python.exe scripts\host.py --link-skills`; то же делает каждый старт студии.
+OpenCV, MediaPipe и torch на Windows не открывают путь с кириллицей («Монтаж Reels»): модели им —
+байтами (`read_bytes()`), кадры — массивом из ffmpeg, а не путём к файлу.
 
 ## Быстрый конвейер
 

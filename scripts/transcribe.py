@@ -159,7 +159,31 @@ def run_transcribe(video: Path, language: str = "ru", force: bool = False,
     return data
 
 
+def check_engine() -> None:
+    """Установщик: модель грузится и распознаёт на этой машине — три секунды тона, без файлов проекта.
+
+    Ловит то, чего не видно по скачанной модели: движок не встаёт на эту систему, путь к кэшу
+    моделей с кириллицей (имя пользователя Windows) не открывается библиотекой на C++.
+    """
+    import tempfile
+
+    tone = (0.1 * np.sin(2 * np.pi * 440 * np.arange(16000 * 3) / 16000) * 32767).astype(np.int16)
+    with tempfile.TemporaryDirectory(prefix="reels_asr_") as tmp:
+        wav = Path(tmp) / "tone.wav"
+        with wave.open(str(wav), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(tone.tobytes())
+        started = time.time()
+        transcribe(wav)
+    print(f"✓ распознавание речи работает: {backend()}, {time.time() - started:.0f} с вместе с загрузкой модели")
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--check"]:
+        check_engine()
+        sys.exit(0)
     if len(sys.argv) < 2:
-        sys.exit("Использование: transcribe.py <видеофайл> [--force]")
+        sys.exit("Использование: transcribe.py <видеофайл> [--force] | --check")
     run_transcribe(Path(sys.argv[1]).resolve(), force="--force" in sys.argv)
