@@ -95,6 +95,14 @@ def main():
     if args.stop:
         stop_server()
         return
+    # git на Windows кладёт вместо ссылок на скиллы текстовые файлы — чиним при каждом старте:
+    # скилл, пришедший с git pull, тоже должен стать виден Claude
+    try:
+        fixed = host.link_skills()
+        if fixed:
+            print(f"Скиллы для Claude подключены ссылками: {', '.join(fixed)} — видны со следующей сессии.")
+    except OSError as e:
+        print(f"⚠ Скиллы для Claude не подключились: {e}")
     if os.environ.get("REELS_STUDIO_CHILD") == "1" or os.environ.get("REELS_NO_STUDIO") == "1":
         return
 

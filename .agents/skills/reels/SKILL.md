@@ -203,7 +203,8 @@ npx --yes hyperframes@0.8.141 snapshot --no-end --describe false --at 1.7,5.2,..
 `.venv/Scripts/python.exe`), установка — `Установка.bat`, студия — `Монтаж.bat`. Кодек там
 программный (`libx264`, потоки ограничены), распознавание — faster-whisper; на результат это
 не влияет. Не пиши в командах `open`, `/bin/bash`, `.sh` — их на Windows нет; системное — в
-`scripts/host.py`.
+`scripts/host.py`. Если Claude на Windows не видит скилл (git положил вместо ссылки текстовый
+файл), — `.venv\Scripts\python.exe scripts\host.py --link-skills`; то же делает каждый старт студии.
 
 ## Быстрый конвейер
 

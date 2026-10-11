@@ -35,6 +35,11 @@ if ! grep -qE '^\s*\S+\s+ass\s' <<<"$filters"; then
   fail "В PATH ffmpeg без libass (наверное, стоит и обычный ffmpeg). Выполни:
   brew unlink ffmpeg && brew link --overwrite ffmpeg-full — и запусти установку снова."
 fi
+# сборка ролика читает граф из файла через «-/filter_complex» — так умеет ffmpeg 7.0 и новее
+major="$(ffmpeg -version 2>/dev/null | sed -n '1s/^ffmpeg version \([0-9][0-9]*\)\..*/\1/p')"
+if [ -n "$major" ] && [ "$major" -lt 7 ]; then
+  fail "ffmpeg в PATH слишком старый ($major.x), нужен 7.0 или новее. Выполни: brew upgrade ffmpeg-full — и запусти установку снова."
+fi
 
 step "Окружение Python (.venv)"
 [ -x .venv/bin/python ] || uv venv .venv --python 3.12 || fail "Не создалось окружение Python."

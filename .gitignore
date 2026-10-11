@@ -44,6 +44,9 @@ presets/_ui.json
 # личные настройки агентов на этой машине (общие — .claude/settings.json, .codex/hooks.json)
 .claude/settings.local.json
 
+# на Windows ссылки на скиллы — junction-папки: их содержимое не коммитить, это копия скилла
+.claude/skills/*/
+
 # новый конвейер: тяжёлое и пересобираемое не храним (большие модели качает scripts/models.py;
 # маленькая модель лиц presets/models/ — в репозитории)
 /models/

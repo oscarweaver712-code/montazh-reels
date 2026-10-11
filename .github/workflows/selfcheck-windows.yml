@@ -1,5 +1,8 @@
-# Самопроверка на чистой Windows: проект обязан работать и на Mac, и на Windows (11.10.2026),
-# а Windows-машины под рукой нет. GitHub поднимает её сам на каждый push в main и по кнопке.
+# Установка и самопроверка на чистой Windows: проект обязан работать и на Mac, и на Windows
+# (11.10.2026), а Windows-машины под рукой нет. GitHub поднимает её сам на каждый push в main.
+# Всё как у человека: папка «Монтаж Reels» (кириллица и пробел), Git с настройками установщика
+# по умолчанию (без права на symlink, CRLF), запуск — Установка.bat. Отличие одно: системные
+# программы ставит не winget (его на машинах GitHub нет), а choco и actions.
 name: Самопроверка на Windows
 
 on:
@@ -14,33 +17,34 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v4
+      - name: Git как у человека на Windows
+        run: |
+          git config --global core.symlinks false
+          git config --global core.autocrlf true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
         with:
-          node-version: "22"
+          path: Монтаж Reels
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: lts/*
+
+      - uses: astral-sh/setup-uv@v10.3.0
 
       - name: ffmpeg (полная сборка, с libass)
         run: choco install ffmpeg-full -y --no-progress
 
-      - name: Окружение Python
+      - name: Установка.bat (в конце — самопроверка)
+        working-directory: Монтаж Reels
         run: |
-          uv venv .venv --python 3.12
-          uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+          cmd /c "Установка.bat < NUL"
+          exit $LASTEXITCODE
 
-      - name: Модели (лица, маска)
-        run: .venv\Scripts\python.exe scripts\models.py
-
-      - name: Браузер HyperFrames
+      - name: После установки и самопроверки в git ничего не изменилось
+        working-directory: Монтаж Reels
         run: |
-          npx --yes hyperframes@0.8.141 telemetry disable
-          npx --yes hyperframes@0.8.141 browser ensure
-
-      - name: Самопроверка
-        run: .venv\Scripts\python.exe scripts\selfcheck.py
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { $dirty; exit 1 }
+          Write-Host "чисто"

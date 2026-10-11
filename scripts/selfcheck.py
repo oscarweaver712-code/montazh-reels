@@ -39,8 +39,8 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from pathlib import Path
-from urllib.parse import quote
 
 import numpy as np
 
@@ -627,6 +627,72 @@ def check_captions(report: Report):
                  " · ".join(f"{c['text']} {c['t1'] - c['t0']:.2f}" for c in tight))
 
 
+def section(report: Report, check, *args):
+    """Раздел, упавший исключением, — это ✗ с причиной, а остальные разделы всё равно идут.
+
+    Первый прогон на Windows (11.10.2026) оборвался на «Обработке голоса», и треть проверок
+    так и не запустилась: что с ними, стало бы видно только на следующем круге.
+    """
+    try:
+        check(report, *args)
+    except (Exception, SystemExit) as e:
+        traceback.print_exc()
+        report.check(False, f"раздел {check.__name__} оборвался исключением", f"{type(e).__name__}: {e}"[:200])
+
+
+def check_ffmpeg_options(report: Report):
+    """Опций, которые сам ffmpeg называет устаревшими, в конвейере нет.
+
+    Устаревшее сегодня убирают в следующей версии. -filter_complex_script в ffmpeg 8 работал,
+    а предупреждение глушил -loglevel error; в 9.0, который на Windows ставят winget и choco,
+    опции уже нет — первый прогон на Windows (11.10.2026) упал на финальной сборке.
+    """
+    print("\nОпции ffmpeg")
+    help_text = subprocess.run([ffmpeg_bin(), "-hide_banner", "-h", "full"], capture_output=True,
+                               encoding="utf-8", errors="replace").stdout
+    deprecated = {m.group(1) for m in re.finditer(r"^(-\w+)\S*\s.*\bdeprecated\b", help_text, re.M)}
+    used = sorted({f"{opt} в {path.name}" for path in Path(__file__).resolve().parent.glob("*.py")
+                   if path.name != "selfcheck.py"
+                   for opt in deprecated
+                   if re.search(rf"[\"']{re.escape(opt)}[\"']", path.read_text(encoding="utf-8"))})
+    report.check(not used, "конвейер не пользуется опциями, которые ffmpeg называет устаревшими",
+                 "; ".join(used) or f"чисто; устаревших в этом ffmpeg: {len(deprecated)}")
+
+
+def check_skill_links(report: Report, tmp: Path):
+    """Заглушка git на месте ссылки на скилл превращается в ссылку.
+
+    Git на Windows ставится без права на symlink и кладёт вместо .claude/skills/<имя> текстовый
+    файл с путём — Claude такого скилла не видит. host.link_skills (установщик и старт студии)
+    делает настоящую ссылку; порванную — тоже; папку-копию не трогает.
+    """
+    import host
+
+    print("\nСкиллы на Windows")
+    root = tmp / "skills_root"
+    for name in ("a", "b", "c"):
+        (root / ".agents/skills" / name).mkdir(parents=True)
+        (root / ".agents/skills" / name / "SKILL.md").write_text(f"---\nname: {name}\n", encoding="utf-8")
+    links = root / ".claude/skills"
+    links.mkdir(parents=True)
+    (links / "a").write_text("../../.agents/skills/a", encoding="utf-8")    # так git кладёт ссылку на Windows
+    if not host.IS_WINDOWS:                    # symlink на Windows без прав не создать
+        (links / "b").symlink_to(root / "нет-такой")                     # порванная ссылка
+    (links / "c").mkdir()
+    (links / "c" / "SKILL.md").write_text("копия", encoding="utf-8")
+    try:
+        fixed = host.link_skills(root)
+        again = host.link_skills(root)
+    except OSError as e:
+        fixed, again = [f"ошибка: {e}"], []
+    linked = all((links / n).exists() and (links / n).resolve() == (root / ".agents/skills" / n).resolve()
+                 for n in (["a"] if host.IS_WINDOWS else ["a", "b"]))
+    report.check(linked and not again, "заглушка git на месте ссылки на скилл становится ссылкой, повтор ничего не меняет",
+                 ", ".join(fixed) or "ничего не починено")
+    report.check((links / "c" / "SKILL.md").read_text(encoding="utf-8") == "копия",
+                 "папку-копию скилла починка не удаляет (её ловит проверка «скиллы общие»)")
+
+
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
     """Скрипт не называется как модуль стандартной библиотеки.
 
@@ -1161,7 +1227,7 @@ def check_web_import(report: Report, tmp: Path):
     made.replace(cached)
     landed = []
     try:
-        first = import_local_file("file://" + quote(str(cached)))
+        first = import_local_file(cached.as_uri())      # file:///C:/… на Windows, file:///… на Mac
         if "name" in first:
             landed.append(INPUT_DIR / first["name"])
         arrived = "name" in first and (INPUT_DIR / first["name"]).exists()
@@ -1631,7 +1697,8 @@ def check_studio_failures(report: Report, tmp: Path):
     subprocess.run([ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=64x64:r=30:d=1",
                     "-c:v", "libx264", str(inbox / "X.mp4")], check=True)
     (work / "X" / "brief.json").write_text("{ сломано", encoding="utf-8")
-    (queue / "20-prep-X.sh").write_text("true\n", encoding="utf-8")
+    import jobqueue
+    jobqueue.write_job("20-prep-X", [["python", "-c", "pass"]], queue=queue)   # как кладёт мозг
     woke = []
     saved = (studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
              studio_api.ensure_runner, studio_api.runner_alive)
@@ -1720,36 +1787,39 @@ def main():
     preset = load_preset(args.preset)
     report = Report()
 
-    check_module_names(report)
-    check_agents(report)
-    check_styles(report)
-    check_snapping(report)
-    check_plan_alignment(report, preset)
-    check_camera(report)
-    check_cuts(report)
-    check_edges(report)
-    check_captions(report)
-    check_cleanup_on_failure(report, preset)
-    check_long_runs(report)
+    section(report, check_module_names)
+    section(report, check_ffmpeg_options)
+    section(report, check_agents)
+    section(report, check_styles)
+    section(report, check_snapping)
+    section(report, check_plan_alignment, preset)
+    section(report, check_camera)
+    section(report, check_cuts)
+    section(report, check_edges)
+    section(report, check_captions)
+    section(report, check_cleanup_on_failure, preset)
+    section(report, check_long_runs)
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:
-        check_atomic_outputs(report, preset, Path(tmpdir))
-        check_transcript_source(report, Path(tmpdir))
-        check_page_timeline(report, Path(tmpdir))
-        check_style_captions(report, Path(tmpdir))
-        check_formats(report, Path(tmpdir))
-        check_grades(report, Path(tmpdir))
-        check_studio(report, Path(tmpdir))
-        check_web_import(report, Path(tmpdir))
-        check_cut_keeps_speech(report, preset, Path(tmpdir))
-        check_voice(report, preset, Path(tmpdir))
-        check_look(report, preset, Path(tmpdir))
-        check_face_memory(report, Path(tmpdir))
-        check_matte_memory(report, Path(tmpdir))
-        check_portable(report, Path(tmpdir))
-        check_approve(report, Path(tmpdir))
-        check_batch(report, Path(tmpdir))
-        check_viz(report, Path(tmpdir))
-        check_render(report, preset, 200 if args.long else 60, Path(tmpdir))
+        tmp = Path(tmpdir)
+        section(report, check_skill_links, tmp)
+        section(report, check_atomic_outputs, preset, tmp)
+        section(report, check_transcript_source, tmp)
+        section(report, check_page_timeline, tmp)
+        section(report, check_style_captions, tmp)
+        section(report, check_formats, tmp)
+        section(report, check_grades, tmp)
+        section(report, check_studio, tmp)
+        section(report, check_web_import, tmp)
+        section(report, check_cut_keeps_speech, preset, tmp)
+        section(report, check_voice, preset, tmp)
+        section(report, check_look, preset, tmp)
+        section(report, check_face_memory, tmp)
+        section(report, check_matte_memory, tmp)
+        section(report, check_portable, tmp)
+        section(report, check_approve, tmp)
+        section(report, check_batch, tmp)
+        section(report, check_viz, tmp)
+        section(report, check_render, preset, 200 if args.long else 60, tmp)
 
     print()
     if report.failed:

@@ -310,7 +310,8 @@ def render(video: Path, out_path: Path, segments: list, preset: dict,
         cmd = [
             ffmpeg_bin(), "-y", "-loglevel", "error", "-stats",
             "-f", "concat", "-safe", "0", "-i", list_file.name,
-            "-filter_complex_script", filter_file.name,
+            # граф из файла: «-/опция файл» (ffmpeg 7.0+); -filter_complex_script убран в 9.0
+            "-/filter_complex", filter_file.name,
             "-map", "[vout]", "-map", "[aout]",
             *vcodec(video_cfg, "final"),
             "-r", str(fps), "-fps_mode", "cfr", "-pix_fmt", "yuv420p", *COLOR_TAGS,

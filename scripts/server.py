@@ -21,7 +21,8 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -185,7 +186,11 @@ def import_local_file(raw: str) -> dict:
         return {"error": "пустой путь"}
 
     if raw.startswith("file:"):
-        raw = unquote(urlparse(raw).path)
+        # file:///C:/… на Windows, file:///Users/… на Mac: путь из ссылки собирает своя система
+        try:
+            raw = url2pathname(urlparse(raw).path)
+        except OSError:
+            return {"error": f"не понял ссылку на файл: {raw}"}
     source = Path(raw).expanduser()
 
     if not source.is_file():

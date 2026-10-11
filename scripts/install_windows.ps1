@@ -12,31 +12,36 @@ function Step($text) { Write-Host ""; Write-Host "▶ $text" }
 function Fail($text) { Write-Host ""; Write-Host "✗ $text" -ForegroundColor Red; exit 1 }
 function Check($what) { if ($LASTEXITCODE -ne 0) { Fail $what } }
 function Refresh-Path {
-  # winget дописывает PATH в реестр — в этом окне его надо перечитать
-  $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+  # winget дописывает PATH в реестр — в этом окне его надо перечитать, не теряя того, что в нём уже есть
+  $env:Path = @($env:Path, [Environment]::GetEnvironmentVariable("Path", "Machine"),
+                [Environment]::GetEnvironmentVariable("Path", "User")) -join ";"
 }
 
 Step "Проверяю машину"
 if (-not [Environment]::Is64BitOperatingSystem) { Fail "Нужна 64-битная Windows 10 или 11." }
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-  Fail "Нет winget. Поставь «App Installer» из Microsoft Store и запусти установку снова."
-}
 
 Step "Системные программы: ffmpeg (полная сборка с libass), Node.js, uv, Git"
 $packages = [ordered]@{ ffmpeg = "Gyan.FFmpeg"; node = "OpenJS.NodeJS.LTS"; uv = "astral-sh.uv"; git = "Git.Git" }
-foreach ($command in $packages.Keys) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
-    winget install --id $packages[$command] -e --silent --accept-source-agreements --accept-package-agreements
-    Check "Не поставился $($packages[$command]) через winget."
-    Refresh-Path
-  }
+$missing = @($packages.Keys | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+# winget нужен, только если чего-то не хватает
+if ($missing.Count -gt 0 -and -not (Get-Command winget -ErrorAction SilentlyContinue)) {
+  Fail "Нет winget, а поставить нужно: $($missing -join ', '). Поставь «App Installer» из Microsoft Store и запусти установку снова."
 }
-Refresh-Path
+foreach ($command in $missing) {
+  winget install --id $packages[$command] -e --silent --accept-source-agreements --accept-package-agreements
+  Check "Не поставился $($packages[$command]) через winget."
+  Refresh-Path
+}
 # без libass субтитры не наложатся: в «essentials»-сборке ffmpeg его нет
 # stderr не перенаправляем: в PowerShell 5 при "Stop" любая строка в нём стала бы ошибкой
 $filters = (& ffmpeg -hide_banner -filters) -join "`n"
 if ($filters -notmatch "(?m)^\s*\S+\s+ass\s") {
   Fail "ffmpeg в PATH собран без libass. Нужна полная сборка: winget install Gyan.FFmpeg — и запусти установку снова."
+}
+# сборка ролика читает граф из файла через «-/filter_complex» — так умеет ffmpeg 7.0 и новее
+$ffmpegVersion = (& ffmpeg -version | Select-Object -First 1)
+if ($ffmpegVersion -match "version (\d+)\." -and [int]$Matches[1] -lt 7) {
+  Fail "ffmpeg в PATH слишком старый ($ffmpegVersion). Нужен 7.0 или новее: winget upgrade Gyan.FFmpeg — и запусти установку снова."
 }
 
 Step "Окружение Python (.venv)"
@@ -57,6 +62,10 @@ npx --yes $Hyperframes telemetry disable | Out-Null
 Check "Не запускается HyperFrames через npx."
 npx --yes $Hyperframes browser ensure
 Check "Не скачался браузер HyperFrames — проверь интернет."
+
+Step "Скиллы для Claude: ссылки на общие (git на Windows кладёт вместо них текстовые файлы)"
+& $Python scripts\host.py --link-skills
+Check "Не подключились скиллы для Claude."
 
 Step "Звуки и GSAP на месте"
 if (-not (Test-Path "studio\_vendor\gsap.min.js")) { Fail "Нет studio\_vendor\gsap.min.js — репозиторий скачан не целиком." }
