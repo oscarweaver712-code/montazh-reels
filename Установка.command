@@ -40,9 +40,12 @@ step "Окружение Python (.venv)"
 [ -x .venv/bin/python ] || uv venv .venv --python 3.12 || fail "Не создалось окружение Python."
 uv pip install --python .venv/bin/python -r requirements.txt || fail "Не поставились пакеты Python — проверь интернет."
 
-step "Модель распознавания речи (~1,6 ГБ, один раз)"
+step "Модели: речь (~1,6 ГБ), лица, маска человека, текст в кадре (один раз)"
 .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$WHISPER')" \
   || fail "Не скачалась модель $WHISPER — проверь интернет и запусти установку снова."
+.venv/bin/python scripts/models.py || fail "Не скачались модели — проверь интернет и запусти установку снова."
+.venv/bin/python -c "import easyocr; easyocr.Reader(['ru', 'en'], gpu=False, verbose=False)" >/dev/null \
+  || fail "Не скачалась модель распознавания текста (EasyOCR) — проверь интернет."
 
 step "HyperFrames: браузер для рендера графики"
 npx --yes "$HYPERFRAMES" telemetry disable >/dev/null || fail "Не запускается HyperFrames через npx."

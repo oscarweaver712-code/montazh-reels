@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import formats
+import host
 from common import WORK_DIR, ffmpeg_bin, probe
 from track import coverage_violations, detect_faces, solve_camera
 
@@ -77,11 +78,16 @@ def apply(video: Path, out: Path, camera: list, window: tuple, fps: float, fmt: 
         x0, y0 = write_commands(camera, (w, h), fps, width, height, cmds)
         chain = (f"sendcmd=f='{cmds.name}',crop@cam=w={w}:h={h}:x={x0}:y={y0}:exact=1,"
                  f"scale={out_w}:{out_h}:flags=lanczos:out_range=tv,format=yuv420p,setsar=1")
+        encoder = host.video_encoder("auto", ffmpeg_bin())
+        # промежуточный файл: качество почти без потерь, его ещё раз пережмёт сборка
+        quality = (["-c:v", encoder, "-b:v", bitrate, "-profile:v", "high"] if encoder != "libx264"
+                   else ["-c:v", "libx264", "-crf", "14", "-preset", "veryfast",
+                         "-threads", str(host.encoder_threads())])
         cmd = [ffmpeg_bin(), "-v", "error", "-y", "-i", str(video.resolve()), "-vf", chain,
-               "-map", "0:v:0", "-map", "0:a?", "-c:v", "h264_videotoolbox", "-b:v", bitrate,
-               "-profile:v", "high", "-fps_mode", "passthrough", "-pix_fmt", "yuv420p", *COLOR_TAGS,
+               "-map", "0:v:0", "-map", "0:a?", *quality,
+               "-fps_mode", "passthrough", "-pix_fmt", "yuv420p", *COLOR_TAGS,
                "-c:a", "copy", str(tmp.name)]
-        result = subprocess.run(cmd, cwd=out.parent, capture_output=True, text=True)
+        result = subprocess.run(cmd, cwd=out.parent, capture_output=True, encoding="utf-8", errors="replace")
         if result.returncode != 0 or not tmp.exists():
             raise RuntimeError("ffmpeg не собрал перекадрированный исходник:\n"
                                + "\n".join(result.stderr.strip().splitlines()[-12:]))
@@ -109,7 +115,7 @@ def reframe(video: Path, fmt: str, force: bool = False) -> Path:
         return out
 
     started = time.time()
-    print(f"  → перекадрирую {info['width']}×{info['height']} под {fmt}: ищу лицо (Apple Vision)", flush=True)
+    print(f"  → перекадрирую {info['width']}×{info['height']} под {fmt}: ищу лицо (YuNet)", flush=True)
     faces = detect_faces(video)
     share = faces["found"] / max(1, len(faces["frames"]))
     if share < 0.3:

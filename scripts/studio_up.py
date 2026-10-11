@@ -23,7 +23,11 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import webbrowser
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import host  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 PORT = int(os.environ.get("REELS_STUDIO_PORT", "8765"))
@@ -49,11 +53,11 @@ def start_server() -> bool:
     Окружение — без переменных сессии агента, из которой его подняли: сервер её переживёт,
     а мозг и очередь, которых он запускает, не должны выдавать себя за её часть.
     """
-    python = ROOT / ".venv" / "bin" / "python"
+    python = host.venv_python(ROOT)
     if not python.exists():
-        print("Студия не запущена: нет окружения .venv — сначала Установка.command")
+        print("Студия не запущена: нет окружения .venv — сначала установка "
+              f"({'Установка.bat' if host.IS_WINDOWS else 'Установка.command'})")
         return False
-    sys.path.insert(0, str(ROOT / "scripts"))
     from brain import clean_env
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as log:
@@ -61,7 +65,7 @@ def start_server() -> bool:
         log.flush()
         subprocess.Popen([str(python), "-u", "scripts/server.py", str(PORT)], cwd=ROOT,
                          stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         start_new_session=True, env=clean_env())
+                         env=host.utf8_env(clean_env()), **host.detached())
     for _ in range(40):                       # до 10 секунд
         time.sleep(0.25)
         if ping():
@@ -104,10 +108,11 @@ def main():
             return
         state = ping() or {}
     if not args.no_open and not state.get("tab_open") and os.environ.get("REELS_NO_BROWSER") != "1":
-        subprocess.run(["open", URL], check=False)
+        webbrowser.open(URL)
+    py = ".venv/Scripts/python.exe" if host.IS_WINDOWS else ".venv/bin/python"
     print(f"Студия монтажа открыта: {URL} — ролики, бриф (стиль, формат, цели), очередь и чат "
-          "с мозгом. Бриф ролика лежит в work/<имя>/brief.json, текст брифа: "
-          ".venv/bin/python scripts/styles.py --brief <имя>.")
+          f"с мозгом. Бриф ролика лежит в work/<имя>/brief.json, текст брифа: "
+          f"{py} scripts/styles.py --brief <имя>. Один ролик — одна сессия агента.")
 
 
 if __name__ == "__main__":

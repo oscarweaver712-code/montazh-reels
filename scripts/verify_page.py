@@ -197,8 +197,9 @@ CHECK_JS = r"""
 
 
 def find_chrome() -> str:
-    """Тот же headless Chrome, которым рендерит HyperFrames."""
-    found = sorted(CHROME_CACHE.glob("*/chrome-headless-shell-*/chrome-headless-shell"))
+    """Тот же headless Chrome, которым рендерит HyperFrames (на Windows — .exe)."""
+    found = sorted([*CHROME_CACHE.glob("*/chrome-headless-shell-*/chrome-headless-shell"),
+                    *CHROME_CACHE.glob("*/chrome-headless-shell-*/chrome-headless-shell.exe")])
     if not found:
         raise RuntimeError(
             f"Нет браузера HyperFrames в {CHROME_CACHE}. Поставь его: "
@@ -209,6 +210,7 @@ def find_chrome() -> str:
 def missing_assets(project: Path, page: str) -> list:
     refs = set(re.findall(r'(?:src|href)="(assets/[^"]+)"', page))
     refs |= set(re.findall(r"""url\(["']?(assets/[^"')]+)""", page))
+    refs |= set(re.findall(r'data-composition-src="([^"]+)"', page))      # визуализации каталога
     return sorted(r for r in refs if not (project / r).exists())
 
 
@@ -234,7 +236,7 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180) -> dict:
                "--disable-extensions", "--mute-audio", f"--user-data-dir={Path(tmp) / 'profile'}",
                "--virtual-time-budget=2000", "--dump-dom", wrapper.as_uri()]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"Проверка страницы {page_path.parent.name} не уложилась в {timeout:.0f} с")
     found = re.search(r'<pre id="hf-check">(.*?)</pre>', result.stdout, re.S)

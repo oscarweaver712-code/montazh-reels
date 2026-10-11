@@ -76,21 +76,31 @@ class Watcher:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
-    def _sample(self) -> tuple:
-        out = subprocess.run(["ps", "-axo", "pid=,ppid=,rss=,comm="],
-                             capture_output=True, text=True).stdout
+    def _rows(self) -> list:
+        """(pid, ppid, rss в КБ, имя) всех процессов: psutil на любой системе, ps — запасной."""
+        try:
+            import psutil
+            rows = []
+            for proc in psutil.process_iter(["pid", "ppid", "memory_info", "name"]):
+                info = proc.info
+                if info.get("memory_info") is not None:
+                    rows.append((info["pid"], info["ppid"] or 0, info["memory_info"].rss // 1024, info["name"] or ""))
+            return rows
+        except ImportError:
+            out = subprocess.run(["ps", "-axo", "pid=,ppid=,rss=,comm="],
+                                 capture_output=True, encoding="utf-8", errors="replace").stdout
+            rows = []
+            for line in out.splitlines():
+                parts = line.split(None, 3)
+                if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+                    rows.append((int(parts[0]), int(parts[1]), int(parts[2]), parts[3]))
+            return rows
 
+    def _sample(self) -> tuple:
         rows, kids = [], {}
-        for line in out.splitlines():
-            parts = line.split(None, 3)
-            if len(parts) != 4:
-                continue
-            try:
-                pid, ppid, rss = int(parts[0]), int(parts[1]), int(parts[2])
-            except ValueError:
-                continue
+        for pid, ppid, rss, comm in self._rows():
             kids.setdefault(ppid, []).append(pid)
-            rows.append((pid, rss, parts[3]))
+            rows.append((pid, rss, comm))
 
         mine, stack = set(), [self.root]
         while stack:
@@ -139,7 +149,15 @@ def probe_value(path: Path, entries: str, stream: str | None = None) -> str:
     if stream:
         cmd += ["-select_streams", stream]
     cmd += ["-show_entries", entries, "-of", "csv=p=0", str(path)]
-    return subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace").stdout.strip()
+
+
+def source_codec() -> list:
+    """Кодек синтетических исходников: тот же, что у сборки на этой машине."""
+    import host
+    encoder = host.video_encoder("auto", ffmpeg_bin())
+    return (["-c:v", encoder, "-b:v", "8M"] if encoder != "libx264"
+            else ["-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-threads", str(host.encoder_threads())])
 
 
 def make_source(path: Path, seconds: float, fps: int):
@@ -148,7 +166,7 @@ def make_source(path: Path, seconds: float, fps: int):
         ffmpeg_bin(), "-y", "-loglevel", "error",
         "-f", "lavfi", "-i", f"testsrc2=size=1080x1920:rate={fps}:duration={seconds}",
         "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
-        "-c:v", "h264_videotoolbox", "-b:v", "8M", "-pix_fmt", "yuv420p",
+        *source_codec(), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest",
         str(path),
     ], check=True, capture_output=True)
@@ -171,7 +189,7 @@ def make_burst_source(path: Path, seconds: float, fps: int,
         ffmpeg_bin(), "-y", "-loglevel", "error",
         "-f", "lavfi", "-i", f"testsrc2=size=1080x1920:rate={fps}:duration={seconds}",
         "-f", "lavfi", "-i", f"aevalsrc={expr}:d={seconds}:s=48000",
-        "-c:v", "h264_videotoolbox", "-b:v", "8M", "-pix_fmt", "yuv420p",
+        *source_codec(), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest",
         str(path),
     ], check=True, capture_output=True)
@@ -182,7 +200,7 @@ def loudness_of(path: Path) -> float | None:
     out = subprocess.run([
         ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path),
         "-af", "ebur128", "-f", "null", "-",
-    ], capture_output=True, text=True).stderr
+    ], capture_output=True, encoding="utf-8", errors="replace").stderr
     found = re.findall(r"I:\s*(-?[\d.]+) LUFS", out)
     return float(found[-1]) if found else None
 
@@ -264,7 +282,7 @@ def check_voice(report: Report, preset: dict, tmp: Path):
     accepted = subprocess.run([
         ffmpeg_bin(), "-v", "error", "-f", "lavfi",
         "-i", "sine=frequency=300:duration=1", "-af", chain, "-f", "null", "-",
-    ], capture_output=True, text=True)
+    ], capture_output=True, encoding="utf-8", errors="replace")
     report.check(accepted.returncode == 0, "ffmpeg принимает цепочку обработки",
                  accepted.stderr.strip()[:80] or "принята")
 
@@ -316,7 +334,7 @@ def band_luma(path: Path, top: int, height: int) -> float:
         ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-frames:v", "5",
         "-vf", f"crop=1080:{height}:0:{top},signalstats,metadata=print:file=-",
         "-f", "null", "-",
-    ], capture_output=True, text=True).stdout
+    ], capture_output=True, encoding="utf-8", errors="replace").stdout
     values = [float(v) for v in re.findall(r"YAVG=([\d.]+)", out)]
     return sum(values) / len(values) if values else float("nan")
 
@@ -686,13 +704,16 @@ def check_face_memory(report: Report, tmp: Path):
     for seconds in (2, 12):
         clip = tmp / f"faces_{seconds}s.mp4"
         make_source(clip, seconds, 30)
+        # пик памяти процесса: psutil на любой системе (на Mac ещё и resource — для сверки)
         probe_code = (
-            "import resource, sys; sys.path.insert(0, 'scripts');"
+            "import sys; sys.path.insert(0, 'scripts');"
             "from track import detect_faces;"
             f"faces = detect_faces(__import__('pathlib').Path(r'{clip}'));"
-            "print(len(faces['frames']), resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)")
+            "import psutil; m = psutil.Process().memory_info();"
+            "peak = getattr(m, 'peak_wset', 0) or __import__('resource').getrusage(0).ru_maxrss;"
+            "print(len(faces['frames']), peak)")
         result = subprocess.run([sys.executable, "-c", probe_code], capture_output=True,
-                                text=True, cwd=Path(__file__).resolve().parent.parent)
+                                encoding="utf-8", errors="replace", cwd=Path(__file__).resolve().parent.parent)
         try:
             frames, rss = result.stdout.split()[-2:]
             peaks[seconds] = (int(frames), int(rss) / 1048576)
@@ -704,6 +725,237 @@ def check_face_memory(report: Report, tmp: Path):
     report.check(n_long > n_short > 0 and growth < 150,
                  "память не растёт с числом кадров",
                  f"{n_short} кадров — {short:.0f} МБ, {n_long} кадров — {long_:.0f} МБ")
+
+
+def check_matte_memory(report: Report, tmp: Path):
+    """Маска человека держит память постоянной, сколько бы ни было кадров (MediaPipe)."""
+    print("\nПамять при вырезке человека")
+    peaks = {}
+    for seconds in (2, 12):
+        clip = tmp / f"matte_{seconds}s.mp4"
+        make_source(clip, seconds, 30)
+        probe_code = (
+            "import sys; sys.path.insert(0, 'scripts');"
+            "from matte import run_matte;"
+            f"stats = run_matte(__import__('pathlib').Path(r'{clip}'), 'mediapipe', __import__('pathlib').Path(r'{clip}.mkv'));"
+            "import psutil; m = psutil.Process().memory_info();"
+            "peak = getattr(m, 'peak_wset', 0) or __import__('resource').getrusage(0).ru_maxrss;"
+            "print(stats['frames'], peak)")
+        result = subprocess.run([sys.executable, "-c", probe_code], capture_output=True, encoding="utf-8",
+                                errors="replace", cwd=ROOT)
+        try:
+            frames, rss = result.stdout.split()[-2:]
+            peaks[seconds] = (int(frames), int(rss) / 1048576)
+        except ValueError:
+            peaks[seconds] = (0, float("nan"))
+            print(f"    {result.stderr.strip()[-300:]}")
+    (n_short, short), (n_long, long_) = peaks[2], peaks[12]
+    report.check(n_long > n_short > 0 and long_ - short < 150, "маска не копит кадры в памяти",
+                 f"{n_short} кадров — {short:.0f} МБ, {n_long} кадров — {long_:.0f} МБ")
+
+
+def check_portable(report: Report, tmp: Path):
+    """Проект один на Mac и Windows: ни одного закрытого маковского модуля, очередь без bash.
+
+    До 11.10.2026 лица, маска и текст в кадре шли через Apple Vision (только Mac, закрытый),
+    а задача очереди была скриптом bash — на Windows не работало ничего из этого.
+    """
+    import jobqueue
+
+    print("\nMac и Windows")
+    mac_only = re.compile(r"^\s*(import|from)\s+(Vision|Quartz|objc|AppKit|Foundation)\b|h264_videotoolbox\"|\"open\", \"-R\"",
+                          re.MULTILINE)
+    offenders = sorted(p.name for p in (ROOT / "scripts").glob("*.py")
+                       if p.name not in ("host.py", "selfcheck.py") and mac_only.search(p.read_text(encoding="utf-8")))
+    report.check(not offenders, "в конвейере нет закрытых маковских модулей и жёсткого маковского кодека",
+                 ", ".join(offenders) or "чисто")
+
+    queue = tmp / "portable_queue"
+    marker, leftover = tmp / "step2.txt", ROOT / "work" / f".selfcheck_cleanup_{os.getpid()}.json"
+    leftover.write_text("{}", encoding="utf-8")
+    ok_job = jobqueue.write_job("10-selfcheck-ok", [
+        ["python", "-c", "print('шаг 1 ✓')"],
+        ["python", "-c", f"open(r'{marker}', 'w').write('ok')"],
+    ], cleanup=[leftover.relative_to(ROOT).as_posix()], queue=queue)
+    bad_job = jobqueue.write_job("10-selfcheck-bad", [
+        ["python", "-c", "raise SystemExit(3)"],
+        ["python", "-c", f"open(r'{tmp / 'never.txt'}', 'w').write('x')"],
+    ], queue=queue)
+    with open(tmp / "portable.log", "w", encoding="utf-8") as log:
+        code_ok = jobqueue.run_job(ok_job, log)
+        code_bad = jobqueue.run_job(bad_job, log)
+    log_text = (tmp / "portable.log").read_text(encoding="utf-8")
+    report.check(code_ok == 0 and marker.exists() and "шаг 1 ✓" in log_text and not leftover.exists(),
+                 "задача очереди — JSON: шаги идут питоном проекта без bash, временное убирается",
+                 f"код {code_ok}, временный файл {'убран' if not leftover.exists() else 'остался'}")
+    report.check(code_bad == 3 and not (tmp / "never.txt").exists(),
+                 "упавший шаг останавливает задачу — следующие не идут", f"код {code_bad}")
+    leftover.unlink(missing_ok=True)
+
+
+def check_batch(report: Report, tmp: Path):
+    """Пачка: каждый ролик — в своей новой сессии мозга, а после очереди студия продолжает сама.
+
+    Правило Валеры (11.10.2026): если монтировать всю пачку в одном разговоре, контекст
+    кончается и каждый следующий ролик выходит хуже. Здесь вместо агента — подставной скрипт:
+    на первый ход он ставит задачу в очередь («ЖДУ ОЧЕРЕДЬ»), на второй — «ГОТОВО».
+    """
+    from fastapi.testclient import TestClient
+    import brain
+    import jobqueue
+    import studio_api
+    from server import TOKEN, app
+
+    print("\nПачка: ролик — своя сессия")
+    queue = tmp / "batch_queue"
+
+    def fake_agent(engine, prompt, *args, **kwargs):
+        stem = re.search(r"(?:Смонтируй|монтаж) (\S+?)[ .]", prompt).group(1)
+        if "Очередь отработала" in prompt:
+            text = f"{stem} собран. СТАТУС: ГОТОВО — output/{stem}_v1.mp4"
+        else:
+            jobqueue.write_job(f"20-prep-{stem}", [["python", "-c", "pass"]], queue=queue)
+            text = "Поставил подготовку в очередь. СТАТУС: ЖДУ ОЧЕРЕДЬ"
+        event = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}},
+                           ensure_ascii=False)
+        return [sys.executable, "-c", f"print({event!r})"]
+
+    def fake_runner():                    # «обработчик»: всё, что ждёт, сразу выполнено
+        (queue / "done").mkdir(parents=True, exist_ok=True)
+        for job in jobqueue.job_files(queue):
+            job.replace(queue / "done" / job.name)
+        return True
+
+    saved = (brain.THREADS, brain.command, studio_api.QUEUE, studio_api.ensure_runner)
+    brain.THREADS, brain.command = tmp / "batch_threads", fake_agent
+    studio_api.QUEUE, studio_api.ensure_runner = queue, fake_runner
+    studio_api.batch.update(running=False, items=[])
+    items, threads = [], []
+    try:
+        with TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б"], "engine": "claude"},
+                      headers={"X-Studio-Token": TOKEN})
+            for _ in range(150):
+                time.sleep(0.1)
+                if not studio_api.batch["running"]:
+                    break
+            items = [dict(i) for i in studio_api.batch["items"]]
+            threads = [brain.load_thread(i["thread"]) for i in items if i.get("thread")]
+    finally:
+        brain.THREADS, brain.command, studio_api.QUEUE, studio_api.ensure_runner = saved
+        for item in items:
+            studio_api.runs.pop(item.get("thread"), None)
+        studio_api.batch.update(running=False, items=[])
+        (studio_api.WORK_DIR / "_studio" / "batch.json").unlink(missing_ok=True)
+    ids = {t["id"] for t in threads}
+    resumed = all(sum(m["role"] == "user" for m in t["messages"]) == 2
+                  and "Очередь отработала" in t["messages"][2]["text"] for t in threads)
+    report.check([i["status"] for i in items] == ["done", "done"] and len(ids) == 2 and resumed
+                 and all(t["stem"] == i["stem"] for t, i in zip(threads, items)),
+                 "пачка: у каждого ролика своя сессия, после очереди разговор продолжается сам",
+                 "; ".join(f"{i['stem']}: {i['status']}" for i in items) or "пачка не прошла")
+
+
+def check_viz(report: Report, tmp: Path):
+    """Визуализации данных: офлайн, по-русски, с входом и выходом, ошибка — до рендера.
+
+    Каталог HyperFrames как есть тянул при рендере GSAP, D3, карту и шрифты из интернета и
+    писал «182,000». Формула с опечаткой в LaTeX должна валить проверку страницы, а не
+    уезжать в ролик пустым местом.
+    """
+    import viz
+    from kit import build_page
+    from verify_page import missing_assets, run_timeline
+
+    print("\nВизуализации данных")
+    leaks = []
+    for path in (ROOT / "presets" / "viz").rglob("*.html"):
+        text = path.read_text(encoding="utf-8")
+        leaks += [f"{path.name}: {u}" for u in re.findall(r"https?://[^\"' )>]+", text) if "www.w3.org" not in u]
+        if 'toLocaleString("en-US"' in text:
+            leaks.append(f"{path.name}: числа по-английски")
+    report.check(not leaks, "каталог визуализаций офлайн и по-русски: ни одной ссылки в интернет",
+                 "; ".join(leaks[:3]) or f"{len(viz.catalog())} элементов")
+
+    try:
+        viz.mount("count-up", "x", at=1, dur=3, values={"конец": 5})
+        typo = False
+    except ValueError:
+        typo = True
+    report.check(typo, "опечатка в переменной визуализации — громкая ошибка, а не значение по умолчанию")
+
+    project = tmp / "viz-page"
+    (project / "assets").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n",
+                                       encoding="utf-8")
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    parts = [viz.mount("count-up", "stat", at=0.3, dur=2.0, values={"end": 182000, "suffix": " ₽"}),
+             viz.formula("disc", r"D = b^2 - 4ac", at=1.0, dur=1.6),
+             viz.plot("parab", lambda x: x * x - 4, x=(-3, 3), y=(-5, 6), at=1.4, dur=1.8, points=[(-2, 0), (2, 0)])]
+
+    def page(front_parts):
+        return build_page("т", 4.0, "", "\n".join(h for h, _ in front_parts), "\n".join(j for _, j in front_parts),
+                          [], [], cta_at=9.0, cutout=False)
+
+    good = page(parts)
+    gone_before = missing_assets(project, good)
+    # как compose: шрифты и звуки страницы, плюс то, что нужно визуализациям
+    need = dict(viz.assets_for(good))
+    need.update({f"assets/fonts/{f.name}": f for f in (ROOT / "presets" / "fonts").glob("*.ttf")})
+    need.update({f"assets/sfx/{f.name}": f for f in (ROOT / "presets" / "sfx").glob("*.mp3")})
+    for rel, src in need.items():
+        target = project / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, target)
+    (project / "assets" / "aroll.mp4").write_bytes(b"")          # дубль compose берёт из work/
+    (project / "index.html").write_text(good, encoding="utf-8")
+    res = run_timeline(project / "index.html")
+    stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", [])]
+    report.check(bool(gone_before) and not missing_assets(project, good),
+                 "ассеты визуализаций находятся и подкладываются в проект (compose)",
+                 f"не хватало {len(gone_before)}, после — {len(missing_assets(project, good))}")
+    report.check(res.get("ok") and not res.get("pageErrors") and not stuck,
+                 "страница с числом, формулой и графиком без ошибок и без залипаний",
+                 "; ".join(res.get("pageErrors", []) + stuck)[:120] or "чисто")
+
+    broken = page([viz.formula("bad", r"D = b^{2 - 4ac", at=0.5, dur=1.5)])
+    (project / "index.html").write_text(broken, encoding="utf-8")
+    bad = run_timeline(project / "index.html")
+    report.check(bool(bad.get("pageErrors")) or not bad.get("ok"),
+                 "опечатка в формуле ловится проверкой страницы, до рендера",
+                 (bad.get("pageErrors") or [bad.get("crash", "ничего не поймано")])[0][:80])
+
+
+def check_approve(report: Report, tmp: Path):
+    """Апрув убирает копии ролика (черновые версии, сырые рендеры), но не принятый и не решения."""
+    import approve
+
+    print("\nАпрув и уборка копий")
+    out, work, studio = tmp / "a_output", tmp / "a_work", tmp / "a_studio"
+    for folder in (out, work / "X", studio / "X" / "renders"):
+        folder.mkdir(parents=True)
+    for name in ("X_v1.mp4", "X_v1.sheet.jpg", "X_v2.mp4", "X_v2.sheet.jpg", "XY_v1.mp4"):
+        (out / name).write_bytes(b"v")
+    (studio / "X" / "renders" / "X_v1.mp4").write_bytes(b"raw")
+    (work / "X" / "aroll.matte_mediapipe.mkv").write_bytes(b"mask")
+    (work / "X" / "edit.json").write_text("{}", encoding="utf-8")
+    saved = (approve.OUTPUT_DIR, approve.WORK_DIR, approve.ROOT, approve.studio_dir)
+    approve.OUTPUT_DIR, approve.WORK_DIR, approve.ROOT = out, work, tmp
+    approve.studio_dir = lambda: studio
+    try:
+        plan = approve.plan("X", "X_v2.mp4")
+        done = approve.apply("X", "X_v2.mp4", ["drafts"])
+    except Exception as e:
+        plan, done = {}, {"error": f"{type(e).__name__}: {e}"}
+    finally:
+        approve.OUTPUT_DIR, approve.WORK_DIR, approve.ROOT, approve.studio_dir = saved
+    left = sorted(p.name for p in out.iterdir())
+    kept_rest = (work / "X" / "aroll.matte_mediapipe.mkv").exists() and (work / "X" / "edit.json").exists()
+    report.check(left == ["XY_v1.mp4", "X_v2.mp4", "X_v2.sheet.jpg"] and not any((studio / "X" / "renders").iterdir())
+                 and kept_rest and (work / "X" / "approved.json").exists(),
+                 "апрув: черновые версии и сырые рендеры убраны, принятый, чужой ролик и решения — на месте",
+                 f"в output/: {', '.join(left)}" + (f"; {done.get('error')}" if done.get("error") else ""))
 
 
 def stray_files() -> list:
@@ -798,6 +1050,7 @@ def check_atomic_outputs(report: Report, preset: dict, tmp: Path):
         return real(cmd, cwd, what)
 
     render_mod.ffmpeg_run = broken_final
+    before = {p.name for p in WORK_DIR.glob("*")}
     try:
         render_mod.render(src, out, [(0.0, 1.0)], preset)
         failed = False
@@ -805,6 +1058,10 @@ def check_atomic_outputs(report: Report, preset: dict, tmp: Path):
         failed = True
     finally:
         render_mod.ffmpeg_run = real
+        # граф фильтра рендер оставляет в work/ намеренно, проверка за собой — нет
+        for p in WORK_DIR.glob("*"):
+            if p.name not in before and p.is_file():
+                p.unlink()
     tails = sorted(p.name for p in tmp.glob(".atomic_out*"))
     report.check(failed and out.read_bytes() == b"old" and not tails,
                  "упавшая сборка не трогает прошлый ролик и не оставляет недописанный",
@@ -956,8 +1213,9 @@ def check_web_import(report: Report, tmp: Path):
 
         r = web.post("/api/render", data={"video": "IMG_0001.MOV", "hook": "Так делают 90%"}, headers=key).json()
         job = r.get("job_id", "")
-        script = queue / f"{job}.sh"
-        text = script.read_text(encoding="utf-8") if job and script.exists() else ""
+        import jobqueue
+        script = jobqueue.find_job(queue, job) if job else None
+        text = script.read_text(encoding="utf-8") if script else ""
         report.check("scripts/reels.py" in text and "--preset" in text,
                      "быстрая панель ставит монтаж в общую очередь, а не запускает рядом с ней",
                      job or str(r)[:80])
@@ -1025,7 +1283,7 @@ def check_render(report: Report, preset: dict, n_segments: int, tmp: Path):
                  "звуковая дорожка на месте")
 
     decode = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(out), "-f", "null", "-"],
-                            capture_output=True, text=True)
+                            capture_output=True, encoding="utf-8", errors="replace")
     report.check(not decode.stderr.strip(), "файл декодируется без ошибок",
                  decode.stderr.strip()[:80] or "чисто")
     report.check(not stray_files(), "временные файлы убраны")
@@ -1050,11 +1308,17 @@ def check_agents(report: Report):
                  "правила проекта лежат в AGENTS.md")
     claude_skill, codex_skill = ROOT / ".claude/skills/reels", ROOT / ".agents/skills/reels"
     same = claude_skill.resolve() == codex_skill.resolve() and (codex_skill / "SKILL.md").exists()
-    report.check(same, "скилл reels один на оба агента (ссылка, не копия)",
-                 str(claude_skill.resolve().relative_to(ROOT)) if claude_skill.exists() else "нет скилла")
-    head = (codex_skill / "SKILL.md").read_text(encoding="utf-8").split("\n", 3)[:3] if same else []
-    report.check(len(head) == 3 and head[0] == "---" and head[1].startswith("name: reels"),
-                 "у скилла есть заголовок name/description", " | ".join(head)[:60])
+    # каждый скилл проекта (reels, viz…) у Claude — ссылка на общий, а не своя копия
+    skills = sorted(p.name for p in (ROOT / ".agents/skills").iterdir() if (p / "SKILL.md").exists())
+    unlinked = [n for n in skills if not ((ROOT / ".claude/skills" / n).exists()
+                                          and (ROOT / ".claude/skills" / n).resolve() == (ROOT / ".agents/skills" / n).resolve())]
+    report.check(same and not unlinked, "скиллы общие на оба агента (у Claude — ссылки, не копии)",
+                 f"{', '.join(skills)}" + (f"; без ссылки: {', '.join(unlinked)}" if unlinked else ""))
+    heads = {n: (ROOT / ".agents/skills" / n / "SKILL.md").read_text(encoding="utf-8").split("\n", 3)[:3] for n in skills}
+    bad_heads = [n for n, h in heads.items() if not (len(h) == 3 and h[0] == "---" and h[1] == f"name: {n}"
+                                                       and h[2].startswith("description: "))]
+    report.check(bool(heads) and not bad_heads, "у каждого скилла есть заголовок name/description",
+                 ", ".join(bad_heads) or "чисто")
 
     hooks = []
     for path, key in ((ROOT / ".claude/settings.json", "hooks"), (ROOT / ".codex/hooks.json", "hooks")):
@@ -1063,12 +1327,20 @@ def check_agents(report: Report):
             hooks += [h["command"] for g in data[key]["SessionStart"] for h in g["hooks"]]
         except (OSError, KeyError, json.JSONDecodeError) as e:
             hooks.append(f"ошибка {path.name}: {e}")
-    report.check(len(hooks) == 2 and all("studio_up.py" in h and "|| true" in h for h in hooks),
-                 "хуки старта Claude и Codex поднимают студию и не роняют сессию", "; ".join(h[:50] for h in hooks))
+    # хук — одна команда node: её одинаково понимают bash (Mac, Git Bash у Claude на Windows),
+    # PowerShell и cmd (Codex на Windows); синтаксис «[ -x … ] || true» понимал только bash
+    launcher = (ROOT / "scripts/studio_hook.mjs").read_text(encoding="utf-8") \
+        if (ROOT / "scripts/studio_hook.mjs").exists() else ""
+    report.check(len(hooks) == 2 and all(h.startswith("node ") and "studio_hook.mjs" in h for h in hooks)
+                 and "studio_up.py" in launcher and "process.exit(0)" in launcher,
+                 "хуки старта Claude и Codex поднимают студию одной командой node на любой системе",
+                 "; ".join(h[:50] for h in hooks))
 
     env = dict(os.environ, REELS_STUDIO_CHILD="1")
-    child = subprocess.run([sys.executable, str(ROOT / "scripts/studio_up.py")], input="{}",
-                           capture_output=True, text=True, env=env, timeout=20)
+    node = shutil.which("node")
+    cmd = [node, str(ROOT / "scripts/studio_hook.mjs")] if node else [sys.executable, str(ROOT / "scripts/studio_up.py")]
+    child = subprocess.run(cmd, input="{}", capture_output=True, encoding="utf-8", errors="replace",
+                           env=env, timeout=30)
     report.check(child.returncode == 0 and not child.stdout.strip(),
                  "агент, запущенный студией, студию не открывает", child.stdout.strip()[:80] or "тихо")
 
@@ -1145,7 +1417,7 @@ def check_grades(report: Report, tmp: Path):
                               f"color=c={color}:s=320x320:d=0.1", "-vf",
                               f"scale=out_range=tv,format=yuv420p{',' + chain if chain else ''},"
                               "crop=120:120:100:100,signalstats,metadata=print:file=-",
-                              "-frames:v", "1", "-f", "null", "-"], capture_output=True, text=True).stdout
+                              "-frames:v", "1", "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stdout
         found = _re.search(r"YAVG=([\d.]+)", out)
         return float(found.group(1)) if found else -1.0
     bad = []
@@ -1205,7 +1477,7 @@ def check_formats(report: Report, tmp: Path):
         apply(src, out, camera, window, 30, "9:16", 1280, 720)
         got = centers(out, 1080, 1920)
         probe_out = subprocess.run([ffprobe_bin(), "-v", "error", "-show_entries", "stream=width,height",
-                                    "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.split()
+                                    "-of", "csv=p=0", str(out)], capture_output=True, encoding="utf-8", errors="replace").stdout.split()
     except (RuntimeError, subprocess.CalledProcessError, ValueError) as e:
         got, probe_out = [], [str(e)[:80]]
     src_moves = centers(src, 1280, 720)
@@ -1386,7 +1658,8 @@ def check_studio_failures(report: Report, tmp: Path):
     # одно непонятное событие агента не вешает мозг навсегда
     bad = json.dumps({"type": "assistant", "message": {"content": ["строка вместо блока"]}})
     saved_brain = (brain.THREADS, brain.command)
-    brain.THREADS, brain.command = tmp / "threads", (lambda *a, **k: ["/bin/echo", bad])
+    echo = [sys.executable, "-c", f"print({bad!r})"]          # /bin/echo есть не везде (Windows)
+    brain.THREADS, brain.command = tmp / "threads", (lambda *a, **k: echo)
     states = []
     try:
         with TestClient(app, base_url="http://127.0.0.1:8765") as live:
@@ -1471,6 +1744,11 @@ def main():
         check_voice(report, preset, Path(tmpdir))
         check_look(report, preset, Path(tmpdir))
         check_face_memory(report, Path(tmpdir))
+        check_matte_memory(report, Path(tmpdir))
+        check_portable(report, Path(tmpdir))
+        check_approve(report, Path(tmpdir))
+        check_batch(report, Path(tmpdir))
+        check_viz(report, Path(tmpdir))
         check_render(report, preset, 200 if args.long else 60, Path(tmpdir))
 
     print()

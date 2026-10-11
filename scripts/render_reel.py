@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import host
 from common import OUTPUT_DIR, ROOT, WORK_DIR
 from compose import HYPERFRAMES, STUDIO, compose, project_name
 from master import master
@@ -47,7 +48,7 @@ def run_logged(cmd: list, cwd: Path, log: Path) -> int:
     """Полный вывод — в лог, на экран — только важные строки."""
     with open(log, "w", encoding="utf-8") as f:
         proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, errors="replace")
+                                encoding="utf-8", errors="replace")
         for line in proc.stdout:
             line = ANSI.sub("", line).rstrip()
             f.write(line + "\n")
@@ -83,7 +84,7 @@ def render_reel(stem: str, version: str, variant: str | None = None) -> Path:
     log = WORK_DIR / stem / (f"render_{variant}_{version}.log" if variant else f"render_{version}.log")
     print("  → рендер HyperFrames (одним воркером, машина остаётся живой)", flush=True)
     t0 = time.time()
-    code = run_logged(["npx", "--yes", HYPERFRAMES, "render", "--workers", "1", "--strict",
+    code = run_logged([host.tool("npx"), "--yes", HYPERFRAMES, "render", "--workers", "1", "--strict",
                        "-o", str(raw.relative_to(project))], project, log)
     if code != 0 or not raw.exists() or raw.stat().st_mtime < t0:
         tail = log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-12:]

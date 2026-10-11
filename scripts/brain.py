@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import host
 from common import ROOT, WORK_DIR
 
 THREADS = WORK_DIR / "_studio" / "threads"
@@ -36,39 +37,50 @@ CHILD_ENV = "REELS_STUDIO_CHILD"      # хук автозапуска студи
 # да; удаление, git push, установка пакетов — нет: отказ вернётся в чат, человек решит.
 SAFE_TOOLS = [
     "Read", "Glob", "Grep", "Edit", "Write", "WebSearch", "WebFetch", "TodoWrite",
+    # питон окружения: на Mac .venv/bin/python, на Windows .venv/Scripts/python.exe
     "Bash(.venv/bin/python scripts/*)", "Bash(./.venv/bin/python scripts/*)",
+    "Bash(.venv/Scripts/python.exe scripts/*)", "Bash(./.venv/Scripts/python.exe scripts/*)",
     "Bash(npx --yes hyperframes@0.8.141 *)", "Bash(ffprobe *)", "Bash(/opt/homebrew/bin/ffprobe *)",
     "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(grep *)",
     "Bash(mkdir -p *)", "Bash(cp *)", "Bash(curl -L -o work/*)", "Bash(curl -sL -o work/*)",
-    "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(du *)", "Bash(open *)",
+    "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(du *)",
 ]
 
-STUDIO_PROMPT = """Тебя вызывают из локальной студии монтажа (web/studio.html): человек видит твои
+PY = ".venv/Scripts/python.exe" if host.IS_WINDOWS else ".venv/bin/python"
+
+STUDIO_PROMPT = f"""Тебя вызывают из локальной студии монтажа (web/studio.html): человек видит твои
 ответы в чате студии, терминала он не видит. Работай по AGENTS.md и скиллу reels
-(.agents/skills/reels/SKILL.md).
+(.agents/skills/reels/SKILL.md). Один разговор — один ролик: другие ролики монтируются
+в своих сессиях, их не трогай.
 — Отвечай по-русски, коротко и по делу. В конце: что сделано, где файл, как откатить.
+— Питон проекта здесь: {PY}.
 — Тяжёлое (transcribe, prep, track, matte, reframe, render_reel, reels.py) не запускай сам:
-  клади задачу в очередь — файл work/_queue/<NN>-<имя>.sh с одной командой (порядок по
-  номеру: 05-render, 10-transcribe, 20-prep, 30-fast). Очередь выполняет студия, по одной.
-  Проверить ход: work/_queue/logs/, готовое — work/_queue/done/, упавшее — failed/.
+  клади в очередь — {PY} scripts/jobqueue.py add <NN>-<имя> "python scripts/prep.py input/X.MOV"
+  ["следующий шаг" …] (порядок по номеру: 05-render, 10-transcribe, 20-prep, 30-fast).
+  Очередь выполняет студия сама, по одной. Ход: work/_queue/logs/, готовое — done/, упавшее — failed/.
 — Бриф ролика (стиль, формат, цели, варианты) — work/<имя>/brief.json, текст для тебя:
-  .venv/bin/python scripts/styles.py --brief <имя>. Каталог стилей: presets/styles/.
+  {PY} scripts/styles.py --brief <имя>. Каталог стилей: presets/styles/.
 — Вопрос задавай, только если без ответа дальше нельзя; иначе выбирай разумно и пиши, что выбрал.
 """
 
 
 # ---------------------------------------------------------------- движки
 
+# Где обычно живут CLI агентов, если PATH урезан (сервер, поднятый из Finder или хука)
+EXTRA_BIN = (["~/.local/bin", "~/AppData/Roaming/npm", "~/AppData/Local/Programs/claude",
+              "~/.claude/local"] if host.IS_WINDOWS else
+             ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.claude/local", "~/.npm-global/bin"])
+
+
 def find_binary(name: str) -> str | None:
     """CLI агента: PATH сервера бывает урезан (запуск из Finder), поэтому смотрим и в типичные места."""
     found = shutil.which(name)
     if found:
         return found
-    for folder in ("~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.claude/local",
-                   "~/.npm-global/bin"):
-        path = Path(folder).expanduser() / name
-        if path.exists():
-            return str(path)
+    for folder in EXTRA_BIN:
+        found = shutil.which(name, path=str(Path(folder).expanduser()))   # на Windows — с .exe/.cmd
+        if found:
+            return found
     return None
 
 
@@ -80,7 +92,7 @@ def engines() -> dict:
         version = None
         if path:
             try:
-                version = subprocess.run([path, "--version"], capture_output=True, text=True,
+                version = subprocess.run([path, "--version"], capture_output=True, encoding="utf-8", errors="replace",
                                          timeout=15).stdout.strip().splitlines()[0]
             except (subprocess.TimeoutExpired, OSError, IndexError):
                 version = None
@@ -107,11 +119,11 @@ def clean_env() -> dict:
 
 
 def child_env() -> dict:
-    env = clean_env()
+    env = host.utf8_env(clean_env())
     env[CHILD_ENV] = "1"
     # из Finder PATH короткий — без него агент не найдёт ffmpeg, node и npx
-    extra = ["/opt/homebrew/bin", str(Path("~/.local/bin").expanduser()), "/usr/local/bin"]
-    env["PATH"] = ":".join(extra + [env.get("PATH", "/usr/bin:/bin")])
+    extra = [str(Path(folder).expanduser()) for folder in EXTRA_BIN]
+    env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
     return env
 
 

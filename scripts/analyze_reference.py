@@ -5,7 +5,7 @@
 его. Отсюда выходит не мнение, а цифры и ближайший стиль из presets/styles:
 
   • темп: склейки в минуту, средняя длина плана, самый долгий кадр без смены;
-  • текст в кадре (Apple Vision, по кадру в секунду): как часто он есть, где стоит,
+  • текст в кадре (EasyOCR, по кадру в секунду): как часто он есть, где стоит,
     сколько слов за раз, капсом ли — это субтитры и надписи референса;
   • цвет: яркость, насыщенность, тёплый или холодный;
   • громкость: интегральная LUFS;
@@ -27,6 +27,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import numpy as np
+
+import host
 import styles
 from common import WORK_DIR, ffmpeg_bin, probe
 
@@ -41,7 +44,7 @@ def fetch(url: str) -> Path:
     REFS.mkdir(parents=True, exist_ok=True)
     out_tpl = str(REFS / "%(id)s.%(ext)s")
     result = subprocess.run(["uvx", "yt-dlp", "-f", "mp4/best", "-o", out_tpl, "--print", "after_move:filepath",
-                             "--no-progress", url], capture_output=True, text=True)
+                             "--no-progress", url], capture_output=True, encoding="utf-8", errors="replace")
     path = (result.stdout.strip().splitlines() or [""])[-1]
     if result.returncode != 0 or not Path(path).exists():
         raise RuntimeError("Не скачалось через yt-dlp (у Instagram бывает нужен вход). Скачай руками и "
@@ -53,7 +56,7 @@ def scene_cuts(video: Path) -> list:
     """Моменты смены плана (с). Кадр уменьшается заранее — ffmpeg считает втрое быстрее."""
     out = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(video), "-an",
                           "-vf", f"scale=320:-2,select='gt(scene,{SCENE})',metadata=print:file=-",
-                          "-f", "null", "-"], capture_output=True, text=True).stdout
+                          "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stdout
     return [float(t) for t in re.findall(r"pts_time:([\d.]+)", out)]
 
 
@@ -61,7 +64,7 @@ def color_stats(video: Path) -> dict:
     """Средние яркость, насыщенность и «теплота» (V − U) по двум кадрам в секунду."""
     out = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(video), "-an",
                           "-vf", "fps=2,scale=320:-2,signalstats,metadata=print:file=-",
-                          "-f", "null", "-"], capture_output=True, text=True).stdout
+                          "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stdout
     def mean(key: str) -> float | None:
         values = [float(v) for v in re.findall(rf"lavfi\.signalstats\.{key}=([\d.]+)", out)]
         return round(statistics.fmean(values), 1) if values else None
@@ -72,25 +75,33 @@ def color_stats(video: Path) -> dict:
 
 def loudness(video: Path) -> float | None:
     err = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(video), "-vn",
-                          "-af", "ebur128", "-f", "null", "-"], capture_output=True, text=True).stderr
+                          "-af", "ebur128", "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stderr
     found = re.findall(r"I:\s*(-?[\d.]+) LUFS", err)
     return float(found[-1]) if found else None
 
 
 def screen_text(video: Path, width: int = 540) -> dict:
-    """Текст в кадре по кадру в секунду (Apple Vision): где стоит, сколько слов, капс ли."""
-    import objc
-    import Quartz
-    import Vision
+    """Текст в кадре по кадру в секунду (EasyOCR, Apache-2.0): где стоит, сколько слов, капс ли.
+
+    Читает кириллицу и латиницу на любой системе (до 11.10.2026 здесь был Apple Vision —
+    только Mac). Модели (~94 МБ) EasyOCR качает сам при первом запуске, дальше — без сети.
+    """
+    try:
+        import easyocr
+        import torch
+    except ImportError:
+        print("  ⚠ нет easyocr — текст в кадре не считаю (поставь: uv pip install easyocr)", flush=True)
+        return {"frames": 0}
+    torch.set_num_threads(host.encoder_threads())                 # пара ядер — машине
+    reader = easyocr.Reader(["ru", "en"], gpu=False, verbose=False)
 
     info = probe(video)
     w = width
     h = int(round(info["height"] * w / info["width"] / 2) * 2)
-    size = w * h * 4
+    size = w * h * 3
     proc = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(video), "-an", "-vf",
-                             f"fps=1,scale={w}:{h}", "-pix_fmt", "rgba", "-f", "rawvideo", "-"],
+                             f"fps=1,scale={w}:{h}", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    colorspace = Quartz.CGColorSpaceCreateDeviceRGB()
     frames, with_text, centers, words, heights, upper = 0, 0, [], [], [], []
     try:
         while True:
@@ -98,33 +109,18 @@ def screen_text(video: Path, width: int = 540) -> dict:
             if len(buf) < size:
                 break
             frames += 1
-            with objc.autorelease_pool():
-                # только CFData: иначе кадр не освобождается (см. track.py)
-                provider = Quartz.CGDataProviderCreateWithCFData(Quartz.CFDataCreate(None, buf, size))
-                image = Quartz.CGImageCreate(w, h, 8, 32, w * 4, colorspace, Quartz.kCGImageAlphaNoneSkipLast,
-                                             provider, None, False, Quartz.kCGRenderingIntentDefault)
-                request = Vision.VNRecognizeTextRequest.alloc().init()
-                request.setRecognitionLevel_(1)                 # быстрый режим
-                request.setUsesLanguageCorrection_(False)
-                request.setRecognitionLanguages_(["ru-RU", "en-US"])
-                handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(image, None)
-                ok, _ = handler.performRequests_error_([request], None)
-                found = False
-                for obs in (request.results() or []) if ok else []:
-                    candidate = obs.topCandidates_(1)
-                    if not candidate:
-                        continue
-                    text = str(candidate[0].string()).strip()
-                    letters = [c for c in text if c.isalpha()]
-                    if len(letters) < 2:
-                        continue
-                    (x, y), (bw, bh) = obs.boundingBox()
-                    found = True
-                    centers.append(1 - (y + bh / 2))            # 0 — верх кадра, 1 — низ
-                    heights.append(bh)
-                    words.append(len(text.split()))
-                    upper.append(sum(c.isupper() for c in letters) / len(letters))
-                with_text += found
+            found = False
+            for box, text, conf in reader.readtext(np.frombuffer(buf, np.uint8).reshape(h, w, 3)):
+                letters = [c for c in str(text) if c.isalpha()]
+                if conf < 0.3 or len(letters) < 2:
+                    continue
+                ys = [float(point[1]) for point in box]
+                found = True
+                centers.append(sum(ys) / len(ys) / h)                   # 0 — верх кадра, 1 — низ
+                heights.append((max(ys) - min(ys)) / h)
+                words.append(len(str(text).split()))
+                upper.append(sum(c.isupper() for c in letters) / len(letters))
+            with_text += found
     finally:
         proc.stdout.close()
         proc.wait()
@@ -210,7 +206,7 @@ def analyze(video: Path, with_speech: bool = False) -> dict:
     cuts = scene_cuts(video)
     bounds = [0.0] + cuts + [info["duration"]]
     shots = [b - a for a, b in zip(bounds, bounds[1:]) if b - a > 0.05]
-    print("  → текст в кадре (Apple Vision)", flush=True)
+    print("  → текст в кадре (EasyOCR, ~1 с на секунду ролика)", flush=True)
     text = screen_text(video)
     print("  → цвет и громкость", flush=True)
     color = color_stats(video)

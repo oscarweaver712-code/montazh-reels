@@ -6,35 +6,42 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import host  # noqa: E402
+
+host.utf8_console()          # на Windows вывод в лог очереди иначе падал бы на «✓»
+
 ROOT = Path(__file__).resolve().parent.parent
 INPUT_DIR = ROOT / "input"
 OUTPUT_DIR = ROOT / "output"
 WORK_DIR = ROOT / "work"
 PRESET_DIR = ROOT / "presets"
 FONT_DIR = PRESET_DIR / "fonts"
-VENV_PY = ROOT / ".venv" / "bin" / "python"
+MODEL_DIR = PRESET_DIR / "models"
+VENV_PY = host.venv_python(ROOT)
+
+
+def _find(name: str) -> str | None:
+    # Homebrew-ffmpeg-full на Mac стоит рядом с обычным ffmpeg без libass — он первым
+    for candidate in ("/opt/homebrew/bin/" + name, name):
+        path = shutil.which(candidate) or (candidate if Path(candidate).exists() else None)
+        if path:
+            return path
+    return None
 
 
 def ffmpeg_bin() -> str:
     """ffmpeg с поддержкой libass (нужен для субтитров)."""
-    for candidate in ("/opt/homebrew/bin/ffmpeg", "ffmpeg"):
-        path = shutil.which(candidate) or (candidate if Path(candidate).exists() else None)
-        if path:
-            return path
-    sys.exit("ffmpeg не найден. Установи: brew install ffmpeg-full")
+    return _find("ffmpeg") or sys.exit(f"ffmpeg не найден. Установи: {host.install_hint('ffmpeg')}")
 
 
 def ffprobe_bin() -> str:
-    for candidate in ("/opt/homebrew/bin/ffprobe", "ffprobe"):
-        path = shutil.which(candidate) or (candidate if Path(candidate).exists() else None)
-        if path:
-            return path
-    sys.exit("ffprobe не найден. Установи: brew install ffmpeg-full")
+    return _find("ffprobe") or sys.exit(f"ffprobe не найден. Установи: {host.install_hint('ffmpeg')}")
 
 
 def has_libass() -> bool:
     out = subprocess.run([ffmpeg_bin(), "-hide_banner", "-filters"],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, encoding="utf-8", errors="replace").stdout
     return any(line.split()[1:2] == ["ass"] for line in out.splitlines() if line.strip())
 
 
@@ -56,7 +63,7 @@ def probe(video: Path) -> dict:
     out = subprocess.run([
         ffprobe_bin(), "-v", "error", "-print_format", "json",
         "-show_format", "-show_streams", str(video)
-    ], capture_output=True, text=True, check=True).stdout
+    ], capture_output=True, encoding="utf-8", errors="replace", check=True).stdout
     data = json.loads(out)
 
     vstream = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
@@ -98,7 +105,7 @@ def detect_silence(video: Path, threshold_db: float = -35.0,
     out = subprocess.run([
         ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(video), "-vn",
         "-af", f"silencedetect=n={threshold_db}dB:d={min_len}", "-f", "null", "-",
-    ], capture_output=True, text=True).stderr
+    ], capture_output=True, encoding="utf-8", errors="replace").stderr
 
     silences, opened = [], None
     for match in re.finditer(r"silence_(start|end):\s*(-?[\d.]+)", out):
@@ -136,7 +143,7 @@ def measure_noise_floor(video: Path, silences: list, default: float = -45.0) -> 
             ffmpeg_bin(), "-hide_banner", "-nostats",
             "-ss", f"{start:.3f}", "-t", f"{min(end - start, 2.0):.3f}",
             "-i", str(video), "-vn", "-af", "volumedetect", "-f", "null", "-",
-        ], capture_output=True, text=True).stderr
+        ], capture_output=True, encoding="utf-8", errors="replace").stderr
         # на цифровой тишине ffmpeg пишет «-inf dB» — такую паузу просто пропускаем
         match = re.search(r"mean_volume:\s*(-?[\d.]+) dB", out)
         if match:
@@ -156,7 +163,7 @@ def run(cmd: list, desc: str = "", quiet: bool = True):
     """Запуск с человеческой ошибкой вместо простыни ffmpeg."""
     if desc:
         print(f"  → {desc}", flush=True)
-    result = subprocess.run(cmd, capture_output=quiet, text=True)
+    result = subprocess.run(cmd, capture_output=quiet, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         if quiet and result.stderr:
             tail = "\n".join(result.stderr.strip().splitlines()[-15:])

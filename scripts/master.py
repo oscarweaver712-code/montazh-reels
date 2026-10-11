@@ -28,7 +28,7 @@ def measure(path: Path) -> dict:
     err = subprocess.run([
         ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-vn",
         "-af", f"loudnorm=I={TARGET_LUFS}:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-",
-    ], capture_output=True, text=True).stderr
+    ], capture_output=True, encoding="utf-8", errors="replace").stderr
     found = re.search(r"\{[^{}]*\"input_i\"[\s\S]*?\}", err)
     if not found:
         raise RuntimeError(f"Не удалось замерить громкость {path.name}")
@@ -47,7 +47,7 @@ def master(src: Path, dst: Path) -> dict:
             "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
             "-af", f"volume={gain:.2f}dB,alimiter=limit={CEILING:.4f}:attack=3:release=60:level=false",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", str(tmp),
-        ], capture_output=True, text=True)
+        ], capture_output=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             raise RuntimeError(f"Мастеринг упал:\n{result.stderr[-500:]}")
         after = measure(tmp)

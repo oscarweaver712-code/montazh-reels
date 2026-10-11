@@ -14,8 +14,9 @@ max_zoom), а не окно уезжает за границу. Это пров�
 
   .venv/bin/python scripts/track.py work/IMG_3279/aroll.mp4
 
-Лица ищет Apple Vision (встроен в macOS, считает на нейроядре): процессор почти
-не нагружается, модели качать не нужно.
+Лица ищет YuNet (OpenCV, лицензия MIT): открытый детектор, одинаково работает на Mac
+и Windows, на процессоре — около 60 кадров в секунду. Модель (230 КБ) лежит в
+presets/models/. До 11.10.2026 был Apple Vision — только Mac и закрытый.
 """
 import argparse
 import json
@@ -30,7 +31,10 @@ from scipy.ndimage import gaussian_filter1d, maximum_filter1d, median_filter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import ffmpeg_bin, probe
+import host
+from common import MODEL_DIR, ROOT, ffmpeg_bin, probe
+
+YUNET = MODEL_DIR / "face_detection_yunet_2023mar.onnx"
 
 DEFAULTS = {
     "base_zoom": 1.12,     # постоянный запас на слежение; 1.0 = ехать некуда
@@ -50,60 +54,51 @@ def detect_faces(video: Path, analysis_width: int = 540) -> dict:
     """Лицо на каждом кадре: центр и размер в пикселях исходника, или None.
 
     Кадры идут из ffmpeg по одному через канал: память не растёт с длиной ролика.
-    Для поиска хватает уменьшенного кадра — лицо крупное, а считается вчетверо быстрее.
-    """
-    import objc
-    import Quartz
-    import Vision
+    Кадр уменьшается до 540 по ширине: YuNet обучен на лицах примерно до 300 px, а
+    на крупном плане 1080p лицо больше — и считается вчетверо быстрее.
 
+    Центр лица у YuNet стоит чуть выше, чем у прежнего Vision (рамка захватывает лоб):
+    камере это не важно — она держит лицо там, где оно было при съёмке, по медиане.
+    """
+    import cv2
+
+    cv2.setNumThreads(host.encoder_threads())             # пара ядер — машине
     info = probe(video)
     width, height, fps = info["width"], info["height"], info["fps"]
     w = analysis_width
     h = int(round(height * w / width / 2) * 2)
-    frame_bytes = w * h * 4
+    frame_bytes = w * h * 3
+    if not YUNET.exists():
+        raise RuntimeError(f"Нет модели поиска лиц {YUNET.relative_to(ROOT)} — репозиторий скачан не целиком")
+    detector = cv2.FaceDetectorYN.create(str(YUNET), "", (w, h), 0.6, 0.3, 50)
+    sx, sy = width / w, height / h
 
     # stderr — в файл, а не в канал: его читают только в конце, и на битом исходнике с
     # сотнями ошибок декодера ffmpeg упирался бы в полный канал и вставал вместе с очередью
     err_file = tempfile.TemporaryFile()
     proc = subprocess.Popen(
         [ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
-         "-vf", f"scale={w}:{h}", "-pix_fmt", "rgba", "-f", "rawvideo", "-"],
+         "-vf", f"scale={w}:{h}", "-pix_fmt", "bgr24", "-f", "rawvideo", "-"],
         stdout=subprocess.PIPE, stderr=err_file)
 
-    colorspace = Quartz.CGColorSpaceCreateDeviceRGB()
-    handler = Vision.VNSequenceRequestHandler.alloc().init()
     frames = []
     try:
         while True:
             buf = proc.stdout.read(frame_bytes)
             if len(buf) < frame_bytes:
                 break
-            with objc.autorelease_pool():
-                # Только через CFData. CGDataProviderCreateWithData без функции освобождения
-                # навсегда держит каждый кадр: +2 МБ на кадр, 2,4 ГБ на минутном ролике.
-                provider = Quartz.CGDataProviderCreateWithCFData(
-                    Quartz.CFDataCreate(None, buf, frame_bytes))
-                image = Quartz.CGImageCreate(
-                    w, h, 8, 32, w * 4, colorspace, Quartz.kCGImageAlphaNoneSkipLast,
-                    provider, None, False, Quartz.kCGRenderingIntentDefault)
-                request = Vision.VNDetectFaceRectanglesRequest.alloc().init()
-                ok, error = handler.performRequests_onCGImage_error_([request], image, None)
-                if not ok:
-                    raise RuntimeError(f"Apple Vision не смог разобрать кадр {len(frames)}: {error}")
-                best = None
-                for face in request.results() or []:
-                    (x, y), (fw, fh) = face.boundingBox()
-                    if best is None or fw * fh > best[2] * best[3]:
-                        best = (x, y, fw, fh, float(face.confidence()))
-                if best is None:
-                    frames.append(None)
-                else:
-                    x, y, fw, fh, conf = best
-                    # у Vision начало координат внизу слева, у видео — вверху слева
-                    frames.append([round((x + fw / 2) * width, 1),
-                                   round((1 - (y + fh / 2)) * height, 1),
-                                   round(fw * width, 1), round(fh * height, 1),
-                                   round(conf, 3)])
+            _, found = detector.detect(np.frombuffer(buf, np.uint8).reshape(h, w, 3))
+            best = None
+            for row in found if found is not None else []:
+                x, y, fw, fh = (float(v) for v in row[:4])
+                if best is None or fw * fh > best[2] * best[3]:
+                    best = (x, y, fw, fh, float(row[-1]))
+            if best is None:
+                frames.append(None)
+            else:
+                x, y, fw, fh, conf = best
+                frames.append([round((x + fw / 2) * sx, 1), round((y + fh / 2) * sy, 1),
+                               round(fw * sx, 1), round(fh * sy, 1), round(conf, 3)])
             if len(frames) % 300 == 0:
                 print(f"     {len(frames)} кадров", flush=True)
     finally:
@@ -372,7 +367,7 @@ def main():
         sys.exit(f"Нет файла: {video}")
     base = video.with_suffix("")
 
-    print("  → ищу лицо на каждом кадре (Apple Vision)", flush=True)
+    print("  → ищу лицо на каждом кадре (YuNet)", flush=True)
     faces = detect_faces(video)
     share = faces["found"] / max(1, len(faces["frames"]))
     print(f"  → лицо найдено на {faces['found']} из {len(faces['frames'])} кадров ({share:.0%})")

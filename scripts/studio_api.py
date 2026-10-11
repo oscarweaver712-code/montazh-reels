@@ -9,10 +9,9 @@ import asyncio
 import json
 import os
 import re
-import shlex
-import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -21,10 +20,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import approve
 import brain
 import formats
+import host
+import jobqueue
 import styles
-from common import INPUT_DIR, OUTPUT_DIR, ROOT, VENV_PY, WORK_DIR, ffprobe_bin
+from common import INPUT_DIR, OUTPUT_DIR, ROOT, WORK_DIR, ffprobe_bin
 from jobqueue import CURRENT, QUEUE, runner_alive
 
 router = APIRouter()
@@ -48,7 +50,7 @@ def quick_probe(path: Path) -> dict:
         return _probe_cache[key]
     out = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "v:0",
                           "-show_entries", "stream=width,height:stream_side_data=rotation:format=duration",
-                          "-of", "json", str(path)], capture_output=True, text=True)
+                          "-of", "json", str(path)], capture_output=True, encoding="utf-8", errors="replace")
     info = {"width": None, "height": None, "duration": None}
     try:
         data = json.loads(out.stdout or "{}")
@@ -69,6 +71,7 @@ def quick_probe(path: Path) -> dict:
 
 def outputs_for(stem: str) -> list:
     items = []
+    final = (approve.approved(stem) or {}).get("file")
     for path in OUTPUT_DIR.glob(f"{stem}*"):
         if path.suffix.lower() not in VIDEO_EXT:
             continue
@@ -78,7 +81,8 @@ def outputs_for(stem: str) -> list:
         sheet = path.with_suffix(".sheet.jpg")
         items.append({"name": path.name, "mtime": path.stat().st_mtime,
                       "size_mb": round(path.stat().st_size / 1_048_576, 1),
-                      "sheet": sheet.name if sheet.exists() else None})
+                      "sheet": sheet.name if sheet.exists() else None,
+                      "approved": path.name == final})
     return sorted(items, key=lambda i: -i["mtime"])
 
 
@@ -109,6 +113,7 @@ def video_state(path: Path) -> dict:
                   "formats": brief["formats"], "variants": brief["variants"],
                   "error": brief.get("error")},
         "outputs": outputs_for(stem),
+        "approved": (approve.approved(stem) or {}).get("file"),
     }
 
 
@@ -130,7 +135,7 @@ def studio_state():
         # задачи мозг кладёт в очередь файлами; выполняет их студия — сама, без кнопки
         ensure_runner()
         queue = queue_state()
-    return {"videos": [video_state(p) for p in inputs], "queue": queue,
+    return {"videos": [video_state(p) for p in inputs], "queue": queue, "batch": batch_view(),
             "formats": {k: dict(v, id=k) for k, v in formats.FORMATS.items()},
             "goals": styles.GOALS, "tiers": styles.TIERS}
 
@@ -186,14 +191,7 @@ def post_brief(stem: str, data: dict = Body(...)):
 
 def ensure_runner() -> bool:
     """Будит обработчик очереди, если он не живёт. Второго он сам не допустит (замок)."""
-    if runner_alive():
-        return False
-    QUEUE.mkdir(parents=True, exist_ok=True)
-    with open(QUEUE / "runner.out", "a", encoding="utf-8") as log:   # у обработчика своя копия
-        subprocess.Popen([str(VENV_PY), "-u", "scripts/jobqueue.py", "--idle", "1800"], cwd=ROOT,
-                         stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         start_new_session=True, env=brain.clean_env())
-    return True
+    return jobqueue.wake(idle=1800)
 
 
 def _tail(path: Path, lines: int = 6) -> list:
@@ -204,7 +202,7 @@ def _tail(path: Path, lines: int = 6) -> list:
 
 
 def queue_state() -> dict:
-    pending = sorted(p.stem for p in QUEUE.glob("*.sh")) if QUEUE.exists() else []
+    pending = [p.stem for p in jobqueue.job_files(QUEUE)]
     current = None
     if CURRENT.exists():
         try:
@@ -217,7 +215,7 @@ def queue_state() -> dict:
         folder = QUEUE / sub
         if not folder.exists():
             return []
-        items = sorted(folder.glob("*.sh"), key=lambda p: -p.stat().st_mtime)[:8]
+        items = sorted(jobqueue.job_files(folder), key=lambda p: -p.stat().st_mtime)[:8]
         return [{"job": p.stem, "at": p.stat().st_mtime,
                  "log": _tail(QUEUE / "logs" / f"{p.stem}.log", 3) if sub == "failed" else []}
                 for p in items]
@@ -228,15 +226,14 @@ def queue_state() -> dict:
             "done": finished("done"), "failed": finished("failed")}
 
 
-def enqueue(name: str, command: str) -> str:
-    """Задача очереди — файл с одной командой. Имя уникально: повтор не затирает живую."""
-    if not re.fullmatch(r"\d\d-[\w.\-]+", name, re.UNICODE):
-        raise HTTPException(400, f"Плохое имя задачи: {name}")
-    QUEUE.mkdir(parents=True, exist_ok=True)
-    path = QUEUE / f"{name}.sh"
-    if path.exists():
-        raise HTTPException(409, f"Задача {name} уже в очереди")
-    path.write_text(f"set -e\n{command}\n", encoding="utf-8")
+def enqueue(name: str, steps: list, cleanup: list | None = None, title: str = "") -> str:
+    """Задача очереди — JSON со списком шагов (jobqueue.write_job). Имя уникально: повтор не затирает живую."""
+    try:
+        path = jobqueue.write_job(name, steps, cleanup, title, queue=QUEUE)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileExistsError as e:
+        raise HTTPException(409, str(e))
     ensure_runner()
     return path.stem
 
@@ -255,8 +252,8 @@ def wake_queue():
 def cancel_job(job: str):
     if not re.fullmatch(r"[\w.\-]+", job, re.UNICODE):
         raise HTTPException(400, "плохое имя задачи")
-    path = QUEUE / f"{job}.sh"
-    if not path.exists():
+    path = jobqueue.find_job(QUEUE, job)
+    if path is None:
         raise HTTPException(404, "такой задачи в очереди нет (уже выполнена)")
     try:
         running = json.loads(CURRENT.read_text(encoding="utf-8")).get("job") if CURRENT.exists() else None
@@ -292,10 +289,29 @@ def fast_job(data: dict = Body(...)):
         raise HTTPException(404, f"Нет исходника {stem} в input/")
     tag = fmt.replace(":", "x")
     name = f"30-fast-{stem}-{style_id}-{tag}-{int(time.time()) % 100000}"
-    # имя файла — в кавычки оболочки как есть: задача очереди — это скрипт bash
-    cmd = (f".venv/bin/python scripts/reels.py {shlex.quote('input/' + source.name)} "
-           f"--style {shlex.quote(style_id)} --format {shlex.quote(fmt)}")
-    return {"job": enqueue(name, cmd), **queue_state()}
+    # шаг — список слов, а не строка оболочки: имя файла с пробелами или кавычками его не сломает
+    steps = [["python", "scripts/reels.py", f"input/{source.name}", "--style", style_id, "--format", fmt]]
+    return {"job": enqueue(name, steps, title=f"Быстрый монтаж {stem}: {style_id}, {fmt}"), **queue_state()}
+
+
+# ---------------------------------------------------------------- апрув
+
+@router.get("/api/studio/approve/{stem}")
+def approve_plan(stem: str, file: str):
+    """Что останется и что можно удалить после апрува — ничего не трогает."""
+    try:
+        return approve.plan(safe_stem(stem), file)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.post("/api/studio/approve/{stem}")
+def approve_apply(stem: str, data: dict = Body(...)):
+    """Апрув конечного варианта: запись в work/<имя>/approved.json и уборка отмеченных копий."""
+    try:
+        return approve.apply(safe_stem(stem), data.get("file", ""), list(data.get("remove") or []))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 # ---------------------------------------------------------------- файлы для просмотра
@@ -318,10 +334,8 @@ def reveal(data: dict = Body(...)):
     if folder is None:
         raise HTTPException(400, "нет такой папки")
     target = folder / Path(data.get("name", "")).name if data.get("name") else folder
-    if target.is_file():
-        subprocess.run(["open", "-R", str(target)])       # показать файл в Finder
-    elif target.exists():
-        subprocess.run(["open", str(target)])
+    if target.exists():
+        host.reveal(target)               # Finder на Mac, Проводник на Windows
     return {"ok": True}
 
 
@@ -364,12 +378,15 @@ def studio_context(stem: str | None) -> str:
     if not stem:
         return "Ролик не выбран: работай с тем, о чём просит человек (по умолчанию — новые из input/)."
     path = next((p for p in INPUT_DIR.glob(f"{stem}.*") if p.suffix.lower() in VIDEO_EXT), None)
-    lines = [f"Выбран ролик {stem} ({path.name if path else 'исходника в input/ нет'})."]
+    lines = [f"Выбран ролик {stem} ({path.name if path else 'исходника в input/ нет'}). Эта сессия — только "
+             f"про него: другие ролики монтируются в своих сессиях, не трогай их."]
     if path:
         state = video_state(path)
         done = [k for k, v in state["steps"].items() if v]
         lines.append(f"Готовые этапы: {', '.join(done) or 'ничего'}. Выпуски: "
                      f"{', '.join(o['name'] for o in state['outputs'][:6]) or 'нет'}.")
+        if state["approved"]:
+            lines.append(f"Апрув: {state['approved']} — это конечный вариант; новые версии — только по просьбе.")
     try:
         lines.append("Бриф:\n" + styles.director_brief(stem))
     except styles.StyleError as e:
@@ -383,6 +400,9 @@ async def _run_turn(thread: dict, text: str, mode: str, model: str | None):
     Раньше исключение посреди хода (новый формат события у агента, сбой записи диалога)
     оставляло ход «работающим» навсегда: каждая следующая реплика получала «мозг уже
     работает», пока сервер студии не перезапустят, а в чате — ни слова о причине.
+
+    Агент читается в отдельном потоке обычным Popen, а не через asyncio: на Windows
+    подпроцессы asyncio работают не в каждом цикле событий, а поток работает везде.
     """
     run = runs[thread["id"]]
     engine = thread["engine"]
@@ -395,32 +415,9 @@ async def _run_turn(thread: dict, text: str, mode: str, model: str | None):
         run["events"].append(ev)
         reply["events"].append(ev)
 
-    try:
-        try:
-            cmd = brain.command(engine, text, thread.get("session"), mode, model,
-                                context=studio_context(thread.get("stem")))
-        except (RuntimeError, ValueError) as e:
-            add({"type": "error", "text": str(e)})
-            return
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd, cwd=ROOT, env=brain.child_env(), stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                limit=16 * 1024 * 1024, start_new_session=True)
-        except OSError as e:
-            add({"type": "error", "text": f"Не запустился {engine}: {e}"})
-            return
-        run["proc"] = proc
-
-        async def drain_stderr():
-            data = await proc.stderr.read()
-            run["stderr"] = data.decode("utf-8", "replace")[-4000:]
-        err_task = asyncio.create_task(drain_stderr())
-
-        while True:
-            raw = await proc.stdout.readline()
-            if not raw:
-                break
+    def read_agent():
+        """В потоке: события агента по строкам, пока он не закончит."""
+        for raw in iter(proc.stdout.readline, b""):
             try:
                 events = brain.parse_line(engine, raw.decode("utf-8", "replace"))
             except Exception as e:                  # одно странное событие не роняет ход
@@ -433,8 +430,28 @@ async def _run_turn(thread: dict, text: str, mode: str, model: str | None):
                 add(ev)
                 if ev["type"] in ("text", "result", "error"):
                     brain.save_thread(thread)
-        code = await proc.wait()
-        await err_task
+        return proc.wait()
+
+    try:
+        try:
+            cmd = brain.command(engine, text, thread.get("session"), mode, model,
+                                context=studio_context(thread.get("stem")))
+        except (RuntimeError, ValueError) as e:
+            add({"type": "error", "text": str(e)})
+            return
+        try:
+            proc = subprocess.Popen(cmd, cwd=ROOT, env=brain.child_env(), stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, **host.own_group())
+        except OSError as e:
+            add({"type": "error", "text": f"Не запустился {engine}: {e}"})
+            return
+        run["proc"] = proc
+        stderr = []
+        drain = threading.Thread(target=lambda: stderr.append(proc.stderr.read()), daemon=True)
+        drain.start()
+        code = await asyncio.to_thread(read_agent)
+        await asyncio.to_thread(drain.join, 10)
+        run["stderr"] = b"".join(stderr).decode("utf-8", "replace")[-4000:]
         if code != 0 and not any(e["type"] in ("result", "error") for e in run["events"]):
             tail = (run.get("stderr") or "").strip().splitlines()[-6:]
             msg = brain.explain_error(" ".join(tail)) if tail else f"код {code}"
@@ -443,11 +460,8 @@ async def _run_turn(thread: dict, text: str, mode: str, model: str | None):
             add({"type": "error", "text": f"{engine} завершился с ошибкой: {msg}"})
     except Exception as e:
         add({"type": "error", "text": f"Ход мозга прерван ошибкой студии: {type(e).__name__}: {e}"})
-        if proc is not None and proc.returncode is None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)    # агент без читателя повис бы на полном канале
-            except (ProcessLookupError, PermissionError):
-                pass
+        if proc is not None and proc.poll() is None:
+            host.kill_tree(proc.pid)                 # агент без читателя повис бы на полном канале
     finally:
         run["done"] = True
         try:
@@ -470,9 +484,20 @@ async def brain_send(data: dict = Body(...)):
     if busy:
         # один мозг за раз: два агента наперегонки запустят два тяжёлых процесса
         raise HTTPException(409, "Мозг уже работает над другим запросом — дождись или останови его")
-    if data.get("stem") is not None:
-        stem = data.get("stem") or None
-        thread["stem"] = safe_stem(stem) if stem else None
+    if batch["running"]:
+        raise HTTPException(409, "Идёт пачка: мозг занят роликами по очереди — дождись или останови пачку")
+    stem = data.get("stem") or None
+    if stem:
+        safe_stem(stem)
+        if thread.get("stem") and thread["stem"] != stem:
+            # Один ролик — одна сессия агента. Контекст у сессии конечный: монтаж второго ролика
+            # в сессии первого идёт на обрывках чужого контекста и выходит хуже (правило Валеры).
+            raise HTTPException(409, f"Этот разговор — про {thread['stem']}. Для {stem} начни новый: "
+                                     "у каждого ролика своя сессия мозга")
+        if not thread.get("stem") and thread["messages"]:
+            raise HTTPException(409, f"Этот разговор начат без ролика. Для {stem} начни новый: "
+                                     "у каждого ролика своя сессия мозга")
+        thread["stem"] = stem
     if thread["title"] == "Новый разговор":
         thread["title"] = text[:60]
     thread["messages"].append({"role": "user", "text": text, "at": time.time()})
@@ -490,10 +515,7 @@ def brain_stop(thread_id: str):
     if not run or run["done"] or not run.get("proc"):
         return {"ok": False, "error": "нечего останавливать"}
     run["stopped"] = True
-    try:
-        os.killpg(run["proc"].pid, signal.SIGTERM)       # агент и всё, что он запустил
-    except (ProcessLookupError, PermissionError):
-        pass
+    host.kill_tree(run["proc"].pid)                  # агент и всё, что он запустил
     return {"ok": True}
 
 
@@ -529,3 +551,165 @@ async def brain_stream(thread_id: str, request: Request, since: int = 0):
             await asyncio.sleep(0.25)
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---------------------------------------------------------------- пачка: каждый ролик — своя сессия
+
+# Ролики пачки монтируются по одному, и у каждого — своя, новая сессия мозга: контекст у
+# сессии конечный, и монтаж пятого ролика в разговоре, где уже были четыре, выходит хуже
+# (правило Валеры, 11.10.2026). Между ходами студия ждёт очередь и сама продолжает разговор,
+# когда тяжёлые задачи отработали. Конец ролика мозг отмечает строкой «СТАТУС: …».
+BATCH_TURNS = 12
+BATCH_FIRST = """Смонтируй {stem} по брифу (work/{stem}/brief.json; нет брифа — по умолчанию, вирусный 9:16).
+Это пачка: человек не отвечает по ходу — решай сам, каждое решение с откатом в отчёт.
+Тяжёлое — в очередь (scripts/jobqueue.py add …): когда очередь отработает, студия сама напишет тебе сюда.
+В конце КАЖДОГО ответа — одна строка:
+  СТАТУС: ГОТОВО — ролик в output/ и прошёл verify_render;
+  СТАТУС: ЖДУ ОЧЕРЕДЬ — поставил задачи, продолжу после них;
+  СТАТУС: НУЖЕН ЧЕЛОВЕК — <что решить> — если без человека дальше нельзя (сорванный дубль и т.п.)."""
+batch: dict = {"running": False, "items": [], "engine": None, "mode": "safe", "stop": False, "started": None}
+
+
+def batch_view() -> dict:
+    return {k: batch[k] for k in ("running", "items", "engine", "mode", "started")}
+
+
+def batch_save() -> None:
+    path = WORK_DIR / "_studio" / "batch.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(batch_view(), ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def all_jobs() -> dict:
+    """Все задачи очереди по имени: queued / done / failed."""
+    found = {p.stem: "queued" for p in jobqueue.job_files(QUEUE)}
+    for state in ("done", "failed"):
+        found.update({p.stem: state for p in jobqueue.job_files(QUEUE / state)})
+    return found
+
+
+def status_of(reply: dict) -> tuple:
+    """(статус, пояснение) из последней строки «СТАТУС: …» в ответе мозга."""
+    text = "\n".join(e.get("text", "") for e in reply.get("events", []) if e["type"] == "text")
+    found = re.findall(r"СТАТУС:\s*(ГОТОВО|ЖДУ ОЧЕРЕДЬ|НУЖЕН ЧЕЛОВЕК)\s*[—–-]?\s*(.*)", text)
+    return found[-1] if found else ("", "")
+
+
+async def batch_turn(thread: dict, text: str) -> dict:
+    """Один ход мозга внутри пачки — тот же, что из чата, только ждём его здесь."""
+    thread["messages"].append({"role": "user", "text": text, "at": time.time(), "auto": True})
+    brain.save_thread(thread)
+    runs[thread["id"]] = {"events": [], "done": False, "started": time.time()}
+    await _run_turn(thread, text, batch["mode"], None)
+    return thread["messages"][-1]
+
+
+async def run_batch() -> None:
+    try:
+        for item in batch["items"]:
+            if batch["stop"]:
+                item.update(status="skipped", note="пачку остановили")
+                continue
+            stem = item["stem"]
+            thread = brain.new_thread(batch["engine"], f"{stem}: пачка", stem)
+            item.update(thread=thread["id"], status="working", note="")
+            batch_save()
+            text = BATCH_FIRST.format(stem=stem)
+            for turn in range(BATCH_TURNS):
+                before = all_jobs()
+                reply = await batch_turn(thread, text)
+                errors = [e["text"] for e in reply.get("events", []) if e["type"] == "error"]
+                status, why = status_of(reply)
+                if errors:
+                    item.update(status="failed", note=errors[-1][:300])
+                    if any(w in errors[-1] for w in ("Лимит", "не авторизован", "не найден")):
+                        batch["stop"] = True           # с этим мозгом дальше не пойдёт ни один ролик
+                    break
+                if status == "ГОТОВО":
+                    item.update(status="done", note=why[:300])
+                    break
+                if status == "НУЖЕН ЧЕЛОВЕК":
+                    item.update(status="needs_human", note=why[:300])
+                    break
+                # задачи, появившиеся за этот ход, — его (мозг в студии один, второго хода нет)
+                mine = [j for j in all_jobs() if j not in before]
+                if mine:
+                    item.update(status="waiting_queue", note=", ".join(mine)[:300])
+                    batch_save()
+                    while not batch["stop"] and any(all_jobs().get(j) == "queued" for j in mine):
+                        ensure_runner()
+                        await asyncio.sleep(5)
+                    if batch["stop"]:
+                        item.update(status="skipped", note="пачку остановили, пока шла очередь")
+                        break
+                    result = all_jobs()
+                    lines = []
+                    for job in mine:
+                        state = result.get(job, "?")
+                        tail = " | ".join(_tail(QUEUE / "logs" / f"{job}.log", 3)) if state == "failed" else ""
+                        lines.append(f"{job}: {'✓ готово' if state == 'done' else '✗ упала — ' + tail}")
+                    text = ("Очередь отработала:\n" + "\n".join(lines) +
+                            f"\nПродолжай монтаж {stem}. В конце — строка СТАТУС.")
+                elif status == "ЖДУ ОЧЕРЕДЬ":
+                    text = ("Новых задач в очереди от тебя нет — проверь work/_queue/ (и failed/) и продолжай. "
+                            "В конце — строка СТАТУС.")
+                else:
+                    text = f"Продолжай монтаж {stem}. Если ролик готов и проверен — «СТАТУС: ГОТОВО»."
+                item.update(status="working")
+                batch_save()
+            else:
+                item.update(status="failed", note=f"не уложился в {BATCH_TURNS} ходов")
+            batch_save()
+    except Exception as e:
+        for item in batch["items"]:
+            if item["status"] in ("queued", "working", "waiting_queue"):
+                item.update(status="failed", note=f"пачка прервана ошибкой студии: {type(e).__name__}: {e}"[:300])
+    finally:
+        batch["running"] = False
+        batch_save()
+
+
+def new_videos() -> list:
+    """Ролики без выпусков и без апрува — кандидаты в пачку."""
+    found = []
+    for path in sorted(INPUT_DIR.glob("*")):
+        if path.suffix.lower() in VIDEO_EXT and not path.name.startswith("."):
+            if not outputs_for(path.stem) and not approve.approved(path.stem):
+                found.append(path.stem)
+    return found
+
+
+@router.get("/api/brain/batch")
+def batch_state():
+    return {**batch_view(), "new": new_videos()}
+
+
+@router.post("/api/brain/batch")
+async def batch_start(data: dict = Body(...)):
+    """Пачка роликов: по одному, каждый в своей новой сессии мозга."""
+    if batch["running"]:
+        raise HTTPException(409, "Пачка уже идёт")
+    if [t for t, r in runs.items() if not r["done"]]:
+        raise HTTPException(409, "Мозг сейчас занят разговором — дождись или останови его")
+    engine = data.get("engine", "claude")
+    if engine not in ("claude", "codex"):
+        raise HTTPException(400, "мозг бывает claude или codex")
+    stems = [safe_stem(s) for s in (data.get("stems") or new_videos())]
+    if not stems:
+        raise HTTPException(400, "Новых роликов нет: у всех есть выпуски")
+    batch.update(running=True, stop=False, engine=engine, mode=data.get("mode", "safe"),
+                 started=time.time(), items=[{"stem": s, "status": "queued", "thread": None, "note": ""} for s in stems])
+    batch_save()
+    asyncio.create_task(run_batch())
+    return batch_view()
+
+
+@router.post("/api/brain/batch/stop")
+def batch_stop():
+    """Остановить пачку: текущий ход мозга гасится, следующие ролики не начинаются."""
+    batch["stop"] = True
+    for run in runs.values():
+        if not run["done"] and run.get("proc"):
+            run["stopped"] = True
+            host.kill_tree(run["proc"].pid)
+    return batch_view()

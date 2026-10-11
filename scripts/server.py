@@ -16,7 +16,6 @@ import asyncio
 import json
 import re
 import secrets
-import shlex
 import shutil
 import subprocess
 import sys
@@ -30,6 +29,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (FONT_DIR, INPUT_DIR, OUTPUT_DIR, PRESET_DIR, ROOT,
                     ffmpeg_bin, ffprobe_bin, load_preset, probe)
+import host
+import jobqueue
 import studio_api
 
 WEB_DIR = ROOT / "web"
@@ -149,7 +150,7 @@ def video_seconds(path: Path) -> float | None:
         ffprobe_bin(), "-v", "error", "-select_streams", "v:0",
         "-show_entries", "stream=codec_type:format=duration",
         "-of", "default=nw=1:nk=1", str(path),
-    ], capture_output=True, text=True).stdout.split()
+    ], capture_output=True, encoding="utf-8", errors="replace").stdout.split()
 
     if "video" not in out:
         return None
@@ -251,7 +252,7 @@ def start_render(
     preset["subs"]["font"] = font
     preset["motion"]["punch_in"] = motion
     preset["audio"]["denoise"] = denoise
-    preset["video"]["encoder"] = "libx264" if quality == "best" else "h264_videotoolbox"
+    preset["video"]["encoder"] = "libx264" if quality == "best" else "auto"
 
     text = json.dumps(preset, ensure_ascii=False, indent=1)
     (PRESET_DIR / "_ui.json").write_text(text, encoding="utf-8")     # для «Закрепить настройки»
@@ -262,13 +263,12 @@ def start_render(
     job_preset = studio_api.QUEUE / "presets" / f"{job}.json"
     job_preset.parent.mkdir(parents=True, exist_ok=True)
     job_preset.write_text(text, encoding="utf-8")
-    rel = str(job_preset.relative_to(ROOT) if job_preset.is_relative_to(ROOT) else job_preset)
-    cmd = (f"trap {shlex.quote('rm -f ' + shlex.quote(rel))} EXIT\n"
-           f".venv/bin/python -u scripts/reels.py {shlex.quote('input/' + source.name)} "
-           f"--preset {shlex.quote(rel)}")
+    rel = job_preset.relative_to(ROOT).as_posix() if job_preset.is_relative_to(ROOT) else str(job_preset)
+    step = ["python", "-u", "scripts/reels.py", f"input/{source.name}", "--preset", rel]
     if hook.strip():
-        cmd += f" --hook {shlex.quote(hook.strip())}"
-    studio_api.enqueue(job, cmd)
+        step += ["--hook", hook.strip()]
+    # файл настроек задачи убирает сама очередь, когда задача кончится (cleanup)
+    studio_api.enqueue(job, [step], cleanup=[rel], title=f"Быстрая панель: {source.name}")
     jobs[job] = {"video": source.name}
     return {"job_id": job}
 
@@ -277,9 +277,9 @@ def queue_place(job: str) -> str | None:
     """Где задача очереди: queued (ждёт или идёт), done, failed или None (нет такой)."""
     queue = studio_api.QUEUE
     for state in ("done", "failed"):
-        if (queue / state / f"{job}.sh").exists():
+        if jobqueue.find_job(queue / state, job):
             return state
-    return "queued" if (queue / f"{job}.sh").exists() else None
+    return "queued" if jobqueue.find_job(queue, job) else None
 
 
 @app.get("/api/stream/{job_id}")
@@ -457,7 +457,7 @@ def reveal(name: str = Form(...), folder: str = Form("output")):
     base = OUTPUT_DIR if folder == "output" else INPUT_DIR
     path = base / Path(name).name
     if path.exists():
-        subprocess.run(["open", "-R", str(path)])
+        host.reveal(path)                 # Finder на Mac, Проводник на Windows
     return {"ok": True}
 
 

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" ] && \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$CLAUDE_PROJECT_DIR/scripts/studio_up.py\" || true",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/studio_hook.mjs\"",
             "timeout": 20
           }
         ]
@@ -16,6 +16,7 @@
   "permissions": {
     "allow": [
       "Bash(.venv/bin/python scripts/*)",
+      "Bash(.venv/Scripts/python.exe scripts/*)",
       "Bash(npx --yes hyperframes@0.8.141 *)",
       "Bash(ffprobe *)",
       "Bash(ls *)",

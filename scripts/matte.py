@@ -2,17 +2,22 @@
 """Вырезка человека из дубля: маска по кадрам и прозрачное видео поверх фона.
 
 Маска нужна для двух вещей: крупное слово ЗА спиной (текст между фоном и человеком)
-и замена фона. Способов несколько, и какой лучше на нашей съёмке — решает глаз:
+и замена фона. Движки — открытые и одинаково работают на Mac и Windows:
 
-  vision — Apple Vision, встроен в macOS, считает на нейроядре, держит маску
-           стабильной между кадрами. Ничего качать не нужно.
-  rvm    — Robust Video Matting (GPL-3.0, для внутренней работы годится): сеть для
-           людей на видео, помнит прошлые кадры, поэтому края не мерцают.
+  mediapipe — MediaPipe Selfie Multiclass (Apache-2.0), по умолчанию. Классы «волосы, кожа,
+              одежда» дают человека вместе с тем, что у него в руках: банку из IMG_3317 он
+              держит даже в смазанном кадре, где прежний Apple Vision её терял. Края доводятся
+              по самому кадру (guided filter), полупрозрачная дымка по контуру сжимается.
+  rvm       — Robust Video Matting (GPL-3.0), запасной: помнит прошлые кадры, но выкидывает
+              предметы из рук. Нужен torch.
+
+Замер 11.10.2026 на IMG_3279/3305/3317 против масок Apple Vision (до этого дня был он):
+MediaPipe совпал на 94–96% (RVM — на 88–92%), а на спорных кадрах выглядит не хуже.
 
 Кадры идут по одному через канал ffmpeg → модель → ffmpeg: память не зависит от
-длины ролика. Потоки торча ограничены, чтобы ноутбук оставался живым.
+длины ролика. Потоки ограничены, чтобы ноутбук оставался живым.
 
-  .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --backend rvm
+  .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --cutout
 """
 import argparse
 import os
@@ -26,48 +31,78 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import ROOT, ffmpeg_bin, probe
+import host
+import models
+from common import ffmpeg_bin, probe
 
-RVM_MODEL = ROOT / "models" / "rvm_mobilenetv3_fp32.torchscript"
 
-
-class VisionMatte:
-    """Apple Vision: сегментация человека с временным сглаживанием между кадрами."""
+class MediaPipeMatte:
+    """MediaPipe Selfie Multiclass: человек = всё, кроме класса «фон», с доводкой краёв по кадру."""
 
     def __init__(self, width: int, height: int):
-        import Quartz
-        import Vision
-        self.Quartz, self.Vision = Quartz, Vision
+        import cv2
+        import mediapipe as mp
+        from mediapipe.tasks.python import BaseOptions, vision
+
+        cv2.setNumThreads(host.encoder_threads())
+        self.cv2, self.mp = cv2, mp
         self.width, self.height = width, height
-        self.colorspace = Quartz.CGColorSpaceCreateDeviceRGB()
-        self.handler = Vision.VNSequenceRequestHandler.alloc().init()
-        # запрос «с состоянием»: голый init у него запрещён, только с обработчиком
-        self.request = Vision.VNGeneratePersonSegmentationRequest.alloc().initWithCompletionHandler_(None)
-        self.request.setQualityLevel_(Vision.VNGeneratePersonSegmentationRequestQualityLevelAccurate)
-        self.request.setOutputPixelFormat_(0x4C303038)            # 'L008': 8 бит, один канал
+        options = vision.ImageSegmenterOptions(
+            base_options=BaseOptions(model_asset_path=str(models.ensure("selfie_multiclass", download=False))),
+            running_mode=vision.RunningMode.VIDEO, output_confidence_masks=True, output_category_mask=False)
+        self.segmenter = vision.ImageSegmenter.create_from_options(options)
+        self.ms = 0
+        # доводка краёв считается на половинном кадре: на глаз то же, а вчетверо быстрее
+        self.half = (max(2, width // 2), max(2, height // 2))
 
     def __call__(self, rgba: bytes) -> np.ndarray:
-        import objc
-        Q = self.Quartz
-        with objc.autorelease_pool():
-            # только через CFData: иначе каждый кадр остаётся в памяти навсегда
-            provider = Q.CGDataProviderCreateWithCFData(Q.CFDataCreate(None, rgba, len(rgba)))
-            image = Q.CGImageCreate(self.width, self.height, 8, 32, self.width * 4,
-                                    self.colorspace, Q.kCGImageAlphaNoneSkipLast, provider,
-                                    None, False, Q.kCGRenderingIntentDefault)
-            ok, error = self.handler.performRequests_onCGImage_error_([self.request], image, None)
-            if not ok or not self.request.results():
-                raise RuntimeError(f"Apple Vision не отдал маску: {error}")
-            buffer = self.request.results()[0].pixelBuffer()
-            Q.CVPixelBufferLockBaseAddress(buffer, 1)
-            try:
-                w, h = Q.CVPixelBufferGetWidth(buffer), Q.CVPixelBufferGetHeight(buffer)
-                stride = Q.CVPixelBufferGetBytesPerRow(buffer)
-                raw = Q.CVPixelBufferGetBaseAddress(buffer).as_buffer(stride * h)
-                mask = np.frombuffer(raw, dtype=np.uint8).reshape(h, stride)[:, :w].copy()
-            finally:
-                Q.CVPixelBufferUnlockBaseAddress(buffer, 1)
-        return resize(mask, self.width, self.height)
+        cv2 = self.cv2
+        frame = np.frombuffer(rgba, np.uint8).reshape(self.height, self.width, 4)[:, :, :3]
+        image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame))
+        result = self.segmenter.segment_for_video(image, self.ms)
+        self.ms += 33                                   # метки времени обязаны расти
+        person = 1.0 - np.asarray(result.confidence_masks[0].numpy_view(), np.float32)   # класс 0 — фон
+        alpha = cv2.resize(person, self.half, interpolation=cv2.INTER_LINEAR)
+        # уверенность 0.35–0.65 — та самая дымка вокруг контура: сжимаем её в плавную ступень
+        alpha = np.clip((alpha - 0.35) / 0.30, 0.0, 1.0)
+        alpha = alpha * alpha * (3.0 - 2.0 * alpha)
+        guide = cv2.cvtColor(cv2.resize(frame, self.half, interpolation=cv2.INTER_AREA),
+                             cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+        alpha = guided_filter(guide, alpha, 4, 1e-3, cv2)           # край маски — по краю в кадре
+        alpha = drop_islands(np.clip(alpha, 0.0, 1.0), cv2)
+        alpha = cv2.resize(alpha, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+        return np.clip(alpha * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
+def guided_filter(guide: np.ndarray, src: np.ndarray, radius: int, eps: float, cv2) -> np.ndarray:
+    """Управляемый фильтр (He, Sun, Tang 2010): сглаживает маску, а край ведёт по краю в кадре.
+
+    Свой, на box-фильтрах ядра OpenCV, а не cv2.ximgproc: тот есть только в contrib-сборке,
+    а какая сборка OpenCV окажется в окружении, решают зависимости (MediaPipe тянет contrib,
+    распознавание текста — обычную) — маска не должна зависеть от этой лотереи.
+    """
+    # край кадра отражается так же, как в справочном cv2.ximgproc.guidedFilter: результат совпадает
+    box = lambda x: cv2.boxFilter(x, -1, (2 * radius + 1, 2 * radius + 1), borderType=cv2.BORDER_REFLECT)
+    mean_i, mean_p = box(guide), box(src)
+    var_i = box(guide * guide) - mean_i * mean_i
+    cov_ip = box(guide * src) - mean_i * mean_p
+    a = cov_ip / (var_i + eps)
+    b = mean_p - a * mean_i
+    return box(a) * guide + box(b)
+
+
+def drop_islands(alpha: np.ndarray, cv2, share: float = 0.003) -> np.ndarray:
+    """Убирает мелкие оторванные пятна (кусок шторы, лист растения): человек — одно целое."""
+    solid = (alpha >= 0.5).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(solid, connectivity=8)
+    if count <= 2:
+        return alpha
+    limit = share * alpha.size
+    small = [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] < limit]
+    if small:
+        alpha = alpha.copy()
+        alpha[np.isin(labels, small)] = 0.0
+    return alpha
 
 
 class RvmMatte:
@@ -75,13 +110,12 @@ class RvmMatte:
 
     def __init__(self, width: int, height: int, downsample: float = 0.25):
         import torch
-        if not RVM_MODEL.exists():
-            raise RuntimeError(f"Нет модели {RVM_MODEL.relative_to(ROOT)} — скачай её "
-                               "с github.com/PeterL1n/RobustVideoMatting/releases")
-        torch.set_num_threads(max(1, (os.cpu_count() or 4) - 2))   # пара ядер машине
+        model = models.ensure("rvm", download=False)
+        torch.set_num_threads(host.encoder_threads())            # пара ядер машине
         self.torch = torch
-        self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-        self.model = torch.jit.load(str(RVM_MODEL), map_location=self.device).eval()
+        self.device = torch.device("mps" if torch.backends.mps.is_available() else
+                                   "cuda" if torch.cuda.is_available() else "cpu")
+        self.model = torch.jit.load(str(model), map_location=self.device).eval()
         self.state = [None] * 4
         self.downsample = downsample
         self.width, self.height = width, height
@@ -97,18 +131,7 @@ class RvmMatte:
         return out
 
 
-def resize(mask: np.ndarray, width: int, height: int) -> np.ndarray:
-    """Маска Vision меньше кадра — растягиваем билинейно до размера видео."""
-    if mask.shape == (height, width):
-        return mask
-    import torch
-    import torch.nn.functional as F
-    t = torch.from_numpy(mask).float()[None, None]
-    t = F.interpolate(t, size=(height, width), mode="bilinear", align_corners=False)
-    return t[0, 0].round().clamp(0, 255).to(torch.uint8).numpy()
-
-
-BACKENDS = {"vision": VisionMatte, "rvm": RvmMatte}
+BACKENDS = {"mediapipe": MediaPipeMatte, "rvm": RvmMatte}
 
 
 def run_matte(video: Path, backend: str, out: Path) -> dict:
@@ -191,7 +214,7 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
             "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24",
             "-deadline", "good", "-cpu-used", "5", "-row-mt", "1", "-threads", str(threads),
             "-auto-alt-ref", "0", str(part),
-        ], capture_output=True, text=True)
+        ], capture_output=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             raise RuntimeError(f"Не собралось прозрачное видео:\n{result.stderr[-600:]}")
         part.replace(out)
@@ -203,7 +226,7 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
 def main():
     ap = argparse.ArgumentParser(description="Маска человека по кадрам")
     ap.add_argument("video")
-    ap.add_argument("--backend", choices=sorted(BACKENDS), default="vision")
+    ap.add_argument("--backend", choices=sorted(BACKENDS), default="mediapipe")
     ap.add_argument("--out", help="куда положить маску (по умолчанию рядом с видео)")
     ap.add_argument("--cutout", action="store_true",
                     help="ещё и собрать человека без фона (.cutout.webm) из готовой маски")

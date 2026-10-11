@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
-"""Транскрибация с потайминговкой по каждому слову (mlx-whisper, ускорение Apple Silicon)."""
+"""Распознавание речи с таймингом каждого слова — Whisper large-v3-turbo, локально.
+
+Два движка, оба открытые (MIT) и на одной и той же модели:
+  mlx-whisper     — Mac на Apple Silicon: считает на графическом ядре, минута речи ~10 с;
+  faster-whisper  — Windows, Linux и Mac на Intel: процессор (int8) или видеокарта NVIDIA.
+
+Выбирается сам (mlx, если он есть), заставить — REELS_ASR=mlx или REELS_ASR=faster-whisper.
+Тайминги концов слов у обоих врут на десятые доли секунды; границы реза поэтому всё
+равно ставятся по настоящей тишине (AGENTS.md, инвариант 3), а не по ним.
+"""
 import json
+import os
+import platform
 import sys
+import time
+import wave
 from pathlib import Path
 
+import numpy as np
+
+import host
 from common import WORK_DIR, ffmpeg_bin, run
 
-MODEL = "mlx-community/whisper-large-v3-turbo"
+MODEL = "mlx-community/whisper-large-v3-turbo"        # mlx-whisper
+FW_MODEL = "large-v3-turbo"                           # faster-whisper (mobiuslabsgmbh/faster-whisper-large-v3-turbo)
 
 
 def extract_audio(video: Path, wav: Path):
@@ -16,33 +33,75 @@ def extract_audio(video: Path, wav: Path):
     ], "извлекаю аудиодорожку")
 
 
-def transcribe(wav: Path, language: str = "ru", model: str = MODEL) -> dict:
+def backend() -> str:
+    """Движок распознавания на этой машине: mlx на Apple Silicon, иначе faster-whisper."""
+    forced = os.environ.get("REELS_ASR", "").strip()
+    if forced in ("mlx", "faster-whisper"):
+        return forced
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        try:
+            import mlx_whisper  # noqa: F401
+            return "mlx"
+        except ImportError:
+            pass
+    return "faster-whisper"
+
+
+def word(text: str, start: float, end: float, prob: float) -> dict | None:
+    text = (text or "").strip()
+    return {"word": text, "start": float(start), "end": float(end), "prob": float(prob)} if text else None
+
+
+def transcribe_mlx(wav: Path, language: str) -> dict:
     import mlx_whisper
 
-    print(f"  → распознаю речь ({model.split('/')[-1]})", flush=True)
+    print(f"  → распознаю речь ({MODEL.split('/')[-1]}, mlx)", flush=True)
     result = mlx_whisper.transcribe(
         str(wav),
-        path_or_hf_repo=model,
+        path_or_hf_repo=MODEL,
         word_timestamps=True,
         language=language,
         condition_on_previous_text=False,  # меньше галлюцинаций на паузах
         verbose=None,
     )
-
-    words = []
-    for seg in result.get("segments", []):
-        for w in seg.get("words", []):
-            text = w.get("word", "").strip()
-            if not text:
-                continue
-            words.append({
-                "word": text,
-                "start": float(w["start"]),
-                "end": float(w["end"]),
-                "prob": float(w.get("probability", 1.0)),
-            })
-
+    words = [w for seg in result.get("segments", []) for raw in seg.get("words", [])
+             if (w := word(raw.get("word"), raw["start"], raw["end"], raw.get("probability", 1.0)))]
     return {"words": words, "text": result.get("text", "").strip()}
+
+
+def transcribe_fw(wav: Path, language: str) -> dict:
+    """faster-whisper: на процессоре в int8 и с ограничением потоков — машина остаётся живой."""
+    from faster_whisper import WhisperModel
+
+    device, compute = "cpu", "int8"
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() > 0:
+            device, compute = "cuda", "float16"
+    except Exception:
+        pass
+    seconds = os.path.getsize(wav) / (16000 * 2)
+    print(f"  → распознаю речь ({FW_MODEL}, faster-whisper, {device}); на процессоре это примерно "
+          f"{max(1, round(seconds * 0.6 / 60))} мин на {seconds / 60:.1f} мин речи", flush=True)
+    model = WhisperModel(FW_MODEL, device=device, compute_type=compute,
+                         cpu_threads=host.encoder_threads() if device == "cpu" else 0)
+    started = time.time()
+    # Звук отдаём готовым массивом: свой декодер faster-whisper (PyAV) ломается от версии к
+    # версии (1.2.1 с av 19 падал на открытии файла), а дорожку 16 кГц мы и так сняли ffmpeg.
+    with wave.open(str(wav), "rb") as w:
+        audio = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768.0
+    segments, _ = model.transcribe(audio, language=language, word_timestamps=True,
+                                   condition_on_previous_text=False, vad_filter=False)
+    words, text = [], []
+    for seg in segments:                                 # генератор: распознаётся по мере чтения
+        text.append(seg.text)
+        words += [w for raw in seg.words or [] if (w := word(raw.word, raw.start, raw.end, raw.probability))]
+    print(f"  → распознано за {time.time() - started:.0f} с", flush=True)
+    return {"words": words, "text": "".join(text).strip()}
+
+
+def transcribe(wav: Path, language: str = "ru") -> dict:
+    return transcribe_mlx(wav, language) if backend() == "mlx" else transcribe_fw(wav, language)
 
 
 def check_source(video: Path, cache_dir: Path) -> None:

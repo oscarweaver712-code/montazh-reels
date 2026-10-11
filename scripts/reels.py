@@ -164,7 +164,7 @@ def main():
     parser.add_argument("--no-subs", action="store_true", help="без субтитров")
     parser.add_argument("--no-motion", action="store_true", help="без смены крупности")
     parser.add_argument("--no-audio", action="store_true", help="не трогать звук")
-    parser.add_argument("--encoder", help="h264_videotoolbox (быстро) или libx264 (качественнее)")
+    parser.add_argument("--encoder", help="auto (аппаратный на Mac, libx264 на Windows) или libx264")
     parser.add_argument("--style", help="стиль из presets/styles (hormozi, video-essay, …)")
     parser.add_argument("--format", help="формат кадра: 9:16 (по умолчанию), 16:9, 1:1, 4:5")
     args = parser.parse_args()

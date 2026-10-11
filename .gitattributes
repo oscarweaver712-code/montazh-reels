@@ -1,0 +1,7 @@
+# Перевод строк: скрипты Windows — CRLF (cmd и PowerShell 5), скрипты Mac — LF (bash).
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.command text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf

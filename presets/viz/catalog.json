@@ -1,0 +1,849 @@
+{
+ "source": "hyperframes@0.8.141 (Apache-2.0)",
+ "items": [
+  {
+   "name": "bar-chart-race",
+   "file": "compositions/bar-chart-race.html",
+   "type": "block",
+   "title": "Bar Chart Race",
+   "description": "Ranked bars grow and overtake each other as a time series advances, with the axis rescaling as values climb and the accent handing over to whoever leads",
+   "tags": [
+    "data",
+    "chart",
+    "statistics",
+    "ranking"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 12,
+   "variables": [
+    {
+     "id": "title",
+     "type": "string",
+     "label": "Title",
+     "default": "Streaming Subscribers by Service"
+    },
+    {
+     "id": "subtitle",
+     "type": "string",
+     "label": "Subtitle",
+     "default": "Ranked by reported subscribers"
+    },
+    {
+     "id": "periods",
+     "type": "string",
+     "label": "Period labels (comma separated)",
+     "default": "2019, 2020, 2021, 2022, 2023, 2024"
+    },
+    {
+     "id": "series",
+     "type": "string",
+     "label": "Series (one per line: Name: v1, v2, ...)",
+     "default": "Northwind: 42, 58, 71, 96, 118, 131\nCobalt: 30, 46, 68, 92, 126, 168\nFerry: 55, 62, 66, 70, 74, 79\nMarlow: 18, 33, 52, 61, 88, 104\nAster: 25, 28, 44, 58, 63, 72\nPell: 12, 20, 39, 47, 55, 90\nQuill: 8, 11, 15, 24, 40, 66\nDunmore: 35, 37, 38, 40, 42, 44"
+    },
+    {
+     "id": "barCount",
+     "type": "number",
+     "label": "Bars shown",
+     "default": 6,
+     "min": 3,
+     "max": 12,
+     "step": 1
+    },
+    {
+     "id": "periodDuration",
+     "type": "number",
+     "label": "Seconds per period",
+     "default": 2,
+     "min": 0.4,
+     "max": 6,
+     "step": 0.1
+    },
+    {
+     "id": "valuePrefix",
+     "type": "string",
+     "label": "Value prefix",
+     "default": "$"
+    },
+    {
+     "id": "valueSuffix",
+     "type": "string",
+     "label": "Value suffix",
+     "default": "M"
+    },
+    {
+     "id": "valueDecimals",
+     "type": "number",
+     "label": "Value decimals",
+     "default": 0,
+     "min": 0,
+     "max": 3,
+     "step": 1
+    },
+    {
+     "id": "accent",
+     "type": "color",
+     "label": "Leader accent",
+     "default": "#c8452d"
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "before-after-wipe",
+   "file": "compositions/components/before-after-wipe.html",
+   "type": "component",
+   "title": "Before After Wipe",
+   "description": "Two full-bleed content slots compare before and after states as a persistent divider wipes the after layer over the before layer and rests at a configurable split. Callers fill the named before/after slot panels; token-styled defaults render when a slot is left empty.",
+   "tags": [
+    "prop",
+    "ui-props",
+    "compare",
+    "comparison",
+    "split-screen",
+    "holdable",
+    "before-after",
+    "wipe",
+    "slots"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [
+    {
+     "id": "label_a",
+     "type": "string",
+     "role": "content",
+     "label": "Before label",
+     "description": "Chip shown on the base before panel. Blank hides the chip.",
+     "default": "Before"
+    },
+    {
+     "id": "label_b",
+     "type": "string",
+     "role": "content",
+     "label": "After label",
+     "description": "Chip shown on the revealed after panel. Blank hides the chip.",
+     "default": "After"
+    },
+    {
+     "id": "rest_split",
+     "type": "number",
+     "role": "layout",
+     "label": "Resting split",
+     "description": "Divider resting position after the wipe lands.",
+     "default": 50,
+     "min": 0,
+     "max": 100,
+     "step": 1,
+     "unit": "%"
+    },
+    {
+     "id": "wipe_at",
+     "type": "number",
+     "role": "timing",
+     "label": "Wipe start",
+     "description": "Seconds after mount start when the wipe begins.",
+     "default": 0.25,
+     "min": 0,
+     "max": 8,
+     "step": 0.05,
+     "unit": "s"
+    },
+    {
+     "id": "accent",
+     "type": "enum",
+     "role": "style",
+     "label": "Accent",
+     "description": "Divider handle and after chip color.",
+     "default": "green",
+     "options": [
+      {
+       "value": "green",
+       "label": "Green"
+      },
+      {
+       "value": "blue",
+       "label": "Blue"
+      },
+      {
+       "value": "violet",
+       "label": "Violet"
+      }
+     ]
+    },
+    {
+     "id": "exit",
+     "type": "enum",
+     "role": "timing",
+     "label": "Exit",
+     "description": "Outgoing transition. None holds the final comparison frame.",
+     "default": "none",
+     "options": [
+      {
+       "value": "none",
+       "label": "None"
+      },
+      {
+       "value": "fade",
+       "label": "Fade"
+      },
+      {
+       "value": "up",
+       "label": "Up"
+      }
+     ]
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "chart-story",
+   "file": "compositions/components/chart-story.html",
+   "type": "component",
+   "title": "Chart Story",
+   "description": "One chart builds from data in reading order and lands the exact supplied values: staggered bars, a left-to-right line with area fill, a sweeping donut, or filling progress bars, with an accented value callout on the emphasized datum.",
+   "tags": [
+    "motion-primitive",
+    "proof",
+    "stats",
+    "chart",
+    "bars",
+    "line",
+    "donut",
+    "progress",
+    "deterministic"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [
+    {
+     "id": "type",
+     "type": "enum",
+     "role": "content",
+     "label": "Chart type",
+     "description": "Chart form the data builds into.",
+     "default": "bars",
+     "options": [
+      {
+       "value": "bars",
+       "label": "Bars"
+      },
+      {
+       "value": "line",
+       "label": "Line"
+      },
+      {
+       "value": "donut",
+       "label": "Donut"
+      },
+      {
+       "value": "progress",
+       "label": "Progress"
+      }
+     ]
+    },
+    {
+     "id": "data",
+     "type": "string",
+     "role": "content",
+     "label": "Data",
+     "description": "Comma-separated numbers; the chart lands exactly on these values.",
+     "default": "12, 28, 45, 64"
+    },
+    {
+     "id": "labels",
+     "type": "string",
+     "role": "content",
+     "label": "Labels",
+     "description": "Comma-separated labels, one per datum.",
+     "default": "Q1, Q2, Q3, Q4"
+    },
+    {
+     "id": "emphasize",
+     "type": "number",
+     "role": "content",
+     "label": "Emphasize",
+     "description": "Index of the datum that takes the accent and the value callout. Clamped to the data range.",
+     "default": 3,
+     "step": 1
+    },
+    {
+     "id": "unit",
+     "type": "string",
+     "role": "content",
+     "label": "Unit",
+     "description": "Suffix appended to every displayed value.",
+     "default": "%"
+    },
+    {
+     "id": "accent",
+     "type": "enum",
+     "role": "style",
+     "label": "Accent",
+     "description": "Contract color used by the emphasized datum and its callout.",
+     "default": "green",
+     "options": [
+      {
+       "value": "green",
+       "label": "Green"
+      },
+      {
+       "value": "blue",
+       "label": "Blue"
+      },
+      {
+       "value": "violet",
+       "label": "Violet"
+      }
+     ]
+    },
+    {
+     "id": "exit",
+     "type": "enum",
+     "role": "style",
+     "label": "Exit",
+     "description": "Optional departure. Proof stats end on the still hold, so the default is none.",
+     "default": "none",
+     "options": [
+      {
+       "value": "none",
+       "label": "None"
+      },
+      {
+       "value": "fade",
+       "label": "Fade"
+      },
+      {
+       "value": "up",
+       "label": "Up"
+      }
+     ]
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "conic-progress-ring",
+   "file": "compositions/components/conic-progress-ring.html",
+   "type": "component",
+   "title": "Conic Progress Ring",
+   "description": "A token-driven conic progress ring whose angular fill and center count settle together from one registered percentage.",
+   "tags": [
+    "data",
+    "progress",
+    "ring",
+    "conic-gradient",
+    "prove",
+    "demonstrate"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [
+    {
+     "id": "progress",
+     "type": "number",
+     "role": "content",
+     "label": "Progress",
+     "description": "Target angular fill from 0 to 100.",
+     "default": 100,
+     "min": 0,
+     "max": 100,
+     "step": 1,
+     "unit": "%"
+    },
+    {
+     "id": "thickness",
+     "type": "number",
+     "role": "layout",
+     "label": "Thickness",
+     "description": "Ring stroke thickness as a percent of the ring radius.",
+     "default": 12,
+     "min": 4,
+     "max": 30,
+     "step": 1,
+     "unit": "%"
+    },
+    {
+     "id": "label",
+     "type": "string",
+     "role": "content",
+     "label": "Center label",
+     "description": "Numeric target shown in the center and counted in sync with the fill.",
+     "default": "100"
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "count-up",
+   "file": "compositions/components/count-up.html",
+   "type": "component",
+   "title": "Count Up",
+   "description": "A token-native stat counter that eases between values, counting up or down, and lands with a restrained scale pulse.",
+   "tags": [
+    "motion-primitive",
+    "proof",
+    "stats",
+    "counter",
+    "number",
+    "countdown",
+    "deterministic"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [
+    {
+     "id": "start",
+     "type": "number",
+     "role": "content",
+     "label": "Start value",
+     "description": "First value shown by the count.",
+     "default": 0,
+     "step": 1
+    },
+    {
+     "id": "end",
+     "type": "number",
+     "role": "content",
+     "label": "End value",
+     "description": "Final value where the count lands.",
+     "default": 100,
+     "step": 1
+    },
+    {
+     "id": "prefix",
+     "type": "string",
+     "role": "content",
+     "label": "Prefix",
+     "description": "Optional text shown before the value.",
+     "default": ""
+    },
+    {
+     "id": "suffix",
+     "type": "string",
+     "role": "content",
+     "label": "Suffix",
+     "description": "Optional text shown after the value.",
+     "default": "%"
+    },
+    {
+     "id": "accent",
+     "type": "enum",
+     "role": "style",
+     "label": "Accent",
+     "description": "Color used by the count.",
+     "default": "green",
+     "options": [
+      {
+       "value": "green",
+       "label": "Green"
+      },
+      {
+       "value": "blue",
+       "label": "Blue"
+      },
+      {
+       "value": "violet",
+       "label": "Violet"
+      }
+     ]
+    },
+    {
+     "id": "glow",
+     "type": "boolean",
+     "role": "style",
+     "label": "Glow",
+     "description": "Optional soft accent glow under the count. Off by default.",
+     "default": false
+    },
+    {
+     "id": "exit",
+     "type": "enum",
+     "role": "timing",
+     "label": "Exit",
+     "description": "Optional departure. Default none: the landed value holds until the frame cuts.",
+     "default": "none",
+     "options": [
+      {
+       "value": "none",
+       "label": "None"
+      },
+      {
+       "value": "fade",
+       "label": "Fade"
+      },
+      {
+       "value": "up",
+       "label": "Up"
+      }
+     ]
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "decline-chart",
+   "file": "compositions/components/decline-chart.html",
+   "type": "component",
+   "title": "Decline Chart",
+   "description": "A metric line draws downward as its value counts down and the ambient background darkens in lockstep.",
+   "tags": [
+    "motion-primitive",
+    "data",
+    "chart",
+    "decline",
+    "metric",
+    "problem"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [
+    {
+     "id": "label",
+     "type": "string",
+     "role": "content",
+     "label": "Metric label",
+     "description": "Label shown above the declining value.",
+     "default": "Retention"
+    },
+    {
+     "id": "start_value",
+     "type": "number",
+     "role": "content",
+     "label": "Start value",
+     "description": "Metric value at the start of the decline.",
+     "default": 82,
+     "min": 0,
+     "max": 100,
+     "step": 1
+    },
+    {
+     "id": "end_value",
+     "type": "number",
+     "role": "content",
+     "label": "End value",
+     "description": "Metric value at the bottom of the decline.",
+     "default": 34,
+     "min": 0,
+     "max": 100,
+     "step": 1
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "mk-usage-arc",
+   "file": "compositions/components/mk-usage-arc.html",
+   "type": "component",
+   "title": "Hairline Arc Gauge",
+   "description": "Thin circular gauge that draws on while its percentage counts up; one helper call drives both",
+   "tags": [
+    "data-viz",
+    "gauge",
+    "minimal"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "star-rating-fill",
+   "file": "compositions/components/star-rating-fill.html",
+   "type": "component",
+   "title": "Star Rating Fill",
+   "description": "A token-driven star row whose colored layer sweeps to a rating, preserves the fractional final star, and can count the value in sync.",
+   "tags": [
+    "data",
+    "rating",
+    "stars",
+    "fractional",
+    "fill",
+    "prove"
+   ],
+   "dimensions": null,
+   "duration": null,
+   "variables": [
+    {
+     "id": "rating",
+     "type": "number",
+     "role": "content",
+     "label": "Rating",
+     "description": "Target rating in star units from 0 to 5.",
+     "default": 4.8,
+     "min": 0,
+     "max": 5,
+     "step": 0.1
+    },
+    {
+     "id": "starCount",
+     "type": "number",
+     "role": "layout",
+     "label": "Star count",
+     "description": "Number of stars shown in the row.",
+     "default": 5,
+     "min": 1,
+     "max": 10,
+     "step": 1
+    },
+    {
+     "id": "showValue",
+     "type": "enum",
+     "role": "content",
+     "label": "Show value",
+     "description": "Show or hide the synchronized numeric rating.",
+     "default": "yes",
+     "options": [
+      {
+       "value": "yes",
+       "label": "Yes"
+      },
+      {
+       "value": "no",
+       "label": "No"
+      }
+     ]
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "data-chart",
+   "file": "compositions/data-chart.html",
+   "type": "block",
+   "title": "Data Chart",
+   "description": "Animated bar + line chart with staggered reveal, NYT-style typography, and value labels",
+   "tags": [
+    "data",
+    "chart",
+    "statistics"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 15,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "flowchart-vertical",
+   "file": "compositions/flowchart-vertical.html",
+   "type": "block",
+   "title": "Flowchart Vertical",
+   "description": "Portrait animated decision tree with SVG connectors, sticky-note nodes, cursor interaction, and typing correction",
+   "tags": [
+    "diagram",
+    "flowchart",
+    "interactive",
+    "portrait"
+   ],
+   "dimensions": {
+    "width": 1440,
+    "height": 2560
+   },
+   "duration": 12,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "flowchart",
+   "file": "compositions/flowchart.html",
+   "type": "block",
+   "title": "Flowchart",
+   "description": "Animated decision tree with SVG connectors, sticky-note nodes, cursor interaction, and typing correction",
+   "tags": [
+    "diagram",
+    "flowchart",
+    "interactive"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 12,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "hw-pipeline",
+   "file": "compositions/hw-pipeline.html",
+   "type": "block",
+   "title": "Hand-Drawn Flowchart",
+   "description": "Wobbled boxes with handwritten labels joined by curved connectors, drawing on in sequence from a node list",
+   "tags": [
+    "handwritten",
+    "diagram",
+    "data-viz",
+    "overlay"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 7,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "mk-line-graph",
+   "file": "compositions/mk-line-graph.html",
+   "type": "block",
+   "title": "Minimal Line Graph",
+   "description": "One or two SVG series draw on with dots popping and value labels riding the draw front; dim baseline axis, x-labels, color-dot legend",
+   "tags": [
+    "data-viz",
+    "chart",
+    "graph",
+    "minimal"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 7,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "mk-progress-stat",
+   "file": "compositions/mk-progress-stat.html",
+   "type": "block",
+   "title": "Count-Up Stat Card",
+   "description": "Big-numeral statistic with count-up, label, thin progress track filling to value/max, and caption; light and dark schemes",
+   "tags": [
+    "data-viz",
+    "stat",
+    "minimal"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 7,
+   "variables": [],
+   "mount": false
+  },
+  {
+   "name": "oscilloscope-trace",
+   "file": "compositions/oscilloscope-trace.html",
+   "type": "block",
+   "title": "Oscilloscope Trace",
+   "description": "CRT oscilloscope beam sweeping a waveform across a 10x8 graticule, with closed-form phosphor persistence: the tail decays as exp(-age/tau) and brightens where the beam slows",
+   "tags": [
+    "instrument",
+    "data",
+    "showcase",
+    "retro"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 6,
+   "variables": [
+    {
+     "id": "waveform",
+     "type": "enum",
+     "label": "Waveform",
+     "default": "sine",
+     "options": [
+      {
+       "value": "sine",
+       "label": "Sine"
+      },
+      {
+       "value": "square",
+       "label": "Square"
+      },
+      {
+       "value": "triangle",
+       "label": "Triangle"
+      },
+      {
+       "value": "data",
+       "label": "Data series"
+      }
+     ]
+    },
+    {
+     "id": "frequency",
+     "type": "number",
+     "label": "Signal frequency",
+     "unit": "Hz",
+     "default": 12,
+     "min": 0.1,
+     "max": 200,
+     "step": 0.1
+    },
+    {
+     "id": "amplitude",
+     "type": "number",
+     "label": "Amplitude",
+     "unit": "div",
+     "default": 3,
+     "min": 0.1,
+     "max": 4,
+     "step": 0.1
+    },
+    {
+     "id": "persistenceMs",
+     "type": "number",
+     "label": "Phosphor persistence (tau)",
+     "unit": "ms",
+     "default": 100,
+     "min": 1,
+     "max": 1000,
+     "step": 1
+    },
+    {
+     "id": "phosphorColor",
+     "type": "color",
+     "label": "Phosphor colour",
+     "default": "#5dff8f"
+    },
+    {
+     "id": "sweepRate",
+     "type": "number",
+     "label": "Sweep rate",
+     "unit": "sweeps/s",
+     "default": 5,
+     "min": 0.25,
+     "max": 60,
+     "step": 0.25
+    },
+    {
+     "id": "dataSeries",
+     "type": "string",
+     "label": "Data series (waveform=data)",
+     "default": "",
+     "placeholder": "0,0.4,0.9,0.3,-0.6,-1,-0.2,0.5"
+    }
+   ],
+   "mount": true
+  },
+  {
+   "name": "world-map",
+   "file": "compositions/world-map.html",
+   "type": "block",
+   "title": "World Map",
+   "description": "Animated world choropleth with country-by-country reveal, tooltip labels, and rotating globe inset — D3 Natural Earth projection",
+   "tags": [
+    "data",
+    "map",
+    "geography",
+    "world",
+    "choropleth"
+   ],
+   "dimensions": {
+    "width": 1920,
+    "height": 1080
+   },
+   "duration": 14,
+   "variables": [],
+   "mount": false
+  }
+ ]
+}

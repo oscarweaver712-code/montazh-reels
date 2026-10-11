@@ -1,0 +1,46 @@
+# Самопроверка на чистой Windows: проект обязан работать и на Mac, и на Windows (11.10.2026),
+# а Windows-машины под рукой нет. GitHub поднимает её сам на каждый push в main и по кнопке.
+name: Самопроверка на Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: ffmpeg (полная сборка, с libass)
+        run: choco install ffmpeg-full -y --no-progress
+
+      - name: Окружение Python
+        run: |
+          uv venv .venv --python 3.12
+          uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+
+      - name: Модели (лица, маска)
+        run: .venv\Scripts\python.exe scripts\models.py
+
+      - name: Браузер HyperFrames
+        run: |
+          npx --yes hyperframes@0.8.141 telemetry disable
+          npx --yes hyperframes@0.8.141 browser ensure
+
+      - name: Самопроверка
+        run: .venv\Scripts\python.exe scripts\selfcheck.py

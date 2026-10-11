@@ -72,7 +72,7 @@ def words_ass(words: list, start: float, end: float, width: int, out: Path) -> P
 
 
 def run(cmd: list, what: str, cwd: Path | None = None):
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", cwd=cwd)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg не собрал {what}:\n" + "\n".join(result.stderr.strip().splitlines()[-8:]))
 
@@ -97,13 +97,15 @@ def timeline_view(video: Path, start: float, end: float, frames: int = 8,
     try:
         # 1. плёнка: кадр из середины каждого отрезка, по одному seek'у
         tiles = []
+        # шрифт — рядом и по относительному пути: «C:\\…» на Windows ломает синтаксис фильтра
+        shutil.copy2(FONT_DIR / "JetBrainsMono.ttf", tmp / "mono.ttf")
         for i in range(frames):
             at = start + span * (i + 0.5) / frames
             tile = tmp / f"f{i:02d}.png"
             run([ffmpeg_bin(), "-v", "error", "-y", "-ss", f"{at:.3f}", "-i", str(video), "-frames:v", "1",
-                 "-vf", f"scale={frame_w}:{STRIP_H},drawtext=fontfile='{FONT_DIR / 'JetBrainsMono.ttf'}':"
+                 "-vf", f"scale={frame_w}:{STRIP_H},drawtext=fontfile=mono.ttf:"
                         f"text='{at:.2f}':x=6:y=6:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6",
-                 str(tile)], f"кадр {at:.2f} с")
+                 tile.name], f"кадр {at:.2f} с", cwd=tmp)
             tiles.append(tile)
         strip = tmp / "strip.png"
         inputs = sum((["-i", str(t)] for t in tiles), [])

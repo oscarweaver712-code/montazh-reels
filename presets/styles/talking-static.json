@@ -17,7 +17,7 @@
   "camera": {"base_zoom": 1.0, "punch": "none", "punch_level": 1.0, "push_in": false},
   "captions": {"mode": "sentence", "case": "natural", "font": "manrope", "size": 0.8, "position": "side",
                "color": "#FFFFFF", "highlight": "#FFFFFF", "animation": "none", "box": false},
-  "graphics": {"density": 0, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false},
+  "graphics": {"density": 0, "behind_text": false, "cards": false, "cutout": false, "lower_thirds": false, "viz": "never"},
   "sound": {"sfx": "none", "music": "none"},
   "color": {"grade": "natural", "brightness": -6},
   "transitions": {"flash": false, "whip": false}

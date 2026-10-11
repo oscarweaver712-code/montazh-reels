@@ -29,13 +29,13 @@ EMPTY_EDGE_SPREAD = 6.0
 
 def probe(path: Path) -> dict:
     out = subprocess.run([ffprobe_bin(), "-v", "error", "-print_format", "json", "-show_format",
-                          "-show_streams", str(path)], capture_output=True, text=True, check=True).stdout
+                          "-show_streams", str(path)], capture_output=True, encoding="utf-8", errors="replace", check=True).stdout
     return json.loads(out)
 
 
 def loudness(path: Path) -> float | None:
     err = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-vn",
-                          "-af", "ebur128", "-f", "null", "-"], capture_output=True, text=True).stderr
+                          "-af", "ebur128", "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stderr
     found = re.findall(r"I:\s*(-?[\d.]+) LUFS", err)
     return float(found[-1]) if found else None
 
@@ -49,7 +49,7 @@ def edge_lumas(path: Path, width: int, height: int, step: float) -> list:
         out = subprocess.run([
             ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-an",
             "-vf", f"fps=1/{step},crop={crop},signalstats,metadata=print:file=-",
-            "-f", "null", "-"], capture_output=True, text=True).stdout
+            "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stdout
         avg = [float(v) for v in re.findall(r"YAVG=([\d.]+)", out)]
         low = [float(v) for v in re.findall(r"YMIN=([\d.]+)", out)]
         high = [float(v) for v in re.findall(r"YMAX=([\d.]+)", out)]
@@ -121,7 +121,7 @@ def main():
     check(not any(w.startswith("пусто") for w in worst), "по краям нет пустых полос", ", ".join(worst))
 
     decode = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(video), "-f", "null", "-"],
-                            capture_output=True, text=True)
+                            capture_output=True, encoding="utf-8", errors="replace")
     check(not decode.stderr.strip(), "файл декодируется без ошибок", decode.stderr.strip()[:80] or "чисто")
 
     sheet = contact_sheet(video, video.with_suffix(".sheet.jpg"), width=width, height=height,

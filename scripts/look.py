@@ -134,7 +134,7 @@ def strip(video: Path, moments: list, values: list, out: Path) -> Path:
         cmd += ["-ss", f"{at:.3f}", "-i", str(video.resolve())]
     cmd += ["-filter_complex", graph, "-map", "[out]", "-frames:v", "1", str(out.resolve())]
     # шрифт ищется относительно рабочей папки: в пути проекта пробел и кириллица
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=WORK_DIR)
+    result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", cwd=WORK_DIR)
     if result.returncode != 0:
         tail = "\n".join(result.stderr.strip().splitlines()[-8:])
         sys.exit(f"Не получилось собрать полоску яркости:\n{tail}")

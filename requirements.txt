@@ -1,14 +1,28 @@
-# Основное окружение .venv. Версии — те, на которых пайплайн проверен самопроверкой.
-# Ставит Установка.command: uv pip install --python .venv/bin/python -r requirements.txt
-mlx-whisper==0.4.3                # распознавание речи на нейроускорителе Apple Silicon
+# Основное окружение .venv — Mac и Windows. Версии — те, на которых пайплайн проверен самопроверкой.
+# Ставит установщик (Установка.command на Mac, Установка.bat на Windows):
+#   uv pip install --python <питон окружения> -r requirements.txt
+# Всё открытое. Отметки «; sys_platform …» — пакеты только для своей системы.
+
 numpy==2.4.6
 scipy==1.18.0                     # track.py: сглаживание камеры
-torch==2.13.0                     # matte.py: маска Vision растягивается до размера кадра
-pyobjc-framework-Vision==12.2.2   # лица и маска человека (Apple Vision)
-pyobjc-framework-Quartz==12.2.2
 fonttools==4.63.0                 # проверка кириллицы в шрифтах
-fastapi==0.140.7                  # панель быстрого конвейера (server.py)
+fastapi==0.140.7                  # сервер студии (server.py, studio_api.py)
 uvicorn==0.51.0
 python-multipart==0.0.32
 httpx==0.28.1                     # selfcheck: проверка защиты студии (TestClient)
-urllib3==2.8.0                    # не наш выбор, а requests (скачивание модели): в 2.7.0 три уязвимости (CVE-2026-97687…97689)
+psutil==7.2.2                     # selfcheck: память и процессы на любой системе
+urllib3==2.8.0                    # не наш выбор, а requests (скачивание моделей): в 2.7.0 три уязвимости (CVE-2026-97687…97689)
+
+# Лица и маска человека: OpenCV YuNet (MIT) и MediaPipe Selfie Multiclass (Apache-2.0)
+mediapipe==1.1.0                  # тянет opencv-contrib-python — в нём и YuNet
+# Текст в кадре для разбора референсов (analyze_reference.py): EasyOCR (Apache-2.0), тянет torch
+easyocr==1.7.2
+# зависимости тех, что выше, — закреплены, чтобы новая машина собрала то же, что проверено
+torch==2.13.0
+torchvision==0.28.0
+opencv-contrib-python==5.0.0.93   # от MediaPipe; обычная сборка рядом (от EasyOCR) — той же версии
+opencv-python-headless==5.0.0.93
+
+# Распознавание речи — Whisper large-v3-turbo (MIT) двумя движками:
+mlx-whisper==0.4.3 ; sys_platform == "darwin" and platform_machine == "arm64"        # Mac на Apple Silicon
+faster-whisper==1.2.1 ; sys_platform != "darwin" or platform_machine != "arm64"      # Windows, Linux, Mac на Intel

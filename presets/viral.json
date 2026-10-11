@@ -5,7 +5,7 @@
   "width": 1080,
   "height": 1920,
   "fps": 30,
-  "encoder": "h264_videotoolbox",
+  "encoder": "auto",
   "bitrate": "12M",
   "_encoder_note": "h264_videotoolbox — аппаратный кодек M5, быстро. Для максимального качества: 'libx264' + crf ниже."
  },

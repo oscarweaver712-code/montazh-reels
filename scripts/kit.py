@@ -198,6 +198,28 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
     cta_js = (CTA_JS.replace("58.40", f"{t:.2f}").replace("58.75", f"{t + 0.35:.2f}")
               .replace("59.07", f"{t + 0.67:.2f}").replace("59.4", f"{t + 1.0:.2f}"))
     windows = ", ".join(f"[{a:.2f}, {b:.2f}]" for a, b in fg_windows)
+    page = _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cutout_html, front,
+                 cta_html, sounds, t, windows, helpers, beats, cta_js)
+    if "katex-src" in behind or "katex-src" in front:
+        # формулы (viz.formula/plot): KaTeX рисует их синхронно до первого кадра; ошибка в LaTeX —
+        # исключение на странице, его ловит verify_page. Страницы без формул не меняются ни на байт
+        page = page.replace('    <script src="camera.js"></script>',
+                            '    <link rel="stylesheet" href="assets/vendor/katex/katex.min.css" />\n'
+                            '    <script src="assets/vendor/katex/katex.min.js"></script>\n'
+                            '    <script src="camera.js"></script>', 1)
+        # ошибка KaTeX приходит из файла библиотеки, и браузер прячет её текст («Script error»);
+        # перевыброс из страницы несёт саму формулу и причину — их и покажет verify_page
+        page = page.replace("      const tl = gsap.timeline({ paused: true });",
+                            "      document.querySelectorAll(\".katex-src\").forEach((el) => {\n"
+                            "        try { katex.render(el.dataset.tex, el, { throwOnError: true, displayMode: true }); }\n"
+                            "        catch (e) { throw new Error(`формула «${el.dataset.tex}»: ${e.message}`); }\n"
+                            "      });\n"
+                            "      const tl = gsap.timeline({ paused: true });", 1)
+    return page
+
+
+def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cutout_html, front,
+          cta_html, sounds, t, windows, helpers, beats, cta_js) -> str:
     return f'''<!doctype html>
 <html lang="ru" data-resolution="{formats.get(fmt)["resolution"]}">
   <head>

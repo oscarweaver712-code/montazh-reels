@@ -118,6 +118,14 @@ h2 .count { color: var(--ink); }
 .cuts .nm { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: pointer; }
 .cuts .sz { font-family: var(--mono); font-size: 11px; color: var(--mute); }
 .icon { border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 12px; color: var(--mute); }
+.cuts .ok { font-size: 11px; font-weight: 700; color: var(--ok); white-space: nowrap; }
+dialog.approve { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); color: var(--ink); padding: 18px 20px; width: min(560px, calc(100vw - 32px)); }
+dialog.approve::backdrop { background: rgba(10, 12, 16, 0.45); }
+dialog.approve h3 { margin: 0 0 4px; font-family: var(--display); font-size: 15px; letter-spacing: 0.04em; }
+dialog.approve .grp { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--soft); }
+dialog.approve .grp label { display: flex; gap: 8px; align-items: baseline; font-weight: 600; cursor: pointer; }
+dialog.approve .grp ul { margin: 6px 0 0 24px; padding: 0; max-height: 120px; overflow: auto; font-family: var(--mono); font-size: 11.5px; color: var(--mute); }
+dialog.approve .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 .icon:hover { color: var(--ink); border-color: var(--mute); }
 
 .panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 14px 16px; }
@@ -196,6 +204,11 @@ textarea { width: 100%; border: 1px solid var(--rule); border-radius: 8px; backg
 .composer { display: grid; gap: 8px; }
 .composer textarea { min-height: 70px; }
 .quick { display: flex; gap: 6px; flex-wrap: wrap; }
+.batch { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); font-size: 12.5px; display: grid; gap: 4px; }
+.batch .row { display: flex; gap: 8px; align-items: baseline; }
+.batch .st { font-family: var(--mono); font-size: 11px; color: var(--mute); min-width: 92px; }
+.batch .st.done { color: var(--ok); } .batch .st.failed, .batch .st.needs_human { color: var(--rec); }
+dialog.approve label.pick { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; font-family: var(--mono); font-size: 12.5px; }
 .empty-chat { color: var(--mute); font-size: 13px; padding: 14px; border: 1px dashed var(--rule); border-radius: var(--radius); }
 
 /* очередь внизу */
@@ -287,11 +300,12 @@ footer.queue .lbl { font: 700 11px var(--mono); letter-spacing: 0.16em; text-tra
       <select id="threads" aria-label="Разговор"></select>
       <button type="button" class="icon" id="new-thread">Новый разговор</button>
       <button type="button" class="icon" id="stop" hidden>Остановить</button>
+      <button type="button" class="icon" id="batch-go" title="Каждый новый ролик — в своей сессии мозга, по очереди">Пачкой: новые из input/</button>
     </div>
+    <div class="batch" id="batch" hidden></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="composer">
       <div class="quick" id="quick">
-        <button type="button" class="chip" data-q="Смонтируй новые из input/ по их брифам. Тяжёлое — через очередь.">Новые из input/</button>
         <button type="button" class="chip" data-q="Сделай варианты для A/B по брифу выбранного ролика: каждый стиль — отдельным проектом, рендер через очередь.">Варианты A/B</button>
         <button type="button" class="chip" data-q="Посмотри последний выпуск выбранного ролика по кадрам и скажи, что улучшить: темп, графика, субтитры, звук.">Разбор выпуска</button>
       </div>
@@ -303,6 +317,26 @@ footer.queue .lbl { font: 700 11px var(--mono); letter-spacing: 0.16em; text-tra
     </div>
   </section>
 </main>
+
+<dialog class="approve" id="approve" aria-labelledby="approve-title">
+  <h3 id="approve-title">Апрув</h3>
+  <div class="say" id="approve-keep"></div>
+  <div id="approve-groups"></div>
+  <div class="row">
+    <button type="button" class="btn" id="approve-cancel">Отмена</button>
+    <button type="button" class="btn rec" id="approve-go">Апрув и удалить отмеченное</button>
+  </div>
+</dialog>
+
+<dialog class="approve" id="batch-dialog" aria-labelledby="batch-title">
+  <h3 id="batch-title">Пачка</h3>
+  <div class="say">Каждый ролик — в своей новой сессии мозга, по одному: контекст одного ролика не портит монтаж следующего. Тяжёлое — через очередь, студия сама продолжает разговор, когда очередь отработала.</div>
+  <div class="grp" id="batch-pick"></div>
+  <div class="row">
+    <button type="button" class="btn" id="batch-cancel">Отмена</button>
+    <button type="button" class="btn rec" id="batch-start">Запустить пачку</button>
+  </div>
+</dialog>
 
 <footer class="queue" aria-label="Очередь тяжёлых задач">
   <span class="lbl">Очередь</span>
@@ -397,6 +431,7 @@ async function selectVideo(stem) {
   fillBrief();
   renderCuts(true);
   refreshStyles();
+  if (S.threadsLoaded) loadThreads().catch((e) => say("brain-say", e.message, true));
 }
 
 /* ---------- выпуски и плеер ---------- */
@@ -410,6 +445,8 @@ function renderCuts(autoplay) {
       <span class="nm" data-play="${esc(o.folder)}|${esc(o.name)}" title="${esc(o.name)}">${o.source ? "исходник · " : ""}${esc(o.name)}</span>
       <span class="sz">${o.size_mb} МБ</span>
       ${o.sheet ? `<a class="icon" href="/api/studio/file/output/${encodeURIComponent(o.sheet)}" target="_blank" title="Сетка кадров">кадры</a>` : ""}
+      ${o.source ? "" : o.approved ? `<span class="ok" title="Конечный вариант">✓ апрув</span>`
+        : `<button type="button" class="icon" data-approve="${esc(o.name)}" title="Принять как конечный вариант и убрать копии">Апрув</button>`}
       <button type="button" class="icon" data-reveal="${esc(o.folder)}|${esc(o.name)}" title="Показать в Finder">Finder</button></li>`).join("");
 }
 function play(item) {
@@ -424,8 +461,38 @@ function play(item) {
 $("cuts").addEventListener("click", async (e) => {
   const p = e.target.closest("[data-play]");
   if (p) { const [folder, name] = p.dataset.play.split("|"); play({ folder, name, source: folder === "input" }); renderCuts(false); }
+  const a = e.target.closest("[data-approve]");
+  if (a) openApprove(a.dataset.approve);
   const r = e.target.closest("[data-reveal]");
   if (r) { const [folder, name] = r.dataset.reveal.split("|"); try { await api("/api/studio/reveal", { method: "POST", json: { folder, name } }); } catch (err) { say("say", err.message, true); } }
+});
+
+/* ---------- апрув: конечный вариант и уборка копий ---------- */
+function mb(bytes) { return `${Math.round(bytes / 1048576)} МБ`; }
+let approving = null;
+async function openApprove(name) {
+  try {
+    const plan = await api(`/api/studio/approve/${encodeURIComponent(S.stem)}?file=${encodeURIComponent(name)}`);
+    approving = plan;
+    $("approve-title").textContent = `Апрув: ${plan.file}`;
+    $("approve-keep").textContent = `Остаётся: ${plan.keep.path} (${mb(plan.keep.size)}), исходник и все решения монтажа.`;
+    $("approve-groups").innerHTML = Object.entries(plan.groups).map(([key, g]) => `<div class="grp">
+        <label><input type="checkbox" data-group="${key}" ${g.default && g.items.length ? "checked" : ""} ${g.items.length ? "" : "disabled"}>
+          ${esc(g.title)} — ${g.items.length ? `${g.items.length} шт., ${mb(g.size)}` : "нет"}</label>
+        ${g.items.length ? `<ul>${g.items.map((i) => `<li>${esc(i.path)} · ${mb(i.size)}</li>`).join("")}</ul>` : ""}</div>`).join("");
+    $("approve").showModal();
+  } catch (e) { say("say", e.message, true); }
+}
+$("approve-cancel").addEventListener("click", () => $("approve").close());
+$("approve-go").addEventListener("click", async () => {
+  if (!approving) return;
+  const remove = [...document.querySelectorAll("#approve-groups [data-group]:checked")].map((x) => x.dataset.group);
+  try {
+    const r = await api(`/api/studio/approve/${encodeURIComponent(approving.stem)}`, { method: "POST", json: { file: approving.file, remove } });
+    $("approve").close();
+    say("say", `Апрув: ${r.approved}. ${r.removed.length ? `Удалено файлов: ${r.removed.length}, освобождено ${mb(r.freed)}.` : "Ничего не удалял."}`);
+    await poll(); renderCuts(false);
+  } catch (e) { say("say", e.message, true); }
 });
 
 /* ---------- бриф: цели, формат, стиль ---------- */
@@ -578,13 +645,13 @@ $("go-brain").addEventListener("click", async () => {
     const b = await saveBrief(true);
     const variants = b.variants.length ? ` Плюс варианты для A/B: ${b.variants.map(styleName).join(", ")} — каждый отдельным проектом (compose/render_reel --variant).` : "";
     const text = `Смонтируй ${S.stem} по брифу (work/${S.stem}/brief.json): стиль «${styleName(b.style)}», форматы ${b.formats.join(", ")}.${variants} Тяжёлое — через очередь. В конце коротко отчитайся: что где на экране, что спорно, как откатить.`;
-    if (!S.thread || threadEngine() !== S.engine) await newThread(`${S.stem}: монтаж`);
+    // каждый монтаж — новая сессия мозга: контекст прошлых разговоров и других роликов не мешает
+    await newThread(`${S.stem}: монтаж`);
     await send(text);
   } catch (e) { say("say", e.message, true); }
 });
 
 /* ---------- мозг ---------- */
-function threadEngine() { const t = S.threads.find((x) => x.id === S.thread); return t ? t.engine : null; }
 function setEngine(name) {
   S.engine = name; store.set("engine", name);
   document.querySelectorAll("#engines button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.engine === name)));
@@ -613,16 +680,22 @@ async function loadEngines() {
   } catch (e) { say("brain-say", e.message, true); }
 }
 
+// Один ролик — одна сессия мозга (правило Валеры): у сессии конечный контекст, и монтаж
+// второго ролика в разговоре первого выходит хуже. Поэтому в списке — разговоры только
+// выбранного ролика, а новый ролик всегда начинает новый разговор.
+function sameVideo(t) { return (t.stem || null) === (S.stem || null); }
 async function loadThreads(selectId) {
   const { threads } = await api("/api/brain/threads");
-  S.threads = threads;
+  S.threads = threads; S.threadsLoaded = true;
+  const mine = threads.filter(sameVideo);
   if (selectId) S.thread = selectId;
-  if (S.thread && !threads.some((t) => t.id === S.thread)) S.thread = null;
-  if (!S.thread && threads.length) S.thread = threads[0].id;
+  if (S.thread && !mine.some((t) => t.id === S.thread)) S.thread = null;
+  if (!S.thread && mine.length) S.thread = mine[0].id;
   store.set("thread", S.thread);
-  $("threads").innerHTML = threads.length ? threads.map((t) => `<option value="${t.id}" ${t.id === S.thread ? "selected" : ""}>${t.engine === "codex" ? "Codex" : "Claude"} · ${esc(t.title)}</option>`).join("")
-    : `<option value="">Разговоров пока нет</option>`;
-  if (S.thread) await openThread(S.thread); else renderLog([]);
+  $("threads").innerHTML = mine.length ? mine.map((t) => `<option value="${t.id}" ${t.id === S.thread ? "selected" : ""}>${t.engine === "codex" ? "Codex" : "Claude"} · ${esc(t.title)}</option>`).join("")
+    : `<option value="">${S.stem ? `Про ${esc(S.stem)} разговоров ещё нет` : "Разговоров пока нет"}</option>`;
+  if (S.es) { S.es.close(); S.es = null; }
+  if (S.thread) await openThread(S.thread); else { S.messages = []; renderLog([]); busy(false); }
 }
 $("threads").addEventListener("change", (e) => { if (e.target.value) openThread(e.target.value); });
 
@@ -720,10 +793,9 @@ function stream(id) {
 
 async function send(text) {
   if (!text.trim()) return;
-  if (!S.thread) await newThread();
-  if (threadEngine() && threadEngine() !== S.engine) {
-    await newThread();                       // у каждого мозга своя память — разговор новый
-  }
+  const t = S.threads.find((x) => x.id === S.thread);
+  // разговор другого ролика или другого мозга не продолжаем — у каждого своя сессия и память
+  if (!t || t.engine !== S.engine || !sameVideo(t)) await newThread();
   await api("/api/brain/send", { method: "POST", json: { thread: S.thread, text, mode: S.mode, stem: S.stem } });
   S.messages = S.messages || [];
   S.messages.push({ role: "user", text });
@@ -741,6 +813,42 @@ $("send").addEventListener("click", async () => {
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("send").click(); } });
 $("quick").addEventListener("click", (e) => { const b = e.target.closest("[data-q]"); if (b) { $("input").value = b.dataset.q; $("input").focus(); } });
 $("stop").addEventListener("click", async () => { try { await api(`/api/brain/stop/${S.thread}`, { method: "POST" }); } catch (e) { say("brain-say", e.message, true); } });
+
+/* ---------- пачка: каждый ролик — своя сессия мозга ---------- */
+const BATCH_STATUS = { queued: "ждёт", working: "монтирует", waiting_queue: "ждёт очередь", done: "готово",
+                       needs_human: "нужен человек", failed: "не вышло", skipped: "пропущен" };
+function renderBatch(b) {
+  const box = $("batch");
+  if (!b || !b.items || !b.items.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const done = b.items.filter((i) => ["done", "needs_human", "failed", "skipped"].includes(i.status)).length;
+  box.innerHTML = `<div class="row"><b>Пачка ${done}/${b.items.length}</b>${b.running ? `<span class="grow"></span><button type="button" class="icon" id="batch-stop">Остановить пачку</button>` : ""}</div>`
+    + b.items.map((i) => `<div class="row"><span class="st ${esc(i.status)}">${esc(BATCH_STATUS[i.status] || i.status)}</span>
+        <span>${esc(i.stem)}</span><span class="say" title="${esc(i.note)}">${esc((i.note || "").slice(0, 90))}</span></div>`).join("");
+  $("batch-go").disabled = !!b.running;
+}
+$("batch").addEventListener("click", async (e) => {
+  if (e.target.id !== "batch-stop") return;
+  try { renderBatch(await api("/api/brain/batch/stop", { method: "POST" })); } catch (err) { say("brain-say", err.message, true); }
+});
+$("batch-go").addEventListener("click", async () => {
+  try {
+    const b = await api("/api/brain/batch");
+    if (!b.new.length) { say("brain-say", "Новых роликов нет: у всех есть выпуски."); return; }
+    $("batch-pick").innerHTML = b.new.map((s) => `<label class="pick"><input type="checkbox" value="${esc(s)}" checked>${esc(s)}</label>`).join("");
+    $("batch-dialog").showModal();
+  } catch (e) { say("brain-say", e.message, true); }
+});
+$("batch-cancel").addEventListener("click", () => $("batch-dialog").close());
+$("batch-start").addEventListener("click", async () => {
+  const stems = [...document.querySelectorAll("#batch-pick input:checked")].map((x) => x.value);
+  if (!stems.length) return;
+  try {
+    renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode } }));
+    $("batch-dialog").close();
+    say("brain-say", `Пачка: ${stems.length} роликов, каждый в своей сессии. Ход — здесь и в разговорах каждого ролика.`);
+  } catch (e) { say("brain-say", e.message, true); }
+});
 
 /* ---------- очередь ---------- */
 function renderQueue(q) {
@@ -810,6 +918,7 @@ async function poll() {
       if (S.stem && current()) renderCuts(false);
     }
     renderQueue(st.queue);
+    renderBatch(st.batch);
   } catch (e) { $("q-state").textContent = "сервер студии не отвечает — запусти его снова"; }
 }
 

@@ -46,6 +46,9 @@ TIERS = {
 TIER_BOLDNESS = {"mainstream": 0.0, "rising": 0.4, "niche": 0.7, "contrarian": 1.0}
 
 CAPTION_MODES = ("none", "words", "phrase", "sentence", "karaoke")
+# как часто визуализации данных (скилл viz): счётчики, графики, формулы, карты
+VIZ_LEVELS = {"never": "не ставить", "rare": "только на главное число ролика",
+              "sometimes": "к месту — на ключевые числа, формулы, сравнения", "often": "часто — это язык стиля"}
 POSITIONS = ("chest", "lower", "center", "top", "side")
 ANIMATIONS = ("blur", "pop", "fade", "none")
 
@@ -105,6 +108,8 @@ def validate(style: dict, source: str = "") -> dict:
         raise StyleError(f"{where}: шрифт «{caps['font']}» не из набора: {', '.join(FONTS)}")
     if not (FONT_DIR / FONTS[caps["font"]]["file"]).exists():
         raise StyleError(f"{where}: нет файла шрифта presets/fonts/{FONTS[caps['font']]['file']}")
+    if p["graphics"].get("viz", "sometimes") not in VIZ_LEVELS:
+        raise StyleError(f"{where}: graphics.viz «{p['graphics'].get('viz')}» — бывает {', '.join(VIZ_LEVELS)}")
     if p["color"]["grade"] not in GRADES:
         raise StyleError(f"{where}: грейд «{p['color']['grade']}» — бывает {', '.join(GRADES)}")
     zoom = float(p["camera"]["base_zoom"])
@@ -366,6 +371,7 @@ def director_brief(stem: str | None = None, brief: dict | None = None) -> str:
         f"позиция {p['captions']['position']}, анимация {p['captions']['animation']}.",
         f"Графика: плотность {p['graphics']['density']}/3; за спиной — {p['graphics']['behind_text']}, "
         f"карточки — {p['graphics']['cards']}, вырезка — {p['graphics']['cutout']}, плашки — {p['graphics']['lower_thirds']}.",
+        f"Визуализации данных (скилл viz): {VIZ_LEVELS[p['graphics'].get('viz', 'sometimes')]}.",
         f"Звук: эффекты {p['sound']['sfx']}, музыка {p['sound']['music']}. Цвет: {p['color']['grade']}, "
         f"яркость {p['color']['brightness']}.",
         f"Указания стиля: {style['director']}",

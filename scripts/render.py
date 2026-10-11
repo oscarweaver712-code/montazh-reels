@@ -21,6 +21,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import host
 from common import FONT_DIR, WORK_DIR, ffmpeg_bin, plural, snap_segments
 from look import look_filter
 
@@ -129,7 +130,7 @@ def measure_loudness(list_name: str, audio_cfg: dict, noise_floor: float | None,
         ffmpeg_bin(), "-hide_banner", "-nostats",
         "-f", "concat", "-safe", "0", "-i", list_name,
         "-vn", "-af", ",".join(probe_chain), "-f", "null", "-",
-    ], cwd=cwd, capture_output=True, text=True)
+    ], cwd=cwd, capture_output=True, encoding="utf-8", errors="replace")
 
     match = re.search(r"\{[^{}]*\"input_i\"[\s\S]*?\}", result.stderr)
     if not match:
@@ -156,12 +157,14 @@ def bump(bitrate: str) -> str:
 
 
 def vcodec(video_cfg: dict, stage: str) -> list:
-    encoder = video_cfg.get("encoder", "h264_videotoolbox")
+    """Кодек под машину: аппаратный на Mac, libx264 на Windows и Linux (host.video_encoder)."""
+    encoder = host.video_encoder(video_cfg.get("encoder", "auto"), ffmpeg_bin())
     bitrate = video_cfg.get("bitrate", "12M")
     if encoder == "libx264":
-        # на промежутке жмём мягче и быстрее: качество тут важнее размера, файл временный
+        # на промежутке жмём мягче и быстрее: качество тут важнее размера, файл временный.
+        # Потоки ограничены: программный кодек иначе занимает все ядра, и машина встаёт
         crf, preset = ("16", "veryfast") if stage == "segment" else ("19", "medium")
-        return ["-c:v", "libx264", "-crf", crf, "-preset", preset]
+        return ["-c:v", "libx264", "-crf", crf, "-preset", preset, "-threads", str(host.encoder_threads())]
     return ["-c:v", encoder,
             "-b:v", bump(bitrate) if stage == "segment" else bitrate,
             "-profile:v", "high"]
@@ -173,7 +176,7 @@ def concat_line(rel_path: str) -> str:
 
 
 def ffmpeg_run(cmd: list, cwd: Path, what: str):
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         tail = "\n".join(result.stderr.strip().splitlines()[-20:])
         raise RuntimeError(f"ffmpeg упал на {what}:\n{tail}")

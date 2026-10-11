@@ -22,6 +22,7 @@
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -31,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import formats
 import styles
+import viz
 from common import FONT_DIR, ROOT, WORK_DIR
 from track import coverage_violations, css_transform, solve_camera
 
@@ -211,9 +213,31 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
 
 
 def copy_if_newer(src: Path, dst: Path):
-    if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+    """Ассет проекта — жёсткая ссылка на файл из work/ или presets/, а не вторая копия.
+
+    Раньше дубль и вырезка каждого ролика лежали дважды (1,9 ГБ на 15 роликов). Ссылка места
+    не занимает, а HyperFrames ассеты только читает. Пересобранный дубль — новый файл, ссылка
+    на старый перестаёт совпадать и заменяется. Сослаться нельзя (другой диск) — копия.
+    """
+    fresh_copy = False
+    if dst.exists():
+        if dst.samefile(src):
+            return
+        fresh_copy = (dst.stat().st_mtime >= src.stat().st_mtime
+                      and dst.stat().st_size == src.stat().st_size)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(f".{dst.name}.link")
+    tmp.unlink(missing_ok=True)
+    try:
+        try:
+            os.link(src, tmp)                     # прежняя копия тоже становится ссылкой
+        except OSError:
+            if fresh_copy:
+                return                            # ссылки не бывает, а копия свежая
+            shutil.copy2(src, tmp)
+        tmp.replace(dst)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def project_name(stem: str, variant: str | None = None) -> str:
@@ -301,6 +325,9 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
         page.write_text(PAGE.format(width=width, height=height, duration=f"{duration:.3f}",
                                     resolution=formats.get(fmt)["resolution"]),
                         encoding="utf-8")
+    # визуализации страницы (viz.py): элементы каталога, KaTeX, D3 и карта — ссылками, офлайн
+    for rel, src in viz.assets_for(page.read_text(encoding="utf-8"), project).items():
+        copy_if_newer(src, project / rel)
     (project / "hyperframes.json").write_text(json.dumps({
         "paths": {"assets": "assets"}, "media": {"autoProxy": True}}, indent=2), encoding="utf-8")
     (project / "package.json").write_text(json.dumps({

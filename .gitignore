@@ -25,6 +25,7 @@ work/*/*
 !work/*/director.json
 !work/*/director.*.json
 !work/*/brief.json
+!work/*/approved.json
 !work/*/page.py
 !work/*/page.*.py
 !work/*/downloads/
@@ -43,8 +44,9 @@ presets/_ui.json
 # личные настройки агентов на этой машине (общие — .claude/settings.json, .codex/hooks.json)
 .claude/settings.local.json
 
-# новый конвейер: тяжёлое и пересобираемое не храним
-models/
+# новый конвейер: тяжёлое и пересобираемое не храним (большие модели качает scripts/models.py;
+# маленькая модель лиц presets/models/ — в репозитории)
+/models/
 studio/*/assets/
 studio/*/renders/
 studio/*/snapshots/

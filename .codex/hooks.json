@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "R=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; [ -x \"$R/.venv/bin/python\" ] && \"$R/.venv/bin/python\" \"$R/scripts/studio_up.py\" || true",
+            "command": "node scripts/studio_hook.mjs",
             "timeout": 20,
             "statusMessage": "Открываю студию монтажа"
           }

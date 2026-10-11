@@ -127,7 +127,7 @@ def apply_bleeps(aroll: Path, spans: list) -> None:
         result = subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-i", str(aroll),
                                  "-filter_complex", graph, "-map", "0:v", "-map", "[a]",
                                  "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-                                 "-movflags", "+faststart", str(tmp)], capture_output=True, text=True)
+                                 "-movflags", "+faststart", str(tmp)], capture_output=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             raise RuntimeError(f"Не получилось наложить «пип»:\n{result.stderr[-400:]}")
         tmp.replace(aroll)
