@@ -137,9 +137,12 @@ def screen_text(video: Path, width: int = 540) -> dict:
 
 
 def speech_rate(video: Path) -> float | None:
-    """Слов в минуту по распознаванию (mlx-whisper, тот же, что в конвейере)."""
+    """Слов в минуту по распознаванию (mlx-whisper, тот же, что в конвейере).
+
+    Транскрипт чужого ролика — в work/_refs/, а не рядом с нашими: там .gitignore пропускает
+    *.words.json и *.txt в git, и референс уезжал в репозиторий как будто это наш ролик."""
     from transcribe import run_transcribe
-    words = run_transcribe(video)["words"]
+    words = run_transcribe(video, cache_dir=REFS)["words"]
     if len(words) < 5:
         return None
     span = words[-1]["end"] - words[0]["start"]

@@ -103,8 +103,8 @@ def caption_css(caps: dict, fmt: str = "9:16") -> str:
     css.append(f'      .cap.accent {{ color: {caps["highlight"]}; }}')
     css.append('      .cap .w { display: inline-block; }')
     if caps.get("box"):
-        dark_text = caps["color"].upper() in ("#111111", "#000000", "#141210")
-        bg = "#FFFFFF" if dark_text else "rgba(12,12,14,0.78)"
+        from styles import is_dark
+        bg = "#FFFFFF" if is_dark(caps["color"]) else "rgba(12,12,14,0.78)"
         css.append(f'      .cap .box {{ display: inline-block; padding: 8px 24px 12px; border-radius: 16px; '
                    f'background: {bg}; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }}')
         css.append('      .cap { text-shadow: none; }')

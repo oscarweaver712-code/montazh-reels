@@ -41,25 +41,36 @@ def next_job() -> Path | None:
     return jobs[0] if jobs else None
 
 
-def take_lock():
-    """Замок обработчика: файл держится открытым, пока процесс жив. None — уже занят."""
+def take_lock(owner: bool = True, tries: int = 1):
+    """Замок обработчика: файл держится открытым, пока процесс жив. None — уже занят.
+
+    owner=False — только проверить замок: номер процесса в файле не переписывается
+    (раньше там оказывался номер сервера студии, который просто спрашивал).
+    tries — сколько раз попробовать: студия проверяет замок, взяв его на миг, и
+    обработчик, стартовавший ровно в этот миг, иначе решал, что второй уже работает.
+    """
     QUEUE.mkdir(parents=True, exist_ok=True)
-    handle = open(LOCK, "a+")
-    try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        handle.close()
-        return None
-    handle.seek(0)
-    handle.truncate()
-    handle.write(str(os.getpid()))
-    handle.flush()
-    return handle
+    for attempt in range(tries):
+        handle = open(LOCK, "a+")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            if attempt + 1 < tries:
+                time.sleep(0.25)
+            continue
+        if owner:
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+        return handle
+    return None
 
 
 def runner_alive() -> bool:
     """Живёт ли обработчик очереди (замок занят другим процессом)."""
-    handle = take_lock()
+    handle = take_lock(owner=False)
     if handle is None:
         return True
     fcntl.flock(handle, fcntl.LOCK_UN)
@@ -74,7 +85,7 @@ def main():
 
     for sub in ("logs", "done", "failed"):
         (QUEUE / sub).mkdir(parents=True, exist_ok=True)
-    lock = take_lock()
+    lock = take_lock(tries=5)
     if lock is None:
         print("обработчик очереди уже работает — второй не нужен", flush=True)
         return

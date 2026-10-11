@@ -15,7 +15,16 @@ from pathlib import Path
 # На cpu модель идёт примерно вчетверо дольше самой записи (диффузия, nfe шагов на окно).
 # Грубая оценка нужна, чтобы не запустить втихую многочасовой прогон на всё ядро.
 CPU_SLOWDOWN = 4.0
-CPU_LIMIT_SEC = 300.0
+CPU_LIMIT_SEC = 300.0      # дольше пяти минут счёта — только с согласия (AGENTS.md, инвариант 6)
+
+
+def needs_consent(seconds: float, device: str, denoise_only: bool) -> bool:
+    """Спросить ли согласие: сравнивается ОЦЕНКА СЧЁТА, а не длина записи.
+
+    Раньше с пятью минутами сравнивалась сама дорожка — и четырёхминутная запись уходила
+    в ~16 минут полной загрузки без единого вопроса.
+    """
+    return device == "cpu" and not denoise_only and seconds * CPU_SLOWDOWN > CPU_LIMIT_SEC
 
 
 def pick_device(requested: str) -> str:
@@ -60,7 +69,7 @@ def main():
     seconds = wav.shape[-1] / sr
 
     threads = limit_threads() if device == "cpu" else None
-    if device == "cpu" and not args.denoise_only and seconds > CPU_LIMIT_SEC and not args.yes:
+    if needs_consent(seconds, device, args.denoise_only) and not args.yes:
         eta = seconds * CPU_SLOWDOWN / 60
         sys.exit(
             f"Дорожка {seconds / 60:.0f} мин, на cpu это примерно {eta:.0f} мин "

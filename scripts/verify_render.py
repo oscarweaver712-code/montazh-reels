@@ -57,12 +57,17 @@ def edge_lumas(path: Path, width: int, height: int, step: float) -> list:
     return result
 
 
-def contact_sheet(path: Path, out: Path, step: float = 2.5, width: int = 1080, height: int = 1920) -> Path:
+def contact_sheet(path: Path, out: Path, step: float = 2.5, width: int = 1080, height: int = 1920,
+                  duration: float = 0.0) -> Path:
     # плитка в пропорциях ролика: вертикаль 216×384 в 8 колонок, горизонталь 384×216 в 5
     tile_w, tile_h = (216, int(216 * height / width) // 2 * 2) if height >= width else (384, int(384 * height / width) // 2 * 2)
     cols = 8 if height >= width else 5
+    tiles = cols * (24 // cols)
+    # шаг растёт с длиной ролика: сетка собирается из первых tiles кадров, и при шаге 2.5 с
+    # ролик длиннее минуты попадал на неё без конца — финал и плашку глазами не проверить
+    step = max(step, duration / tiles)
     subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-i", str(path), "-vf",
-                    f"fps=1/{step},scale={tile_w}:{tile_h},tile={cols}x{24 // cols}:padding=4:color=white",
+                    f"fps=1/{step:.3f},scale={tile_w}:{tile_h},tile={cols}x{24 // cols}:padding=4:color=white",
                     "-frames:v", "1", str(out)], check=True, capture_output=True)
     return out
 
@@ -119,7 +124,8 @@ def main():
                             capture_output=True, text=True)
     check(not decode.stderr.strip(), "файл декодируется без ошибок", decode.stderr.strip()[:80] or "чисто")
 
-    sheet = contact_sheet(video, video.with_suffix(".sheet.jpg"), width=width, height=height)
+    sheet = contact_sheet(video, video.with_suffix(".sheet.jpg"), width=width, height=height,
+                          duration=duration)
     print(f"  · сетка кадров: {sheet}")
     if failed:
         print(f"\n✗ провалено: {len(failed)} — ролик не отдавать, пока не разберёмся")

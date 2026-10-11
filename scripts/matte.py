@@ -18,6 +18,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -111,43 +112,65 @@ BACKENDS = {"vision": VisionMatte, "rvm": RvmMatte}
 
 
 def run_matte(video: Path, backend: str, out: Path) -> dict:
-    """Маска по кадрам в серое видео без потерь (FFV1): основа для вырезки и текста."""
+    """Маска по кадрам в серое видео без потерь (FFV1): основа для вырезки и текста.
+
+    Маска пишется во временный файл и встаёт на место только целой. Раньше упавший или
+    прерванный прогон оставлял короткую маску под настоящим именем, следующий запуск с
+    --cutout брал её как готовую («маска уже есть»), вырезка выходила короче дубля — и в
+    поздних окнах «текст за спиной» поверх живого человека стоял застывший.
+    """
     info = probe(video)
     width, height = info["width"], info["height"]
     model = BACKENDS[backend](width, height)
     frame_bytes = width * height * 4
+    expected = round(info["duration"] * info["fps"])
+    part = out.with_name(f".{out.stem}.part{out.suffix}")
+    # stderr ffmpeg — в файлы, а не в канал, который никто не читает: на битом исходнике
+    # ffmpeg упирался бы в полный канал и вставал, а с ним и вся очередь
+    reader_err, writer_err = tempfile.TemporaryFile(), tempfile.TemporaryFile()
 
     reader = subprocess.Popen(
         [ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
          "-pix_fmt", "rgba", "-f", "rawvideo", "-"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout=subprocess.PIPE, stderr=reader_err)
     writer = subprocess.Popen(
         [ffmpeg_bin(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray",
          "-s", f"{width}x{height}", "-r", f"{info['fps']:g}", "-i", "-",
-         "-c:v", "ffv1", "-pix_fmt", "gray", str(out)],
-        stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+         "-c:v", "ffv1", "-pix_fmt", "gray", str(part)],
+        stdin=subprocess.PIPE, stderr=writer_err)
+
+    def tail(err) -> str:
+        err.seek(0)
+        return err.read().decode(errors="replace")[-500:]
 
     started, count = time.time(), 0
     try:
-        while True:
-            rgba = reader.stdout.read(frame_bytes)
-            if len(rgba) < frame_bytes:
-                break
-            writer.stdin.write(model(rgba).tobytes())
-            count += 1
-            if count % 300 == 0:
-                print(f"     {count} кадров, {count / (time.time() - started):.1f} к/с", flush=True)
+        try:
+            while True:
+                rgba = reader.stdout.read(frame_bytes)
+                if len(rgba) < frame_bytes:
+                    break
+                writer.stdin.write(model(rgba).tobytes())
+                count += 1
+                if count % 300 == 0:
+                    print(f"     {count} кадров, {count / (time.time() - started):.1f} к/с", flush=True)
+        finally:
+            reader.stdout.close()
+            reader.wait()
+            writer.stdin.close()
+            writer.wait()
+        if writer.returncode != 0:
+            raise RuntimeError(f"ffmpeg не записал маску:\n{tail(writer_err)}")
+        if count == 0:
+            raise RuntimeError(f"Из {video.name} не прочитано ни одного кадра")
+        if count < expected * 0.98 - 2:
+            raise RuntimeError(f"Маска короче дубля: {count} кадров из {expected} — чтение "
+                               f"{video.name} оборвалось:\n{tail(reader_err)}")
+        part.replace(out)
     finally:
-        reader.stdout.close()
-        reader.wait()
-        writer.stdin.close()
-        writer.wait()
-    if writer.returncode != 0:
-        out.unlink(missing_ok=True)
-        raise RuntimeError(f"ffmpeg не записал маску:\n{writer.stderr.read().decode()[-500:]}")
-    if count == 0:
-        out.unlink(missing_ok=True)
-        raise RuntimeError(f"Из {video.name} не прочитано ни одного кадра")
+        part.unlink(missing_ok=True)
+        reader_err.close()
+        writer_err.close()
     spent = time.time() - started
     return {"frames": count, "seconds": spent, "fps": count / spent}
 
@@ -159,17 +182,21 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
     ограничены: кодирование долгое, и ноутбук в это время должен оставаться рабочим.
     """
     threads = max(1, (os.cpu_count() or 4) - 4)
-    result = subprocess.run([
-        ffmpeg_bin(), "-v", "error", "-y", "-i", str(video), "-i", str(matte),
-        "-filter_complex", "[1:v]format=gray[a];[0:v][a]alphamerge,format=yuva420p[v]",
-        "-map", "[v]", "-an",
-        "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24",
-        "-deadline", "good", "-cpu-used", "5", "-row-mt", "1", "-threads", str(threads),
-        "-auto-alt-ref", "0", str(out),
-    ], capture_output=True, text=True)
-    if result.returncode != 0:
-        out.unlink(missing_ok=True)
-        raise RuntimeError(f"Не собралось прозрачное видео:\n{result.stderr[-600:]}")
+    part = out.with_name(f".{out.stem}.part{out.suffix}")     # на место — только целое
+    try:
+        result = subprocess.run([
+            ffmpeg_bin(), "-v", "error", "-y", "-i", str(video), "-i", str(matte),
+            "-filter_complex", "[1:v]format=gray[a];[0:v][a]alphamerge,format=yuva420p[v]",
+            "-map", "[v]", "-an",
+            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24",
+            "-deadline", "good", "-cpu-used", "5", "-row-mt", "1", "-threads", str(threads),
+            "-auto-alt-ref", "0", str(part),
+        ], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Не собралось прозрачное видео:\n{result.stderr[-600:]}")
+        part.replace(out)
+    finally:
+        part.unlink(missing_ok=True)
     return out
 
 

@@ -20,7 +20,11 @@
     полный, без пустых полос, а лицо не теряется даже у самого края;
   • поиск лиц не копит кадры в памяти (однажды держал по 2 МБ на кадр — 2,4 ГБ на минуту);
   • субтитр или надпись не залипает на экране до конца ролика: уход посреди входа в
-    покадровом рендере HyperFrames проигрывал (пять роликов из пятнадцати, на снимках чисто).
+    покадровом рендере HyperFrames проигрывал (пять роликов из пятнадцати, на снимках чисто);
+  • упавшая сборка и маска не оставляют битый файл под настоящим именем и не стирают прошлый;
+  • другое видео под старым именем не получает чужой транскрипт;
+  • студия переживает сбой в одном месте (битый бриф, файл без видео, странное событие
+    агента), а тяжёлое из неё — и из быстрой панели — идёт только через очередь.
 
 Тест намеренно не «быстрый»: он честно кодирует видео. Минута здесь дешевле, чем
 зависший ноутбук и переснятый урок.
@@ -770,6 +774,111 @@ def check_cleanup_on_failure(report: Report, preset: dict):
                  f"было {len(before)}, стало {len(stray_files())}")
 
 
+def check_atomic_outputs(report: Report, preset: dict, tmp: Path):
+    """Упавшая сборка не оставляет битый файл под настоящим именем и не стирает прошлый.
+
+    ffmpeg писал итог прямо в output/ (и в aroll.mp4): упал на финале — в студии «готовый»
+    ролик, который не открывается, а прошлый удачный стёрт. Маска так же оставалась короткой
+    и потом бралась как готовая («маска уже есть»). Теперь итог встаёт на место только целым.
+    """
+    import matte
+    import render as render_mod
+
+    print("\nЦелые файлы при падении")
+    src = tmp / "atomic_src.mov"
+    make_source(src, 1.0, 30)
+    out = tmp / "atomic_out.mp4"
+    out.write_bytes(b"old")
+    real = render_mod.ffmpeg_run
+
+    def broken_final(cmd, cwd, what):
+        if what == "финальной сборке":
+            Path(cmd[-1]).write_bytes(b"half")          # ffmpeg успел начать файл — и упал
+            raise RuntimeError("ffmpeg упал на финальной сборке (проверка)")
+        return real(cmd, cwd, what)
+
+    render_mod.ffmpeg_run = broken_final
+    try:
+        render_mod.render(src, out, [(0.0, 1.0)], preset)
+        failed = False
+    except RuntimeError:
+        failed = True
+    finally:
+        render_mod.ffmpeg_run = real
+    tails = sorted(p.name for p in tmp.glob(".atomic_out*"))
+    report.check(failed and out.read_bytes() == b"old" and not tails,
+                 "упавшая сборка не трогает прошлый ролик и не оставляет недописанный",
+                 f"на месте {out.read_bytes()[:4]!r}, хвосты: {', '.join(tails) or 'нет'}")
+
+    class Breaks:
+        """Модель маски, которая падает на десятом кадре — как Vision на битом кадре."""
+        def __init__(self, width: int, height: int):
+            self.shape, self.n = (height, width), 0
+
+        def __call__(self, rgba: bytes) -> np.ndarray:
+            self.n += 1
+            if self.n > 10:
+                raise RuntimeError("модель маски упала (проверка)")
+            return np.zeros(self.shape, dtype=np.uint8)
+
+    mask = tmp / "atomic.matte.mkv"
+    matte.BACKENDS["broken"] = Breaks
+    try:
+        matte.run_matte(src, "broken", mask)
+        crashed = False
+    except RuntimeError:
+        crashed = True
+    finally:
+        matte.BACKENDS.pop("broken", None)
+    tails = sorted(p.name for p in tmp.glob(".atomic.matte*"))
+    report.check(crashed and not mask.exists() and not tails,
+                 "упавшая маска не остаётся короткой под настоящим именем",
+                 f"маска {'осталась' if mask.exists() else 'нет'}, хвосты: {', '.join(tails) or 'нет'}")
+
+
+def check_transcript_source(report: Report, tmp: Path):
+    """Другое видео под старым именем не получает чужой транскрипт.
+
+    Кэш распознавания живёт по имени, а у айфонов команды имена одинаковые (IMG_XXXX).
+    Новый файл под старым именем молча брал чужие слова — субтитры, рез и text_fixes
+    режиссёра от другого видео.
+    """
+    import transcribe
+
+    print("\nТранскрипт и его исходник")
+    cache = tmp / "transcripts"
+    cache.mkdir()
+    video = tmp / "IMG_0001.MOV"
+    video.write_bytes(b"x" * 1000)
+    (cache / "IMG_0001.words.json").write_text('{"words": [], "text": ""}', encoding="utf-8")
+    try:
+        transcribe.run_transcribe(video, cache_dir=cache)       # первая встреча: отметка по файлу
+        transcribe.run_transcribe(video, cache_dir=cache)       # тот же файл — без вопросов
+        same = True
+    except (Exception, SystemExit) as e:
+        same, why = False, str(e)
+    video.write_bytes(b"y" * 2000)                              # другое видео, имя то же
+    try:
+        transcribe.run_transcribe(video, cache_dir=cache)
+        caught, why = False, "чужой транскрипт взят молча"
+    except SystemExit as e:
+        caught, why = "не тот файл" in str(e), str(e)[:70]
+    except Exception as e:
+        caught, why = False, f"{type(e).__name__}: {e}"[:70]
+    report.check(same and caught, "другое видео под старым именем — громкий отказ, а не чужие субтитры", why)
+
+
+def check_long_runs(report: Report):
+    """Долгий ML-прогон спрашивает согласие по оценке счёта, а не по длине записи (инвариант 6)."""
+    import enhance_audio
+
+    print("\nДолгие прогоны")
+    ask = getattr(enhance_audio, "needs_consent", None)
+    ok = ask is not None and ask(240, "cpu", False) and not ask(60, "cpu", False) and not ask(600, "cpu", True)
+    report.check(bool(ok), "улучшение голоса спрашивает согласие, если счёт дольше пяти минут",
+                 "4-минутная запись (≈16 мин счёта) — спросит" if ok else "четыре минуты записи ушли бы без вопроса")
+
+
 def check_web_import(report: Report, tmp: Path):
     """Перетаскивание из Telegram даёт странице путь к файлу, а не сам файл.
 
@@ -812,6 +921,58 @@ def check_web_import(report: Report, tmp: Path):
     finally:
         for path in landed:
             path.unlink(missing_ok=True)
+
+    import server
+    import studio_api
+    from fastapi.testclient import TestClient
+
+    inbox, queue = tmp / "inbox", tmp / "queue"
+    inbox.mkdir()
+    saved = (server.INPUT_DIR, server.OUTPUT_DIR, server.PRESET_DIR, studio_api.QUEUE, studio_api.ensure_runner)
+    server.INPUT_DIR, server.OUTPUT_DIR, server.PRESET_DIR = inbox, tmp / "outbox", tmp
+    studio_api.QUEUE, studio_api.ensure_runner = queue, (lambda: False)
+    (tmp / "outbox").mkdir()
+    try:
+        web = TestClient(server.app, base_url="http://127.0.0.1:8765")
+        key = {"X-Studio-Token": server.TOKEN}
+        first = web.post("/api/upload", files={"file": ("IMG_0001.MOV", b"first", "video/quicktime")}, headers=key).json()
+        second = web.post("/api/upload", files={"file": ("IMG_0001.MOV", b"second", "video/quicktime")}, headers=key).json()
+        kept = (inbox / "IMG_0001.MOV").read_bytes() if (inbox / "IMG_0001.MOV").exists() else b""
+        report.check(first.get("name") == "IMG_0001.MOV" and second.get("name") not in (None, "IMG_0001.MOV")
+                     and kept == b"first",
+                     "загрузка с занятым именем ложится рядом, а не поверх (у айфонов имена одинаковые)",
+                     f"{first.get('name')} → {second.get('name')}")
+
+        voice = inbox / "голос.mp4"
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "sine=d=1", "-c:a", "aac",
+                        str(voice)], check=True)
+        try:
+            listed = server.state()["inputs"]
+            survived = any(i["name"] == voice.name and i["duration"] is None for i in listed)
+            why = "сервер жив, файл в списке без длительности"
+        except BaseException as e:                    # SystemExit из probe() гасил весь сервер
+            survived, why = False, f"{type(e).__name__}: {e}"[:80]
+        report.check(survived, "файл без видеодорожки в input/ не гасит сервер студии", why)
+
+        r = web.post("/api/render", data={"video": "IMG_0001.MOV", "hook": "Так делают 90%"}, headers=key).json()
+        job = r.get("job_id", "")
+        script = queue / f"{job}.sh"
+        text = script.read_text(encoding="utf-8") if job and script.exists() else ""
+        report.check("scripts/reels.py" in text and "--preset" in text,
+                     "быстрая панель ставит монтаж в общую очередь, а не запускает рядом с ней",
+                     job or str(r)[:80])
+        if text:                                       # очередь отработала: поток только читает лог
+            for sub in ("logs", "done"):
+                (queue / sub).mkdir(exist_ok=True)
+            (queue / "logs" / f"{job}.log").write_text("  ✓ готово за 3 с\n", encoding="utf-8")
+            script.replace(queue / "done" / script.name)
+            body = web.get(f"/api/stream/{job}").text
+        else:
+            body = ""
+        report.check("готово за 3 с" in body and '"code": 0' in body,
+                     "поток панели читает лог задачи очереди и сообщает итог", body.replace("\n", " ")[:80] or "—")
+    finally:
+        server.INPUT_DIR, server.OUTPUT_DIR, server.PRESET_DIR, studio_api.QUEUE, studio_api.ensure_runner = saved
 
 
 def check_render(report: Report, preset: dict, n_segments: int, tmp: Path):
@@ -943,6 +1104,24 @@ def check_styles(report: Report):
             caught += 1
     report.check(caught == 3, "ошибка в стиле — громкий отказ (режим субтитров, грейд, зум)",
                  f"поймано {caught} из 3")
+
+    # «#FFF» ломал цвет и в ASS, и в CSS молча; «../» в имени стиля читал JSON из чужой папки
+    bad_color = bad_id = False
+    try:
+        styles.effective(broken, {"captions.color": "#FFF"})
+    except styles.StyleError:
+        bad_color = True
+    try:
+        styles.load_style("../styles/hormozi")
+    except styles.StyleError:
+        bad_id = True
+    report.check(bad_color and bad_id, "цвет не вида #RRGGBB и имя стиля с путём — громкий отказ",
+                 f"цвет {'пойман' if bad_color else 'прошёл'}, путь {'пойман' if bad_id else 'прошёл'}")
+    # плашка под тёмным текстом — светлая для любого тёмного, а не только из списка трёх цветов
+    lofi = styles.effective(styles.load_style("lofi-ugc"), {"captions.color": "#222222"})
+    box = styles.to_fast_preset(lofi, "9:16")["subs"]["box_color"]
+    report.check(box == "FFFFFF", "тёмный текст получает светлую плашку при любом тёмном оттенке",
+                 f"#222222 → плашка #{box}")
 
     best = styles.recommend({"reach": 5, "retention": 5, "trust": 0, "saves": 0, "sales": 0}, 0.0)[0][1]
     calm = styles.recommend({"reach": 0, "retention": 0, "trust": 5, "saves": 2, "sales": 5}, 1.0)[0][1]
@@ -1095,7 +1274,7 @@ def check_style_captions(report: Report, tmp: Path):
     report.check(caught, "проверка ловит вход стиля длиннее вспышки")
 
 
-def check_studio(report: Report):
+def check_studio(report: Report, tmp: Path):
     """Студия отвечает только этой машине и только своей странице.
 
     Сервер умеет запускать агента с правом править файлы. Чужой сайт в соседней вкладке
@@ -1138,12 +1317,124 @@ def check_studio(report: Report):
         # рядом работает настоящий обработчик — его замок и есть проверка
         report.check(jobqueue.runner_alive(), "обработчик очереди один: второй видит замок",
                      "проверено на работающей очереди")
-        return
-    second = jobqueue.take_lock()
-    alive = jobqueue.runner_alive()
-    first.close()
-    report.check(second is None and alive and not jobqueue.runner_alive(),
-                 "обработчик очереди один: второй видит замок")
+    else:
+        second = jobqueue.take_lock()
+        alive = jobqueue.runner_alive()
+        first.close()
+        report.check(second is None and alive and not jobqueue.runner_alive(),
+                     "обработчик очереди один: второй видит замок")
+
+    real_lock = jobqueue.LOCK
+    jobqueue.LOCK = tmp / "runner.lock"
+    try:
+        jobqueue.LOCK.write_text("4242", encoding="utf-8")
+        jobqueue.runner_alive()
+        kept_pid = jobqueue.LOCK.read_text(encoding="utf-8")
+    finally:
+        jobqueue.LOCK = real_lock
+    report.check(kept_pid == "4242", "вопрос «жив ли обработчик» не переписывает номер его процесса",
+                 f"в замке {kept_pid or 'пусто'}")
+
+    check_studio_failures(report, tmp)
+
+
+def check_studio_failures(report: Report, tmp: Path):
+    """Сбой в одном месте студии не кладёт её целиком и не прячет причину.
+
+    Всё это находил аудит 11.10.2026, и всё воспроизводилось: битый brief.json одного ролика
+    давал 500 на весь список («сервер не отвечает»); исключение посреди хода мозга оставляло
+    его «работающим» навсегда; задачи, которые мозг кладёт в очередь, ждали кнопки; сервер,
+    поднятый из сессии агента, раздавал мозгу её номер, сокет и ключ.
+    """
+    from fastapi.testclient import TestClient
+    import brain
+    import styles
+    import studio_api
+    from server import TOKEN, app
+
+    key = {"X-Studio-Token": TOKEN}
+    inbox, work, queue = tmp / "studio_in", tmp / "studio_work", tmp / "studio_queue"
+    for folder in (inbox, work / "X", queue):
+        folder.mkdir(parents=True)
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=64x64:r=30:d=1",
+                    "-c:v", "libx264", str(inbox / "X.mp4")], check=True)
+    (work / "X" / "brief.json").write_text("{ сломано", encoding="utf-8")
+    (queue / "20-prep-X.sh").write_text("true\n", encoding="utf-8")
+    woke = []
+    saved = (studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
+             studio_api.ensure_runner, studio_api.runner_alive)
+    studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE = inbox, work, work, queue
+    studio_api.ensure_runner, studio_api.runner_alive = (lambda: woke.append(1) or True), (lambda: False)
+    try:
+        try:
+            videos = studio_api.studio_state()["videos"]
+            marked, why = bool(videos and videos[0]["brief"].get("error")), "чисто"
+        except Exception as e:
+            marked, why = False, f"{type(e).__name__}: {e}"[:70]
+        try:
+            styles.save_brief("X", {"style": "hormozi", "goals": [5, 4]})
+            rejected = False
+        except styles.StyleError:
+            rejected = True
+    finally:
+        (studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
+         studio_api.ensure_runner, studio_api.runner_alive) = saved
+    report.check(marked and rejected, "битый бриф помечает свой ролик, а не роняет студию; кривой не сохраняется",
+                 why if not marked else ("кривой бриф отвергнут" if rejected else "кривой бриф сохранился"))
+    report.check(bool(woke), "задачу, которую мозг положил в очередь, студия запускает сама, без кнопки")
+
+    # одно непонятное событие агента не вешает мозг навсегда
+    bad = json.dumps({"type": "assistant", "message": {"content": ["строка вместо блока"]}})
+    saved_brain = (brain.THREADS, brain.command)
+    brain.THREADS, brain.command = tmp / "threads", (lambda *a, **k: ["/bin/echo", bad])
+    states = []
+    try:
+        with TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            thread = live.post("/api/brain/threads", json={"engine": "claude"}, headers=key).json()["id"]
+            for text in ("привет", "ещё раз"):
+                sent = live.post("/api/brain/send", json={"thread": thread, "text": text}, headers=key)
+                for _ in range(50):
+                    time.sleep(0.1)
+                    if not live.get(f"/api/brain/threads/{thread}").json()["running"]:
+                        break
+                states.append(sent.status_code)
+            studio_api.runs.pop(thread, None)
+    finally:
+        brain.THREADS, brain.command = saved_brain
+    report.check(states == [200, 200], "непонятное событие агента не вешает мозг: следующая реплика проходит",
+                 " → ".join(map(str, states)))
+
+    # переподключение потока чата продолжает с места, а не повторяет весь ход
+    studio_api.runs["selfcheck-resume"] = {"done": True, "events": [
+        {"type": "text", "text": "раз"}, {"type": "text", "text": "два"}, {"type": "text", "text": "три"}]}
+    try:
+        body = TestClient(app, base_url="http://127.0.0.1:8765").get(
+            "/api/brain/stream/selfcheck-resume", headers={"Last-Event-ID": "1"}).text
+    finally:
+        studio_api.runs.pop("selfcheck-resume", None)
+    report.check("три" in body and "раз" not in body and "два" not in body,
+                 "поток чата после обрыва продолжает с места — без задвоенных ответов",
+                 "с места" if "раз" not in body else "повторил ход с начала")
+
+    planted = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "чужая", "CLAUDE_CODE_MESSAGING_TOKEN": "ключ",
+               "CLAUDE_CODE_USE_BEDROCK": "1"}
+    before = {k: os.environ.get(k) for k in planted}
+    os.environ.update(planted)
+    try:
+        env = brain.child_env()
+    finally:
+        for k, v in before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    leaked = [k for k in ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN") if k in env]
+    report.check(not leaked and env.get("CLAUDE_CODE_USE_BEDROCK") == "1",
+                 "мозг не получает номер, сокет и ключ чужой сессии агента, а настройки пользователя — да",
+                 ", ".join(leaked) or "чисто")
+
+    said = brain.explain_error("Claude usage limit reached · /upgrade to increase your usage limit")
+    report.check(said.startswith("Лимит"), "лимит подписки Claude не выдаётся за «Codex устарел»", said[:50])
 
 
 def main():
@@ -1166,12 +1457,15 @@ def main():
     check_edges(report)
     check_captions(report)
     check_cleanup_on_failure(report, preset)
+    check_long_runs(report)
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:
+        check_atomic_outputs(report, preset, Path(tmpdir))
+        check_transcript_source(report, Path(tmpdir))
         check_page_timeline(report, Path(tmpdir))
         check_style_captions(report, Path(tmpdir))
         check_formats(report, Path(tmpdir))
         check_grades(report, Path(tmpdir))
-        check_studio(report)
+        check_studio(report, Path(tmpdir))
         check_web_import(report, Path(tmpdir))
         check_cut_keeps_speech(report, preset, Path(tmpdir))
         check_voice(report, preset, Path(tmpdir))

@@ -88,8 +88,26 @@ def engines() -> dict:
     return out
 
 
+# Переменные сессии агента, в которой подняли сервер студии (хук старта, терминал агента).
+# Сервер живёт дольше этой сессии, и без чистки каждый ход мозга и каждая задача очереди
+# получали чужие номер сессии, сокет и ключ для сообщений, «я дочерняя сессия» и даже её
+# уровень усилий. Настройки пользователя (вход, прокси, CLAUDE_CODE_USE_BEDROCK…) не трогаем.
+SESSION_VARS = {
+    "CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE",
+    "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_CODE_SSE_PORT",
+    "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID",
+}
+
+
+def clean_env() -> dict:
+    """Окружение без следов сессии агента, которая случайно оказалась родителем сервера."""
+    return {k: v for k, v in os.environ.items() if k not in SESSION_VARS}
+
+
 def child_env() -> dict:
-    env = dict(os.environ)
+    env = clean_env()
     env[CHILD_ENV] = "1"
     # из Finder PATH короткий — без него агент не найдёт ffmpeg, node и npx
     extra = ["/opt/homebrew/bin", str(Path("~/.local/bin").expanduser()), "/usr/local/bin"]
@@ -259,12 +277,13 @@ def explain_error(message: str) -> str:
     except (json.JSONDecodeError, TypeError, AttributeError):
         pass
     low = message.lower()
-    if "newer version of codex" in low or "upgrade" in low:
+    # лимит — первым: у Claude в нём есть «/upgrade», и раньше это читалось как «Codex устарел»
+    if "rate limit" in low or "usage limit" in low or "429" in low:
+        return f"Лимит подписки исчерпан — подожди или переключи мозг. ({message})"
+    if "newer version of codex" in low or ("codex" in low and "upgrade" in low):
         return f"Codex устарел для выбранной модели — выполни в терминале `codex update`. ({message})"
     if "not logged in" in low or "login" in low or "unauthorized" in low or "401" in low:
         return f"Мозг не авторизован — открой терминал и войди (claude → /login или codex login). ({message})"
-    if "rate limit" in low or "usage limit" in low or "429" in low:
-        return f"Лимит подписки исчерпан — подожди или переключи мозг. ({message})"
     return message
 
 

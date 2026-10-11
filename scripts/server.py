@@ -14,7 +14,9 @@
 """
 import asyncio
 import json
+import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -72,25 +74,32 @@ def quick():
     return page("index.html")
 
 
+def probe_or_none(path: Path) -> dict | None:
+    """probe() для сервера. На файле без видеодорожки probe() завершает процесс (sys.exit —
+    так скрипты падают с понятной фразой), а здесь это гасило весь сервер студии: один
+    голосовой .mp4 в input/ — и студия лежит, пока её не поднимут заново."""
+    try:
+        return probe(path)
+    except (Exception, SystemExit):
+        return None
+
+
 @app.get("/api/state")
 def state():
     """Исходники, готовые ролики и текущие настройки — всё, что нужно странице при загрузке."""
     def describe(path: Path, folder: str):
         item = {"name": path.name, "size_mb": round(path.stat().st_size / 1_048_576, 1),
                 "folder": folder, "mtime": path.stat().st_mtime}
-        try:
-            info = probe(path)
-            item["duration"] = round(info["duration"], 1)
-            item["vertical"] = info["vertical"]
-        except Exception:
-            item["duration"] = None
-            item["vertical"] = True
+        info = probe_or_none(path)
+        item["duration"] = round(info["duration"], 1) if info else None
+        item["vertical"] = info["vertical"] if info else True
         return item
 
-    inputs = sorted((p for p in INPUT_DIR.glob("*") if p.suffix.lower() in VIDEO_EXT),
-                    key=lambda p: -p.stat().st_mtime)
-    outputs = sorted((p for p in OUTPUT_DIR.glob("*") if p.suffix.lower() in VIDEO_EXT),
-                     key=lambda p: -p.stat().st_mtime)
+    # скрытые — недописанные файлы (.имя.part.mp4 идущей сборки, .имя.part загрузки)
+    def videos(folder: Path) -> list:
+        return sorted((p for p in folder.glob("*") if p.suffix.lower() in VIDEO_EXT
+                       and not p.name.startswith(".")), key=lambda p: -p.stat().st_mtime)
+    inputs, outputs = videos(INPUT_DIR), videos(OUTPUT_DIR)
 
     return {
         "inputs": [describe(p, "input") for p in inputs],
@@ -107,12 +116,26 @@ def forget_frames(stem: str):
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
+    """Видео в input/. Имя занято — новое ложится рядом с номером (IMG_3305_2.MOV), а не поверх.
+
+    У айфонов команды одинаковые имена IMG_XXXX, а у лежащего файла уже есть транскрипт и
+    решения монтажа: подмена исходника молча дала бы чужие субтитры и чужой рез. Пока файл
+    идёт, он лежит скрытым — оборванная загрузка не выглядит готовым видео.
+    """
+    name = Path(file.filename or "").name
+    if not name:
+        return {"error": "у файла нет имени"}
     INPUT_DIR.mkdir(exist_ok=True)
-    target = INPUT_DIR / Path(file.filename).name
+    target = free_name(name)
     forget_frames(target.stem)
-    with open(target, "wb") as f:
-        while chunk := await file.read(1 << 20):
-            f.write(chunk)
+    part = target.with_name(f".{target.name}.part")
+    try:
+        with open(part, "wb") as f:
+            while chunk := await file.read(1 << 20):
+                f.write(chunk)
+        part.replace(target)
+    finally:
+        part.unlink(missing_ok=True)
     return {"name": target.name}
 
 
@@ -204,7 +227,12 @@ def start_render(
     hook: str = Form(""),
     quality: str = Form("fast"),
 ):
-    """Собирает пресет из настроек UI и запускает пайплайн отдельным процессом."""
+    """Собирает пресет из настроек UI и ставит монтаж в общую очередь студии.
+
+    Раньше панель запускала reels.py сама, мимо очереди: рядом с задачей очереди шли два
+    тяжёлых процесса (инвариант 2), а на одном ролике они ещё и делили папку кусков
+    work/<имя>_segments — один стирал куски другого и склеивал чужие, молча.
+    """
     source = INPUT_DIR / Path(video).name
     if not source.exists():
         return {"error": f"файл не найден: {video}"}
@@ -225,54 +253,85 @@ def start_render(
     preset["audio"]["denoise"] = denoise
     preset["video"]["encoder"] = "libx264" if quality == "best" else "h264_videotoolbox"
 
-    (PRESET_DIR / "_ui.json").write_text(
-        json.dumps(preset, ensure_ascii=False, indent=1), encoding="utf-8")
+    text = json.dumps(preset, ensure_ascii=False, indent=1)
+    (PRESET_DIR / "_ui.json").write_text(text, encoding="utf-8")     # для «Закрепить настройки»
 
-    cmd = [sys.executable, "-u", "scripts/reels.py", str(source), "--preset", "_ui"]
+    # у задачи свой файл настроек: общий _ui.json перепишет следующий монтаж, пока этот ждёт
+    tag = re.sub(r"[^\w.\-]", "_", source.stem) or "video"
+    job = f"30-quick-{tag}-{uuid.uuid4().hex[:6]}"
+    job_preset = studio_api.QUEUE / "presets" / f"{job}.json"
+    job_preset.parent.mkdir(parents=True, exist_ok=True)
+    job_preset.write_text(text, encoding="utf-8")
+    rel = str(job_preset.relative_to(ROOT) if job_preset.is_relative_to(ROOT) else job_preset)
+    cmd = (f"trap {shlex.quote('rm -f ' + shlex.quote(rel))} EXIT\n"
+           f".venv/bin/python -u scripts/reels.py {shlex.quote('input/' + source.name)} "
+           f"--preset {shlex.quote(rel)}")
     if hook.strip():
-        cmd += ["--hook", hook.strip()]
+        cmd += f" --hook {shlex.quote(hook.strip())}"
+    studio_api.enqueue(job, cmd)
+    jobs[job] = {"video": source.name}
+    return {"job_id": job}
 
-    job_id = uuid.uuid4().hex[:8]
-    jobs[job_id] = {"cmd": cmd, "video": source.name, "done": False, "output": None}
-    return {"job_id": job_id}
+
+def queue_place(job: str) -> str | None:
+    """Где задача очереди: queued (ждёт или идёт), done, failed или None (нет такой)."""
+    queue = studio_api.QUEUE
+    for state in ("done", "failed"):
+        if (queue / state / f"{job}.sh").exists():
+            return state
+    return "queued" if (queue / f"{job}.sh").exists() else None
 
 
 @app.get("/api/stream/{job_id}")
 async def stream(job_id: str):
-    """Прогресс идёт в браузер построчно, по мере работы пайплайна."""
-    job = jobs.get(job_id)
-    if not job:
-        return StreamingResponse(iter(["data: {\"error\": \"задача не найдена\"}\n\n"]),
+    """Ход задачи панели — строки её лога в очереди, по мере работы, и итог.
+
+    Сам ничего не запускает, только читает: обрыв, переподключение или вторая вкладка не
+    начнут монтаж второй раз.
+    """
+    def event(payload: dict) -> str:
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    if not re.fullmatch(r"[\w.\-]+", job_id):
+        return StreamingResponse(iter([event({"finished": True, "code": 1, "error": "плохой номер задачи"})]),
                                  media_type="text/event-stream")
+    log = studio_api.QUEUE / "logs" / f"{job_id}.log"
 
     async def events():
-        proc = await asyncio.create_subprocess_exec(
-            *job["cmd"], cwd=ROOT,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )
+        offset, told_waiting = 0, False
         while True:
-            raw = await proc.stdout.readline()
-            if not raw:
-                break
-            line = raw.decode("utf-8", "replace").rstrip()
-            # прогресс-бары загрузчика моделей в интерфейсе только мешают
-            if not line or "it/s]" in line or "%|" in line or line.startswith("Fetching"):
-                continue
-            yield f"data: {json.dumps({'line': line}, ensure_ascii=False)}\n\n"
-
-        await proc.wait()
-        job["done"] = True
-
-        produced = None
-        if proc.returncode == 0:
-            stem = Path(job["video"]).stem
-            candidate = OUTPUT_DIR / f"{stem}_reels.mp4"
-            if candidate.exists():
-                produced = candidate.name
-                job["output"] = produced
-
-        payload = {"finished": True, "code": proc.returncode, "output": produced}
-        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            place = queue_place(job_id)
+            if log.exists():
+                with open(log, "rb") as f:
+                    f.seek(offset)
+                    chunk = f.read()
+                # пока задача идёт, отдаём только целые строки; лог закрыт до переноса в done/failed
+                cut = chunk.rfind(b"\n") + 1 if place == "queued" else len(chunk)
+                offset += cut
+                for raw in chunk[:cut].splitlines():
+                    line = raw.decode("utf-8", "replace").rstrip()
+                    # прогресс-бары загрузчика моделей в интерфейсе только мешают
+                    if not line or "it/s]" in line or "%|" in line or line.startswith("Fetching"):
+                        continue
+                    yield event({"line": line})
+            elif place == "queued" and not told_waiting:
+                current = studio_api.queue_state().get("current")
+                ahead = f": сейчас идёт {current['job']}" if current else ""
+                yield event({"line": f"  → монтаж в очереди{ahead}"})
+                told_waiting = True
+            if place in ("done", "failed") or place is None:
+                produced = None
+                video = (jobs.get(job_id) or {}).get("video")
+                if place == "done" and video:
+                    candidate = OUTPUT_DIR / f"{Path(video).stem}_reels.mp4"
+                    produced = candidate.name if candidate.exists() else None
+                payload = {"finished": True, "code": 0 if place == "done" else 1, "output": produced}
+                if place is None:
+                    payload["error"] = "задачи нет в очереди — её убрали или она не создалась"
+                    yield event({"line": f"  ✗ {payload['error']}"})
+                yield event(payload)
+                return
+            await asyncio.sleep(0.5)
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -359,10 +418,8 @@ def frame(name: str, at: float = 0.35, folder: str = "input"):
     shot = cache_dir / f"{video.stem}_{int(at * 100):03d}.jpg"
 
     if not shot.exists():
-        try:
-            seconds = probe(video)["duration"] * at
-        except Exception:
-            seconds = 1.0
+        info = probe_or_none(video)
+        seconds = info["duration"] * at if info else 1.0
         subprocess.run([
             ffmpeg_bin(), "-y", "-loglevel", "error", "-ss", f"{seconds:.2f}",
             "-i", str(video), "-frames:v", "1", "-vf", "scale=540:-2",

@@ -275,6 +275,10 @@ def render(video: Path, out_path: Path, segments: list, preset: dict,
     list_file = WORK_DIR / f"{stem}.concat.txt"
     filter_file = WORK_DIR / f"{stem}.filter"
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Итог пишется рядом под временным именем и встаёт на место только целым. Раньше ffmpeg
+    # писал прямо в output/ (или в aroll.mp4): упавшая сборка оставляла битый файл под
+    # настоящим именем — студия показывала его готовым — и стирала прошлый удачный.
+    part = out_path.with_name(f".{out_path.stem}.part{out_path.suffix}")
 
     try:
         print(f"  → режу {plural(len(segments), 'сегмент', 'сегмента', 'сегментов')}", flush=True)
@@ -309,13 +313,15 @@ def render(video: Path, out_path: Path, segments: list, preset: dict,
             "-r", str(fps), "-fps_mode", "cfr", "-pix_fmt", "yuv420p", *COLOR_TAGS,
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-movflags", "+faststart",
-            str(out_path.resolve()),
+            str(part.resolve()),
         ]
         print("  → склеиваю, накладываю субтитры и чищу голос", flush=True)
         ffmpeg_run(cmd, WORK_DIR, "финальной сборке")
+        part.replace(out_path)
     finally:
         # временные куски весят прилично — убираем даже если упали посередине
         shutil.rmtree(seg_dir, ignore_errors=True)
         list_file.unlink(missing_ok=True)
+        part.unlink(missing_ok=True)
 
     return out_path

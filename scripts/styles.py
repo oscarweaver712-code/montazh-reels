@@ -17,6 +17,7 @@ camera_cfg, look), а графику по стилю пишет режиссёр
 import argparse
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -96,6 +97,10 @@ def validate(style: dict, source: str = "") -> dict:
         raise StyleError(f"{where}: captions.position «{caps['position']}» — бывает {', '.join(POSITIONS)}")
     if caps["animation"] not in ANIMATIONS:
         raise StyleError(f"{where}: captions.animation «{caps['animation']}» — бывает {', '.join(ANIMATIONS)}")
+    for key in ("color", "highlight"):
+        # цвет идёт и в ASS (там байты BGR по позициям), и в CSS: «#FFF» сломал бы оба молча
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(caps.get(key, ""))):
+            raise StyleError(f"{where}: captions.{key} «{caps.get(key)}» — нужен цвет вида #RRGGBB")
     if caps["font"] not in FONTS:
         raise StyleError(f"{where}: шрифт «{caps['font']}» не из набора: {', '.join(FONTS)}")
     if not (FONT_DIR / FONTS[caps["font"]]["file"]).exists():
@@ -109,8 +114,10 @@ def validate(style: dict, source: str = "") -> dict:
 
 
 def load_style(style_id: str) -> dict:
+    # имя стиля — это имя файла: «../что-то» не должно читать JSON за пределами каталога
+    valid = isinstance(style_id, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]*", style_id)
     path = STYLE_DIR / f"{style_id}.json"
-    if not path.exists():
+    if not valid or not path.exists():
         known = ", ".join(sorted(p.stem for p in STYLE_DIR.glob("*.json")))
         raise StyleError(f"Стиля «{style_id}» нет. Есть: {known}")
     try:
@@ -168,11 +175,43 @@ def brief_path(stem: str) -> Path:
     return WORK_DIR / stem / "brief.json"
 
 
+BRIEF_TYPES = {"style": (str, "строкой"), "formats": (list, "списком"), "variants": (list, "списком"),
+               "goals": (dict, "объектом"), "boldness": ((int, float), "числом"),
+               "overrides": (dict, "объектом"), "notes": (str, "строкой")}
+
+
+def check_brief(brief, where: str) -> dict:
+    """Типы полей брифа. Его пишут и студия, и агенты руками — ошибка должна называть поле.
+
+    Раньше битый brief.json одного ролика ронял весь список роликов студии (ошибка 500,
+    «сервер не отвечает»), а goals списком вместо объекта — разбор брифа для мозга.
+    """
+    if not isinstance(brief, dict):
+        raise StyleError(f"{where}: бриф должен быть объектом JSON {{…}}")
+    for key, (kind, name) in BRIEF_TYPES.items():
+        value = brief.get(key)
+        if key in brief and (not isinstance(value, kind) or isinstance(value, bool)):
+            raise StyleError(f"{where}: поле {key} должно быть {name}, а не {value!r}")
+    for key in ("formats", "variants"):
+        if not all(isinstance(x, str) for x in brief.get(key, [])):
+            raise StyleError(f"{where}: в {key} — только строки, а не {brief[key]!r}")
+    for goal, value in brief.get("goals", {}).items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 5:
+            raise StyleError(f"{where}: цель {goal} — число от 0 до 5, а не {value!r}")
+    return brief
+
+
 def load_brief(stem: str) -> dict:
+    """Бриф поверх умолчаний. Сломанный файл — StyleError с именем файла и поля."""
     path = brief_path(stem)
     brief = copy.deepcopy(DEFAULT_BRIEF)
     if path.exists():
-        brief.update(json.loads(path.read_text(encoding="utf-8")))
+        where = f"work/{stem}/brief.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise StyleError(f"{where}: битый JSON ({e}) — поправь файл или пересохрани бриф в студии")
+        brief.update(check_brief(data, where))
         brief["exists"] = True
     return brief
 
@@ -180,7 +219,7 @@ def load_brief(stem: str) -> dict:
 def save_brief(stem: str, data: dict) -> dict:
     """Проверяет и пишет бриф. Ошибка — громкая, файл при ней не трогается."""
     brief = copy.deepcopy(DEFAULT_BRIEF)
-    brief.update({k: v for k, v in data.items() if k in DEFAULT_BRIEF})
+    brief.update({k: v for k, v in check_brief(data, "бриф").items() if k in DEFAULT_BRIEF})
     load_style(brief["style"])
     for variant in brief["variants"]:
         load_style(variant)
@@ -260,7 +299,7 @@ def to_fast_preset(style: dict, fmt: str = formats.DEFAULT, base: str = "viral")
     subs["active_scale"] = 112 if caps["mode"] in ("karaoke", "words") else 100
     # плашка под текстом: белая под тёмный текст (родной текст Reels), полупрозрачная тёмная — под светлый
     subs["box"] = bool(caps.get("box"))
-    dark_text = caps["color"].upper() in ("#111111", "#000000", "#141210")
+    dark_text = is_dark(caps["color"])
     subs["box_color"] = "FFFFFF" if dark_text else "0C0C0E"
     subs["box_alpha"] = 0 if dark_text else 0x40
     subs["box_pad"] = int(round(14 * (k if fmt != "9:16" else 1.0)))
@@ -270,6 +309,13 @@ def to_fast_preset(style: dict, fmt: str = formats.DEFAULT, base: str = "viral")
 
     preset["look"] = look(style)
     return preset
+
+
+def is_dark(color: str) -> bool:
+    """Тёмный ли цвет текста — под него плашка светлая. По яркости, а не по списку:
+    правка брифа «#222222» иначе давала тёмный текст на тёмной плашке."""
+    r, g, b = (int(color.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.4
 
 
 def look(style: dict) -> dict:

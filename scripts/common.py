@@ -39,7 +39,12 @@ def has_libass() -> bool:
 
 
 def load_preset(name: str = "viral") -> dict:
-    path = PRESET_DIR / f"{name}.json"
+    """Пресет по имени (presets/<имя>.json) или путь к .json — так задача очереди несёт
+    свои настройки, а не общий файл, который перепишет следующий запуск."""
+    if name.endswith(".json"):
+        path = Path(name) if Path(name).is_absolute() else ROOT / name
+    else:
+        path = PRESET_DIR / f"{name}.json"
     if not path.exists():
         sys.exit(f"Пресет не найден: {path}")
     with open(path, encoding="utf-8") as f:

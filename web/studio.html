@@ -101,6 +101,7 @@ h2 .count { color: var(--ink); }
 .strip span.done { background: var(--sheet); color: var(--ink); }
 .strip span.out { background: var(--rec); color: var(--rec-ink); }
 .reel-brief { font-size: 11.5px; color: var(--mute); }
+.reel-brief .bad { color: var(--rec); }
 
 /* середина: плеер, выхлоп, стили */
 .subject { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -368,7 +369,8 @@ function renderReels() {
   ul.innerHTML = S.videos.map((v) => {
     const frames = STEPS.map(([k, l]) => `<span class="${v.steps[k] ? "done" : ""}" title="${esc(k)}">${l}</span>`).join("")
       + `<span class="${v.outputs.length ? "out" : ""}" title="готовых: ${v.outputs.length}">Р</span>`;
-    const brief = v.brief.exists ? `${esc(styleName(v.brief.style))} · ${v.brief.formats.join(" ")}${v.brief.variants.length ? ` · A/B ×${v.brief.variants.length}` : ""}` : "брифа нет";
+    const brief = v.brief.error ? `<span class="bad" title="${esc(v.brief.error)}">бриф с ошибкой — открой ролик</span>`
+      : v.brief.exists ? `${esc(styleName(v.brief.style))} · ${v.brief.formats.join(" ")}${v.brief.variants.length ? ` · A/B ×${v.brief.variants.length}` : ""}` : "брифа нет";
     return `<li class="reel" tabindex="0" data-stem="${esc(v.stem)}" aria-current="${v.stem === S.stem}">
       <div class="reel-head"><span class="reel-name">${esc(v.stem)}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
       <div class="strip">${frames}</div>
@@ -388,8 +390,9 @@ async function selectVideo(stem) {
   $("subject-title").textContent = stem;
   $("subject-meta").textContent = v ? `${v.width}×${v.height} · ${tc(v.duration)} · ${v.size_mb} МБ` : "";
   try {
-    const { brief } = await api(`/api/studio/brief/${encodeURIComponent(stem)}`);
+    const { brief, error } = await api(`/api/studio/brief/${encodeURIComponent(stem)}`);
     S.brief = brief;
+    if (error) say("say", `${error}. Сохрани бриф заново — файл перезапишется.`, true);
   } catch (e) { say("say", e.message, true); }
   fillBrief();
   renderCuts(true);
@@ -779,15 +782,21 @@ document.addEventListener("drop", async (e) => {
   }
 });
 async function upload(files) {
+  const names = [];
   for (const f of files) {
     say("say", `Загружаю ${f.name}…`);
     const fd = new FormData(); fd.append("file", f);
-    try { await api("/api/upload", { method: "POST", form: fd }); }
-    catch (e) { say("say", e.message, true); return; }
+    try {
+      const r = await api("/api/upload", { method: "POST", form: fd });
+      if (r.error) throw new Error(r.error);
+      names.push(r.name);
+    } catch (e) { say("say", e.message, true); return; }
   }
-  say("say", "Готово: видео в input/");
+  // имя могло измениться: занятое не затирается, новое ложится рядом (IMG_3305_2.MOV)
+  const renamed = names.filter((n, i) => n !== files[i].name);
+  say("say", renamed.length ? `Готово. Такое имя уже было — сохранил как ${renamed.join(", ")}` : "Готово: видео в input/");
   await poll();
-  selectVideo(files[0].name.replace(/\.[^.]+$/, ""));
+  selectVideo(names[0].replace(/\.[^.]+$/, ""));
 }
 
 /* ---------- опрос состояния ---------- */

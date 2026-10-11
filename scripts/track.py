@@ -22,6 +22,7 @@ import json
 import math
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -61,10 +62,13 @@ def detect_faces(video: Path, analysis_width: int = 540) -> dict:
     h = int(round(height * w / width / 2) * 2)
     frame_bytes = w * h * 4
 
+    # stderr — в файл, а не в канал: его читают только в конце, и на битом исходнике с
+    # сотнями ошибок декодера ffmpeg упирался бы в полный канал и вставал вместе с очередью
+    err_file = tempfile.TemporaryFile()
     proc = subprocess.Popen(
         [ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
          "-vf", f"scale={w}:{h}", "-pix_fmt", "rgba", "-f", "rawvideo", "-"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout=subprocess.PIPE, stderr=err_file)
 
     colorspace = Quartz.CGColorSpaceCreateDeviceRGB()
     handler = Vision.VNSequenceRequestHandler.alloc().init()
@@ -104,8 +108,10 @@ def detect_faces(video: Path, analysis_width: int = 540) -> dict:
                 print(f"     {len(frames)} кадров", flush=True)
     finally:
         proc.stdout.close()
-        stderr = proc.stderr.read().decode(errors="replace")
         proc.wait()
+        err_file.seek(0)
+        stderr = err_file.read().decode(errors="replace")
+        err_file.close()
     if proc.returncode not in (0, None) and not frames:
         raise RuntimeError(f"ffmpeg не отдал кадры для поиска лица:\n{stderr[-600:]}")
     if not frames:

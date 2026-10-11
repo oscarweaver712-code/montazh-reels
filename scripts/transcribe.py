@@ -45,28 +45,57 @@ def transcribe(wav: Path, language: str = "ru", model: str = MODEL) -> dict:
     return {"words": words, "text": result.get("text", "").strip()}
 
 
-def run_transcribe(video: Path, language: str = "ru", force: bool = False) -> dict:
-    WORK_DIR.mkdir(exist_ok=True)
+def check_source(video: Path, cache_dir: Path) -> None:
+    """Готовый транскрипт сделан для этого же файла? Сверяется размер исходника.
+
+    Кэш живёт по имени ролика, а у айфонов команды имена одинаковые (IMG_XXXX): новое видео
+    под старым именем молча получало чужой транскрипт — с ним чужие субтитры, рез и решения
+    режиссёра (text_fixes по номерам слов). Отметка лежит рядом, вне git
+    (<имя>.source.json); нет её — ставится по текущему файлу.
+    """
+    mark_path = cache_dir / f"{video.stem}.source.json"
+    size = video.stat().st_size
+    if not mark_path.exists():
+        mark_path.write_text(json.dumps({"name": video.name, "size": size}), encoding="utf-8")
+        return
+    was = json.loads(mark_path.read_text(encoding="utf-8")).get("size")
+    if was != size:
+        sys.exit(f"✗ {video.name} — не тот файл, для которого распознана речь: размер был {was} байт, "
+                 f"стал {size}. Транскрипт и решения монтажа work/{video.stem}* — от другого видео. "
+                 f"Новое видео — дай ему другое имя. То же, но пересохранённое — распознай заново: "
+                 f".venv/bin/python scripts/transcribe.py {video} --force (text_fixes в director.json "
+                 "после этого проверь: номера слов могли сдвинуться).")
+
+
+def run_transcribe(video: Path, language: str = "ru", force: bool = False,
+                   cache_dir: Path | None = None) -> dict:
+    cache = cache_dir or WORK_DIR
+    cache.mkdir(parents=True, exist_ok=True)
     stem = video.stem
-    words_json = WORK_DIR / f"{stem}.words.json"
+    words_json = cache / f"{stem}.words.json"
 
     if words_json.exists() and not force:
+        check_source(video, cache)
         print("  → транскрипт уже есть, использую готовый (--force чтобы пересчитать)")
         with open(words_json, encoding="utf-8") as f:
             return json.load(f)
 
-    wav = WORK_DIR / f"{stem}.16k.wav"
-    extract_audio(video, wav)
-    data = transcribe(wav, language)
+    wav = cache / f"{stem}.16k.wav"
+    try:
+        extract_audio(video, wav)
+        data = transcribe(wav, language)
+    finally:
+        wav.unlink(missing_ok=True)          # дорожка для распознавания — временная, даже при сбое
 
     with open(words_json, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
 
     # текстовая расшифровка — удобно перечитать глазами и выбрать куски под нарезку
-    with open(WORK_DIR / f"{stem}.txt", "w", encoding="utf-8") as f:
+    with open(cache / f"{stem}.txt", "w", encoding="utf-8") as f:
         f.write(data["text"])
+    (cache / f"{stem}.source.json").write_text(
+        json.dumps({"name": video.name, "size": video.stat().st_size}), encoding="utf-8")
 
-    wav.unlink(missing_ok=True)
     print(f"  → распознано слов: {len(data['words'])}")
     return data
 

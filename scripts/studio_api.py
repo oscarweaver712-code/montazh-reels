@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -85,7 +85,11 @@ def outputs_for(stem: str) -> list:
 def video_state(path: Path) -> dict:
     stem = path.stem
     work = WORK_DIR / stem
-    brief = styles.load_brief(stem)
+    try:
+        brief = styles.load_brief(stem)
+    except styles.StyleError as e:
+        # битый бриф одного ролика не должен ронять весь список: ролик помечается ошибкой
+        brief = dict(styles.DEFAULT_BRIEF, exists=True, error=str(e))
     info = quick_probe(path)
     fmt_src = None
     if info["width"] and info["height"]:
@@ -102,7 +106,8 @@ def video_state(path: Path) -> dict:
             "page": (ROOT / "studio" / stem / "index.html").exists(),
         },
         "brief": {"exists": bool(brief.get("exists")), "style": brief["style"],
-                  "formats": brief["formats"], "variants": brief["variants"]},
+                  "formats": brief["formats"], "variants": brief["variants"],
+                  "error": brief.get("error")},
         "outputs": outputs_for(stem),
     }
 
@@ -117,9 +122,15 @@ def ping():
 @router.get("/api/studio/state")
 def studio_state():
     seen["at"] = time.time()
-    inputs = sorted((p for p in INPUT_DIR.glob("*") if p.suffix.lower() in VIDEO_EXT),
-                    key=lambda p: -p.stat().st_mtime)
-    return {"videos": [video_state(p) for p in inputs], "queue": queue_state(),
+    # скрытые — недописанные загрузки и служебные «._имя» macOS на внешних дисках
+    inputs = sorted((p for p in INPUT_DIR.glob("*") if p.suffix.lower() in VIDEO_EXT
+                     and not p.name.startswith(".")), key=lambda p: -p.stat().st_mtime)
+    queue = queue_state()
+    if queue["pending"] and not queue["alive"]:
+        # задачи мозг кладёт в очередь файлами; выполняет их студия — сама, без кнопки
+        ensure_runner()
+        queue = queue_state()
+    return {"videos": [video_state(p) for p in inputs], "queue": queue,
             "formats": {k: dict(v, id=k) for k, v in formats.FORMATS.items()},
             "goals": styles.GOALS, "tiers": styles.TIERS}
 
@@ -146,7 +157,11 @@ def style_list(goals: str = "", bold: float = 0.3, format: str = ""):
 @router.get("/api/studio/brief/{stem}")
 def get_brief(stem: str):
     stem = safe_stem(stem)
-    brief = styles.load_brief(stem)
+    try:
+        brief = styles.load_brief(stem)
+    except styles.StyleError as e:
+        # студия показывает ошибку и даёт пересохранить бриф с нуля
+        return {"brief": dict(styles.DEFAULT_BRIEF), "text": f"Бриф с ошибкой: {e}", "error": str(e)}
     try:
         text = styles.director_brief(brief=brief)
     except styles.StyleError as e:
@@ -174,10 +189,10 @@ def ensure_runner() -> bool:
     if runner_alive():
         return False
     QUEUE.mkdir(parents=True, exist_ok=True)
-    log = open(QUEUE / "runner.out", "a", encoding="utf-8")
-    subprocess.Popen([str(VENV_PY), "-u", "scripts/jobqueue.py", "--idle", "1800"], cwd=ROOT,
-                     stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                     start_new_session=True)
+    with open(QUEUE / "runner.out", "a", encoding="utf-8") as log:   # у обработчика своя копия
+        subprocess.Popen([str(VENV_PY), "-u", "scripts/jobqueue.py", "--idle", "1800"], cwd=ROOT,
+                         stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                         start_new_session=True, env=brain.clean_env())
     return True
 
 
@@ -363,59 +378,82 @@ def studio_context(stem: str | None) -> str:
 
 
 async def _run_turn(thread: dict, text: str, mode: str, model: str | None):
+    """Один ход мозга. Что бы ни случилось внутри, ход заканчивается (done) и с понятной ошибкой.
+
+    Раньше исключение посреди хода (новый формат события у агента, сбой записи диалога)
+    оставляло ход «работающим» навсегда: каждая следующая реплика получала «мозг уже
+    работает», пока сервер студии не перезапустят, а в чате — ни слова о причине.
+    """
     run = runs[thread["id"]]
     engine = thread["engine"]
-    try:
-        cmd = brain.command(engine, text, thread.get("session"), mode, model,
-                            context=studio_context(thread.get("stem")))
-    except (RuntimeError, ValueError) as e:
-        run["events"].append({"type": "error", "text": str(e)})
-        run["done"] = True
-        return
     reply = {"role": "assistant", "engine": engine, "at": time.time(), "events": []}
     thread["messages"].append(reply)
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=ROOT, env=brain.child_env(), stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            limit=16 * 1024 * 1024, start_new_session=True)
-    except OSError as e:
-        run["events"].append({"type": "error", "text": f"Не запустился {engine}: {e}"})
-        run["done"] = True
-        return
-    run["proc"] = proc
+    proc = None
 
-    async def drain_stderr():
-        data = await proc.stderr.read()
-        run["stderr"] = data.decode("utf-8", "replace")[-4000:]
-    err_task = asyncio.create_task(drain_stderr())
-
-    while True:
-        raw = await proc.stdout.readline()
-        if not raw:
-            break
-        for ev in brain.parse_line(engine, raw.decode("utf-8", "replace")):
-            if ev["type"] == "session" and ev.get("id"):
-                thread["session"] = ev["id"]
-            if ev["type"] == "result" and ev.get("session"):
-                thread["session"] = ev["session"]
-            ev["at"] = time.time()
-            run["events"].append(ev)
-            reply["events"].append(ev)
-            if ev["type"] in ("text", "result", "error"):
-                brain.save_thread(thread)
-    code = await proc.wait()
-    await err_task
-    if code != 0 and not any(e["type"] in ("result", "error") for e in run["events"]):
-        tail = (run.get("stderr") or "").strip().splitlines()[-6:]
-        msg = brain.explain_error(" ".join(tail)) if tail else f"код {code}"
-        if run.get("stopped"):
-            msg = "Остановлено по кнопке."
-        ev = {"type": "error", "text": f"{engine} завершился с ошибкой: {msg}", "at": time.time()}
+    def add(ev: dict):
+        ev["at"] = time.time()
         run["events"].append(ev)
         reply["events"].append(ev)
-    run["done"] = True
-    brain.save_thread(thread)
+
+    try:
+        try:
+            cmd = brain.command(engine, text, thread.get("session"), mode, model,
+                                context=studio_context(thread.get("stem")))
+        except (RuntimeError, ValueError) as e:
+            add({"type": "error", "text": str(e)})
+            return
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=ROOT, env=brain.child_env(), stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                limit=16 * 1024 * 1024, start_new_session=True)
+        except OSError as e:
+            add({"type": "error", "text": f"Не запустился {engine}: {e}"})
+            return
+        run["proc"] = proc
+
+        async def drain_stderr():
+            data = await proc.stderr.read()
+            run["stderr"] = data.decode("utf-8", "replace")[-4000:]
+        err_task = asyncio.create_task(drain_stderr())
+
+        while True:
+            raw = await proc.stdout.readline()
+            if not raw:
+                break
+            try:
+                events = brain.parse_line(engine, raw.decode("utf-8", "replace"))
+            except Exception as e:                  # одно странное событие не роняет ход
+                events = [{"type": "note", "text": f"Не разобрал событие {engine}: {type(e).__name__}: {e}"}]
+            for ev in events:
+                if ev["type"] == "session" and ev.get("id"):
+                    thread["session"] = ev["id"]
+                if ev["type"] == "result" and ev.get("session"):
+                    thread["session"] = ev["session"]
+                add(ev)
+                if ev["type"] in ("text", "result", "error"):
+                    brain.save_thread(thread)
+        code = await proc.wait()
+        await err_task
+        if code != 0 and not any(e["type"] in ("result", "error") for e in run["events"]):
+            tail = (run.get("stderr") or "").strip().splitlines()[-6:]
+            msg = brain.explain_error(" ".join(tail)) if tail else f"код {code}"
+            if run.get("stopped"):
+                msg = "Остановлено по кнопке."
+            add({"type": "error", "text": f"{engine} завершился с ошибкой: {msg}"})
+    except Exception as e:
+        add({"type": "error", "text": f"Ход мозга прерван ошибкой студии: {type(e).__name__}: {e}"})
+        if proc is not None and proc.returncode is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)    # агент без читателя повис бы на полном канале
+            except (ProcessLookupError, PermissionError):
+                pass
+    finally:
+        run["done"] = True
+        try:
+            brain.save_thread(thread)
+        except OSError:
+            pass
 
 
 @router.post("/api/brain/send")
@@ -433,7 +471,8 @@ async def brain_send(data: dict = Body(...)):
         # один мозг за раз: два агента наперегонки запустят два тяжёлых процесса
         raise HTTPException(409, "Мозг уже работает над другим запросом — дождись или останови его")
     if data.get("stem") is not None:
-        thread["stem"] = data.get("stem") or None
+        stem = data.get("stem") or None
+        thread["stem"] = safe_stem(stem) if stem else None
     if thread["title"] == "Новый разговор":
         thread["title"] = text[:60]
     thread["messages"].append({"role": "user", "text": text, "at": time.time()})
@@ -459,8 +498,16 @@ def brain_stop(thread_id: str):
 
 
 @router.get("/api/brain/stream/{thread_id}")
-async def brain_stream(thread_id: str, since: int = 0):
-    """События текущего хода; переподключение с since продолжает с места."""
+async def brain_stream(thread_id: str, request: Request, since: int = 0):
+    """События текущего хода, каждое со своим номером (id:).
+
+    Переподключаясь (сон ноутбука, обрыв), браузер сам присылает Last-Event-ID — поток
+    продолжается с места. Раньше он начинался с нуля, и в чате задваивались действия и ответы.
+    """
+    last = request.headers.get("last-event-id", "")
+    if last.isdigit():
+        since = int(last) + 1
+
     async def events():
         sent = max(0, since)
         idle = 0
@@ -471,8 +518,8 @@ async def brain_stream(thread_id: str, since: int = 0):
                 return
             while sent < len(run["events"]):
                 ev = dict(run["events"][sent], index=sent)
+                yield f"id: {sent}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 sent += 1
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
             if run["done"]:
                 yield f"data: {json.dumps({'type': 'done', 'index': sent})}\n\n"
                 return

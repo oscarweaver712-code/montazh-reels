@@ -44,18 +44,24 @@ def ping(timeout: float = 0.6) -> dict | None:
 
 
 def start_server() -> bool:
-    """Сервер отдельной сессией процессов: переживёт и хук, и закрытый терминал."""
+    """Сервер отдельной сессией процессов: переживёт и хук, и закрытый терминал.
+
+    Окружение — без переменных сессии агента, из которой его подняли: сервер её переживёт,
+    а мозг и очередь, которых он запускает, не должны выдавать себя за её часть.
+    """
     python = ROOT / ".venv" / "bin" / "python"
     if not python.exists():
         print("Студия не запущена: нет окружения .venv — сначала Установка.command")
         return False
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from brain import clean_env
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as log:
         log.write(f"\n--- запуск {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.flush()
         subprocess.Popen([str(python), "-u", "scripts/server.py", str(PORT)], cwd=ROOT,
                          stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         start_new_session=True)
+                         start_new_session=True, env=clean_env())
     for _ in range(40):                       # до 10 секунд
         time.sleep(0.25)
         if ping():
