@@ -219,19 +219,19 @@ beats = f'''
       leave("#censor", {t(54.25)}, {{ scale: 0.6, y: 0, rot: 8 }});
 '''
 sounds = [
-    audio("pik", "impact-bass-1", t(6.34), 0.40), audio("lead", "whoosh-short", t(6.70), 0.24),
+    audio("pik", "impact-bass-1", t(6.34), 0.40), audio("lead", "whoosh", t(6.70), 0.24),
     audio("sam", "impact-bass-1", t(9.53), 0.34), audio("q", "pop", t(10.34), 0.30),
-    audio("comb", "sparkle", t(12.04), 0.26), audio("honey", "whoosh-short", t(13.48), 0.26),
+    audio("comb", "sparkle", t(12.04), 0.26), audio("honey", "whoosh", t(13.48), 0.26),
     audio("circ", "pop", t(15.44), 0.30), audio("sqr", "pop", t(17.24), 0.30),
     audio("bee", "whoosh", t(19.40), 0.26), audio("taxi", "pop", t(20.16), 0.28),
-    audio("marx", "whoosh-short", t(22.06), 0.28), audio("eco", "pop", t(23.60), 0.30), audio("math", "pop", t(24.30), 0.30),
-    audio("pack", "whoosh", t(25.52), 0.24), audio("shake", "click-soft", t(27.96), 0.36),
+    audio("marx", "whoosh", t(22.06), 0.28), audio("eco", "pop", t(23.60), 0.30), audio("math", "pop", t(24.30), 0.30),
+    audio("pack", "whoosh", t(25.52), 0.24), audio("shake", "click", t(27.96), 0.36),
     audio("gaps", "error", t(29.60), 0.22), audio("wax", "pop", t(30.58), 0.30),
     audio("three", "impact-bass-1", t(34.82), 0.36),
     audio("tri", "click", t(36.24), 0.36), audio("sq", "click", t(37.08), 0.36), audio("hex", "click", t(38.00), 0.36),
     audio("best", "impact-bass-1", t(40.48), 0.30), audio("cmp", "whoosh", t(42.34), 0.24),
     audio("per", "ping", t(44.98), 0.30), audio("seven", "pop", t(47.88), 0.30),
-    audio("darwin", "whoosh-short", t(49.20), 0.28), audio("quote", "whoosh", t(50.44), 0.22),
+    audio("darwin", "whoosh", t(49.20), 0.28), audio("quote", "whoosh", t(50.44), 0.22),
     audio("censor", "glitch-3", t(53.04), 0.22, duration=0.9, fade_out=0.3),
 ]
 fg = [(t(6.26), t(8.45)), (t(9.45), t(11.70)), (t(11.96), t(15.05)), (t(34.74), t(36.40))]

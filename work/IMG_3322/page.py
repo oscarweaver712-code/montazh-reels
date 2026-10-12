@@ -181,10 +181,10 @@ beats = f'''
 {keyword_beats(t(67.16), t(68.66), t(69.80), len("экономика"), t_cta_out=t(67.00))}
 '''
 sounds = [
-    audio("worker", "pop", t(2.68), 0.30), audio("road", "whoosh-short", t(5.32), 0.24),
+    audio("worker", "pop", t(2.68), 0.30), audio("road", "whoosh", t(5.32), 0.24),
     audio("layers", "click", t(6.84), 0.32), audio("strip", "whoosh", t(8.60), 0.26),
     audio("b120", "impact-bass-1", t(9.92), 0.42), audio("honest", "pop", t(12.76), 0.26),
-    audio("bank", "whoosh-short", t(14.06), 0.26), audio("pc", "ping", t(14.66), 0.28),
+    audio("bank", "whoosh", t(14.06), 0.26), audio("pc", "ping", t(14.66), 0.28),
     audio("ege", "pop", t(15.86), 0.26), audio("task", "whoosh", t(17.58), 0.24),
     *[audio(f"tr{k}", "click", t(x) - 0.02, 0.32) for k, x in enumerate([18.32, 21.20, 25.98, 29.52])],
     audio("roads", "pop", t(27.38), 0.26), audio("inv", "impact-bass-1", t(31.54), 0.34),
@@ -194,10 +194,10 @@ sounds = [
     audio("r1", "ping", t(39.90), 0.24), audio("r2", "ping", t(45.40), 0.24),
     audio("b207", "impact-bass-1", t(48.94), 0.42),
     audio("logic", "error", t(53.78), 0.18), audio("count", "pop", t(54.38), 0.28),
-    audio("calcx", "whoosh-short", t(55.00), 0.24), audio("calcxx", "error", t(55.84), 0.22),
+    audio("calcx", "whoosh", t(55.00), 0.24), audio("calcxx", "error", t(55.84), 0.22),
     audio("colmul", "whoosh", t(56.82), 0.22), audio("minus", "impact-bass-1", t(58.14), 0.30),
     audio("asph", "pop", t(65.88), 0.26),
-    audio("kw", "whoosh-short", t(67.14), 0.24), audio("type", "typing", t(68.64), 0.30, duration=0.6, fade_out=0.2),
+    audio("kw", "whoosh", t(67.14), 0.24), audio("type", "typing", t(68.64), 0.30, duration=0.6, fade_out=0.2),
     audio("note", "notification", t(69.78), 0.22),
 ]
 fg = [(t(9.84), t(11.75)), (t(30.80), t(32.95)), (t(36.30), t(37.75)), (t(47.78), t(51.55))]

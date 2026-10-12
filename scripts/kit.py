@@ -10,7 +10,11 @@
 без них страница собирается байт в байт как раньше (1080×1920, субтитры по слову).
 Горизонталь, квадрат и 4:5 получают ту же разметку, пересчитанную под свой размер.
 """
+import functools as _functools
+import json as _json
+import re as _re
 import sys as _sys
+from collections import Counter as _Counter
 from pathlib import Path as _Path
 
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
@@ -25,12 +29,67 @@ CTA_HTML = '        <div id="cta" class="g cta" style="left: 90px; top: 1130px; 
 CTA_JS = '      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 58.40);\n      tl.set("#cta-arrow", { opacity: 1 }, 58.75);\n      draw("#arrow-path", 58.75, 0.35);\n      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 59.07);\n      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 59.4);\n\n'
 
 
-def audio(sid: str, name: str, start: float, volume: float = 0.3,
+# Звуки (правила Валеры, 12.10.2026: «звуки слишком громкие», «одинаковые звуки подряд»).
+# Файлы записаны с разницей в 30+ дБ: басовый удар — −2 LUFS, щелчок — −26. С общей громкостью
+# 0.36 удар в IMG_1803 звучал громче голоса. Теперь каждый звук приводится к одной норме по
+# замеру файла (presets/sfx/manifest.json → loudness_m): уровень 1 — на ~11 дБ тише голоса
+# (−14 LUFS), громче нормы сделать нельзя.
+SFX_DIR = _Path(__file__).resolve().parent.parent / "presets" / "sfx"
+SFX_TARGET = -25.0       # LUFS, пиковая мгновенная громкость звука при уровне 1
+SFX_MIN_GAP = 1.0        # с между звуками: ближе — сливаются в кашу
+SFX_MAX_USES = 2         # один и тот же файл — не больше двух раз за ролик
+_AUDIO_TAG = _re.compile(r'<audio id="sfx-[^"]*" src="assets/sfx/([\w.\-]+)\.mp3" data-start="([\d.]+)"')
+
+
+@_functools.lru_cache(maxsize=1)
+def sfx_manifest() -> dict:
+    return _json.loads((SFX_DIR / "manifest.json").read_text(encoding="utf-8"))
+
+
+def sfx_family(name: str) -> str:
+    """Семейство звука по первому слову: impact-bass-1 и -2, whoosh и whoosh-cinematic на слух — одно."""
+    return name.split("-")[0]
+
+
+def audio(sid: str, name: str, start: float, level: float = 1.0,
           duration: float | None = None, fade_out: float | None = None) -> str:
+    """Звук на шкале дубля. level — доля нормы: 1 — норма (на ~11 дБ тише голоса), 0.5 — вдвое тише.
+
+    Громкость считается от замера файла, а не задаётся числом наугад; громче нормы — нельзя.
+    Убранный звук (manifest → _removed) — громкая ошибка с причиной, а не тишина в ролике.
+    """
+    manifest = sfx_manifest()
+    if name in manifest.get("_removed", {}):
+        raise ValueError(f"звука «{name}» больше нет: {manifest['_removed'][name]}")
+    info = manifest.get(name) if not name.startswith("_") else None
+    if not info or "loudness_m" not in info:
+        known = ", ".join(k for k in manifest if not k.startswith("_"))
+        raise ValueError(f"звука «{name}» нет в presets/sfx (или он без замера громкости). Есть: {known}")
+    if not 0 < level <= 1:
+        raise ValueError(f"уровень звука «{name}» = {level}: бывает от 0 до 1 (1 — норма, громче нельзя)")
+    gain = min(1.0, level * 10 ** ((SFX_TARGET - info["loudness_m"]) / 20))
     extra = (f' data-duration="{duration}"' if duration else "") + \
             (f' data-fade-out="{fade_out}"' if fade_out else "")
-    return (f'      <audio id="sfx-{sid}" src="assets/sfx/{name}.mp3" data-start="{start:.2f}"'
-            f'{extra} data-volume="{volume:.2f}"></audio>')
+    return (f'      <audio id="sfx-{sid}" src="assets/sfx/{info["file"]}" data-start="{start:.2f}"'
+            f'{extra} data-volume="{gain:.3f}"></audio>')
+
+
+def check_sounds(sounds: list) -> None:
+    """Звуки ролика: одно семейство не звучит дважды подряд, файл — не чаще двух раз, между
+    звуками — не меньше секунды. Ошибка — при сборке страницы, до рендера, со всеми нарушениями.
+    """
+    found = sorted((float(m.group(2)), m.group(1)) for s in sounds for m in _AUDIO_TAG.finditer(s))
+    problems = []
+    for (t1, a), (t2, b) in zip(found, found[1:]):
+        if sfx_family(a) == sfx_family(b):
+            problems.append(f"{a} ({t1:.2f} с) и {b} ({t2:.2f} с) — одно семейство «{sfx_family(a)}» подряд: "
+                            "на слух это один и тот же звук")
+        if t2 - t1 < SFX_MIN_GAP:
+            problems.append(f"{a} ({t1:.2f} с) и {b} ({t2:.2f} с) ближе {SFX_MIN_GAP:g} с — слипаются")
+    problems += [f"{name} — {n} раз(а) за ролик, можно {SFX_MAX_USES}"
+                 for name, n in _Counter(name for _, name in found).items() if n > SFX_MAX_USES]
+    if problems:
+        raise ValueError("Звуки ролика нарушают правила (kit.check_sounds):\n  " + "\n  ".join(problems))
 
 
 def card(cid: str, img: str, name: str, sub: str, side: str = "right") -> str:
@@ -198,6 +257,9 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
     cta_js = (CTA_JS.replace("58.40", f"{t:.2f}").replace("58.75", f"{t + 0.35:.2f}")
               .replace("59.07", f"{t + 0.67:.2f}").replace("59.4", f"{t + 1.0:.2f}"))
     windows = ", ".join(f"[{a:.2f}, {b:.2f}]" for a, b in fg_windows)
+    # щелчок финальной плашки — такой же звук ролика: с нормой громкости и под теми же правилами
+    sounds = [*sounds, audio("cta", "pop", t)]
+    check_sounds(sounds)
     page = _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cutout_html, front,
                  cta_html, sounds, t, windows, helpers, beats, cta_js)
     if "katex-src" in behind or "katex-src" in front:
@@ -225,6 +287,7 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width={width}, height={height}" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
     <title>{title}</title>
     <script src="assets/gsap.min.js"></script>
     <script src="camera.js"></script>
@@ -248,7 +311,6 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
 {cta_html}        <div id="flash"></div>
       </div>
 {chr(10).join(sounds)}
-      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="{t:.2f}" data-volume="0.40"></audio>
     </div>
     <script>
       const tl = gsap.timeline({{ paused: true }});

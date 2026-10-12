@@ -1,97 +1,104 @@
 {
+  "_about": "loudness_m — пиковая мгновенная громкость файла, LUFS (ebur128, окно 400 мс). kit.audio приводит каждый звук к норме SFX_TARGET по этому замеру: звуки разной записи звучат одинаково и тише голоса. Новый файл без замера kit не примет; замер сверяет самопроверка.",
+  "_removed": {
+    "glitch-1": "убран 12.10.2026 по просьбе Валеры: «ужасно портит видео» (стоял на «бардак» в IMG_1803)",
+    "whoosh-short": "убран 12.10.2026: это байт в байт whoosh.mp3 под другим именем — «чередование» давало один и тот же звук подряд; бери whoosh",
+    "click-soft": "убран 12.10.2026: это байт в байт click.mp3 под другим именем; бери click"
+  },
   "chime": {
     "file": "chime.mp3",
     "duration": 2.5,
-    "description": "Soft melodic chime — gentle positive beat: success/confirmation or a lighthearted transition. Sync to the visual moment."
-  },
-  "click-soft": {
-    "file": "click-soft.mp3",
-    "duration": 0.37,
-    "description": "Quiet short click — low-key UI tap / soft selection. Short accent, sync exactly to the on-screen action."
+    "description": "Soft melodic chime — gentle positive beat: success/confirmation or a lighthearted transition. Sync to the visual moment.",
+    "loudness_m": -23.9
   },
   "click": {
     "file": "click.mp3",
     "duration": 0.37,
-    "description": "Crisp UI click — button press, toggle, selection. Short accent, sync exactly to the on-screen action."
+    "description": "Crisp UI click — button press, toggle, selection. Short accent, sync exactly to the on-screen action.",
+    "loudness_m": -25.8
   },
   "error": {
     "file": "error.mp3",
     "duration": 1.62,
-    "description": "Negative / error tone — failure state, a 'wrong' beat, or a glitchy interruption."
-  },
-  "glitch-1": {
-    "file": "glitch-1.mp3",
-    "duration": 2.64,
-    "description": "Punchy digital glitch — hard-cut accent or sudden reveal. Trigger on the hit; let the decay bleed into the next shot (J-cut)."
+    "description": "Negative / error tone — failure state, a 'wrong' beat, or a glitchy interruption.",
+    "loudness_m": -27.5
   },
   "glitch-2": {
     "file": "glitch-2.mp3",
     "duration": 3.5,
-    "description": "Harsh, longer glitch — chaotic / jarring transition or a distorted reveal."
+    "description": "Harsh, longer glitch — chaotic / jarring transition or a distorted reveal.",
+    "loudness_m": -3.4
   },
   "glitch-3": {
     "file": "glitch-3.mp3",
     "duration": 3.1,
-    "description": "Low-key glitch texture — subtle digital shift, minimal transition that sits under other audio."
+    "description": "Low-key glitch texture — subtle digital shift, minimal transition that sits under other audio.",
+    "loudness_m": -19.5
   },
   "impact-bass-1": {
     "file": "impact-bass-1.mp3",
     "duration": 2.12,
-    "description": "Bass impact hit — logo/hero snap, headline slam. Trigger on the visual landing; decay carries into the next shot (J-cut)."
+    "description": "Bass impact hit — logo/hero snap, headline slam. Trigger on the visual landing; decay carries into the next shot (J-cut).",
+    "loudness_m": -4.0
   },
   "impact-bass-2": {
     "file": "impact-bass-2.mp3",
     "duration": 2.59,
-    "description": "Bass impact with a short swell — brief anticipation then a deep hit. Place so the peak lands on the reveal."
+    "description": "Bass impact with a short swell — brief anticipation then a deep hit. Place so the peak lands on the reveal.",
+    "loudness_m": -1.7
   },
   "key-press": {
     "file": "key-press.mp3",
     "duration": 0.4,
-    "description": "Single key press — one keystroke / terminal-input beat. Short accent, sync to the typed character."
+    "description": "Single key press — one keystroke / terminal-input beat. Short accent, sync to the typed character.",
+    "loudness_m": -36.3
   },
   "notification": {
     "file": "notification.mp3",
     "duration": 2.46,
-    "description": "Notification chime — alert, message-in, toast/badge appears. Sync to the element entering."
+    "description": "Notification chime — alert, message-in, toast/badge appears. Sync to the element entering.",
+    "loudness_m": -15.6
   },
   "ping": {
     "file": "ping.mp3",
     "duration": 1.32,
-    "description": "Sharp electronic ping — punchy accent on a key reveal or data point. Sync to the beat."
+    "description": "Sharp electronic ping — punchy accent on a key reveal or data point. Sync to the beat.",
+    "loudness_m": -23.6
   },
   "pop": {
     "file": "pop.mp3",
     "duration": 0.72,
-    "description": "Quick pop — element appear/spawn, chip/tag/badge in. Small precise accent, sync to the pop-in."
+    "description": "Quick pop — element appear/spawn, chip/tag/badge in. Small precise accent, sync to the pop-in.",
+    "loudness_m": -21.2
   },
   "riser": {
     "file": "riser.mp3",
     "duration": 10.03,
-    "description": "Long cinematic riser (~10s build, peak at the end). Trigger at (climax_time − 10.03s) so it crests exactly on the reveal."
+    "description": "Long cinematic riser (~10s build, peak at the end). Trigger at (climax_time − 10.03s) so it crests exactly on the reveal.",
+    "loudness_m": -4.2
   },
   "sparkle": {
     "file": "sparkle.mp3",
     "duration": 1.8,
-    "description": "Bright sparkle / shimmer — magical reveal or 'shine' highlight on a hero element. Sync to the highlight."
+    "description": "Bright sparkle / shimmer — magical reveal or 'shine' highlight on a hero element. Sync to the highlight.",
+    "loudness_m": -6.3
   },
   "typing": {
     "file": "typing.mp3",
     "duration": 1.5,
-    "description": "Typing burst (~1.5s of keys) — keyboard / code typing reveal, text-being-typed beat. Start as the text begins typing."
+    "description": "Typing burst (~1.5s of keys) — keyboard / code typing reveal, text-being-typed beat. Start as the text begins typing.",
+    "loudness_m": -28.3
   },
   "whoosh-cinematic": {
     "file": "whoosh-cinematic.mp3",
     "duration": 5.54,
-    "description": "Cinematic whoosh build (~5.5s) — sweeping scene transition. Align so the swell peaks on the cut."
-  },
-  "whoosh-short": {
-    "file": "whoosh-short.mp3",
-    "duration": 0.57,
-    "description": "Short whoosh — quick swipe/slide accent, fast element move, snappy transition. Sync to the motion."
+    "description": "Cinematic whoosh build (~5.5s) — sweeping scene transition. Align so the swell peaks on the cut.",
+    "loudness_m": -9.5
   },
   "whoosh": {
     "file": "whoosh.mp3",
     "duration": 0.57,
-    "description": "Punchy whoosh/impact — fast reveal or hard transition accent. Sync to the motion."
+    "description": "Punchy whoosh/impact — fast reveal or hard transition accent. Sync to the motion.",
+    "loudness_m": -15.2
   }
 }

@@ -13,7 +13,10 @@
   • запас по кадрам. То же перекрытие, которое сейчас проскакивает между кадрами: сдвинь
     дубль на кадр — и залипнет. Это тоже ошибка, а не везение;
   • ошибка JS на странице, селектор, который ничего не нашёл, картинка или звук по
-    несуществующему пути.
+    несуществующему пути;
+  • звуки: громче нормы (замер файла + громкость на странице), убранный звук, одно семейство
+    подряд, файл больше двух раз (правила Валеры, 12.10.2026). Страницу, собранную до этих норм,
+    рендер не возьмёт — её page.py надо пересобрать; сводка --all такие только помечает.
 
 Как проверяется: страница открывается в том же headless Chrome, которым рендерит
 HyperFrames, видео и звук отключены. Таймлайн прогоняется трижды — по кадрам, как рендер;
@@ -207,6 +210,36 @@ def find_chrome() -> str:
     return str(found[-1])
 
 
+SFX_NORM_MARK = 'name="reels-sfx-norm"'        # kit ставит в страницы с нормой звука
+
+
+def sound_problems(page: str) -> list:
+    """Звуки страницы по правилам: громкость по замеру файла не выше нормы, убранных нет, повторов нет."""
+    import math
+
+    import kit
+
+    manifest = kit.sfx_manifest()
+    problems = []
+    for name, volume in re.findall(r'<audio id="sfx-[^"]*" src="assets/sfx/([\w.\-]+)\.mp3"[^>]*?data-volume="([\d.]+)"',
+                                   page):
+        if name in manifest.get("_removed", {}):
+            problems.append(f"{name}: {manifest['_removed'][name]}")
+            continue
+        info = manifest.get(name) if not name.startswith("_") else None
+        if not info or "loudness_m" not in info:
+            problems.append(f"{name}: нет в presets/sfx или нет замера громкости")
+            continue
+        level = info["loudness_m"] + 20 * math.log10(max(float(volume), 1e-6))
+        if level > kit.SFX_TARGET + 0.5:
+            problems.append(f"{name}: {level:.1f} LUFS — громче нормы {kit.SFX_TARGET:g} (на ~11 дБ тише голоса)")
+    try:
+        kit.check_sounds([page])
+    except ValueError as e:
+        problems += [line.strip() for line in str(e).splitlines()[1:]]
+    return problems
+
+
 def missing_assets(project: Path, page: str) -> list:
     refs = set(re.findall(r'(?:src|href)="(assets/[^"]+)"', page))
     refs |= set(re.findall(r"""url\(["']?(assets/[^"')]+)""", page))
@@ -257,8 +290,11 @@ def explain(item: dict) -> str:
     return text
 
 
-def verify(stem_or_dir: str, fps: int = FPS) -> list:
-    """Печатает отчёт по странице; возвращает список провалов (пустой — можно рендерить)."""
+def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
+    """Печатает отчёт по странице; возвращает список провалов (пустой — можно рендерить).
+
+    strict — страница идёт в рендер: собранная до норм звука не проходит. Сводка --all — не строгая.
+    """
     project = Path(stem_or_dir)
     if not project.is_dir():
         project = STUDIO / stem_or_dir
@@ -277,8 +313,17 @@ def verify(stem_or_dir: str, fps: int = FPS) -> list:
             failed.append(title)
 
     print(f"Страница {project.name}")
-    gone = missing_assets(project, page_path.read_text(encoding="utf-8"))
+    page_text = page_path.read_text(encoding="utf-8")
+    gone = missing_assets(project, page_text)
     check(not gone, "все картинки, звуки и шрифты на месте", gone)
+    if SFX_NORM_MARK in page_text:
+        sounds = sound_problems(page_text)
+        check(not sounds, "звуки: не громче нормы, без убранных и без одинаковых подряд", sounds)
+    elif strict:
+        check(False, "страница собрана до норм звука 12.10.2026 — пересобери её page.py "
+                     "(старые звуки громче голоса и повторяются)")
+    else:
+        print("  · звуки по правилам до 12.10.2026 — при правке ролика пересобрать page.py")
 
     started = time.time()
     res = run_timeline(page_path, fps)
@@ -311,7 +356,7 @@ def main():
 
     bad = {}
     for stem in stems:
-        failed = verify(stem, args.fps)
+        failed = verify(stem, args.fps, strict=not args.all)
         if failed:
             bad[stem] = failed
         print()

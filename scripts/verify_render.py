@@ -5,6 +5,7 @@
   • длина разошлась с дублем — субтитры и графика уехали от речи;
   • нет звука или он не той громкости;
   • по краю кадра пустая полоса — камера вылезла за исходник;
+  • лицо засвечено — светлее, чем в принятых роликах серии;
   • файл битый.
 
   .venv/bin/python scripts/verify_render.py studio/IMG_3279/renders/IMG_3279_v1.mp4 --stem IMG_3279
@@ -25,6 +26,12 @@ from common import WORK_DIR, ffmpeg_bin, ffprobe_bin
 # штора тоже бывают около 16–20, но в них есть шум и перепады: поэтому смотрим и на разброс.
 EMPTY_EDGE_Y = 18.0
 EMPTY_EDGE_SPREAD = 6.0
+
+# Лицо: медиана яркости (Y) середины лица по 12 кадрам. В принятых роликах серии (яркость −8,
+# студия со шторой) — 150–152; IMG_1803 v2 с засвеченным лицом (HDR без калибровки) — 171,
+# Валера его забраковал (12.10.2026). Выше FACE_MAX_Y — засвет: ролик не отдавать.
+FACE_MAX_Y = 165.0
+FACE_MAX_HOT = 2.0          # % почти белых (Y ≥ 230) пикселей лица — выбитые света
 
 
 def probe(path: Path) -> dict:
@@ -70,6 +77,39 @@ def contact_sheet(path: Path, out: Path, step: float = 2.5, width: int = 1080, h
                     f"fps=1/{step:.3f},scale={tile_w}:{tile_h},tile={cols}x{24 // cols}:padding=4:color=white",
                     "-frames:v", "1", str(out)], check=True, capture_output=True)
     return out
+
+
+def face_brightness(path: Path, duration: float, frames: int = 12) -> tuple:
+    """(медиана Y середины лица, % почти белых, сколько кадров с лицом) — YuNet по 12 кадрам."""
+    import cv2
+    import numpy as np
+    from track import YUNET
+
+    w, h = 540, 960
+    # модель — байтами: OpenCV на Windows не открывает путь с кириллицей
+    det = cv2.FaceDetectorYN.create("onnx", np.frombuffer(YUNET.read_bytes(), np.uint8),
+                                    np.empty(0, np.uint8), (w, h), 0.6, 0.3, 50)
+    medians, hot = [], []
+    for i in range(frames):
+        at = duration * (i + 0.5) / frames
+        raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-ss", f"{at:.2f}", "-i", str(path), "-frames:v", "1",
+                              "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,"
+                              "format=bgr24", "-f", "rawvideo", "-"], capture_output=True).stdout
+        if len(raw) != w * h * 3:
+            continue
+        img = np.frombuffer(raw, np.uint8).reshape(h, w, 3)
+        _, found = det.detect(img)
+        if found is None:
+            continue
+        x, y, fw, fh = found[0][:4].astype(int)
+        cx, cy = x + fw // 2, y + fh // 2
+        box = img[max(0, cy - fh // 3): cy + fh // 3, max(0, cx - fw // 3): cx + fw // 3]
+        luma = cv2.cvtColor(box, cv2.COLOR_BGR2YUV)[:, :, 0].astype(float)
+        medians.append(float(np.median(luma)))
+        hot.append(float((luma >= 230).mean() * 100))
+    if not medians:
+        return None, None, 0
+    return float(np.median(medians)), float(np.mean(hot)), len(medians)
 
 
 def main():
@@ -119,6 +159,13 @@ def main():
         if holes:
             worst.append(f"пусто: {name} на {holes[:5]} с")
     check(not any(w.startswith("пусто") for w in worst), "по краям нет пустых полос", ", ".join(worst))
+
+    face, hot, seen = face_brightness(video, duration)
+    if seen:
+        check(face <= FACE_MAX_Y and hot <= FACE_MAX_HOT, f"лицо не засвечено (яркость лица до {FACE_MAX_Y:g}, у серии 150–152)",
+              f"медиана {face:.0f}, почти белых {hot:.1f}%, кадров с лицом {seen}")
+    else:
+        print("  · лица в кадре нет — засвет лица не проверялся")
 
     decode = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(video), "-f", "null", "-"],
                             capture_output=True, encoding="utf-8", errors="replace")

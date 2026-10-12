@@ -189,20 +189,20 @@ beats = f'''
 {keyword_beats(t(83.44), t(85.54), t(86.36), len("экономика"), t_cta_out=t(83.30))}
 '''
 sounds = [
-    audio("tim", "whoosh-short", t(2.26), 0.26), audio("house", "pop", t(4.86), 0.30),
+    audio("tim", "whoosh", t(2.26), 0.26), audio("house", "pop", t(4.86), 0.30),
     audio("lost", "impact-bass-1", t(6.00), 0.36), audio("kids", "pop", t(7.58), 0.28),
     audio("credit", "impact-bass-1", t(9.22), 0.40), audio("babka", "pop", t(12.18), 0.26),
     audio("ege", "pop", t(13.34), 0.26), audio("task", "whoosh", t(14.92), 0.24),
     *[audio(f"tr{k}", "click", t(x) - 0.02, 0.32) for k, x in enumerate([15.74, 21.20, 24.88, 28.68])],
     audio("vahta", "pop", t(19.00), 0.26), audio("nv", "impact-bass-1", t(33.46), 0.28),
     audio("beacon", "notification", t(36.28), 0.20), audio("phrase", "whoosh", t(39.04), 0.22),
-    audio("diff", "impact-bass-1", t(43.46), 0.36), audio("stairs", "whoosh-short", t(46.08), 0.24),
-    audio("bars", "click-soft", t(49.22), 0.36), audio("step", "ping", t(52.38), 0.28),
-    audio("tbl", "whoosh", t(58.06), 0.24), audio("col1", "click-soft", t(58.86), 0.34),
-    audio("col2", "click-soft", t(61.64), 0.34), audio("timcook", "pop", t(65.04), 0.26),
-    audio("col3", "click-soft", t(67.96), 0.34), audio("prog", "impact-bass-1", t(70.08), 0.34),
+    audio("diff", "impact-bass-1", t(43.46), 0.36), audio("stairs", "whoosh", t(46.08), 0.24),
+    audio("bars", "click", t(49.22), 0.36), audio("step", "ping", t(52.38), 0.28),
+    audio("tbl", "whoosh", t(58.06), 0.24), audio("col1", "click", t(58.86), 0.34),
+    audio("col2", "click", t(61.64), 0.34), audio("timcook", "pop", t(65.04), 0.26),
+    audio("col3", "click", t(67.96), 0.34), audio("prog", "impact-bass-1", t(70.08), 0.34),
     audio("sum", "whoosh", t(73.02), 0.22), audio("censor", "glitch-3", t(82.28), 0.22, duration=0.9, fade_out=0.3),
-    audio("kw", "whoosh-short", t(83.42), 0.24), audio("type", "typing", t(85.52), 0.30, duration=0.6, fade_out=0.2),
+    audio("kw", "whoosh", t(83.42), 0.24), audio("type", "typing", t(85.52), 0.30, duration=0.6, fade_out=0.2),
     audio("note", "notification", t(86.34), 0.22),
 ]
 fg = [(t(9.14), t(10.75)), (t(42.72), t(45.15)), (t(69.00), t(71.60))]

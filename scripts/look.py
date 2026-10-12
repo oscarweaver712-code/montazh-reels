@@ -62,22 +62,25 @@ def range_filter() -> str:
 # HDR с айфона пишется в HLG (у других камер бывает PQ) и в цветах BT.2020. Без перевода ffmpeg
 # принимает такой кадр за обычный BT.709: лицо бледно-серое, цвета выцветшие (IMG_1803, 12.10.2026).
 HDR_TRANSFERS = ("arib-std-b67", "smpte2084")
+HDR_NPL = 180          # лицо как в принятых роликах серии — см. hdr_to_sdr
 
 
 def hdr_to_sdr(info: dict) -> str:
     """Перевод HDR-исходника в обычный цвет BT.709, 8 бит, 16–235. Пустая строка — исходник обычный.
 
-    Тон сжимает hable при npl=100 без обесцвечивания. Выбрано глазами на IMG_1803 против прошлых
-    дублей той же студии: кожа естественная, тени глубокие; npl=203 темнит лицо, mobius и clip
-    желтят кожу и выбивают света. Ставится после уменьшения кадра — в 4K перевод в плавающей
-    точке медленный и тяжёлый по памяти; масштаб в кривой HLG так же честен, как в обычной.
+    Тон сжимает hable без обесцвечивания: mobius и clip желтят кожу и выбивают света. Уровень
+    (npl=180) подобран не на глаз, а по лицу: после перевода и яркости −8 лицо IMG_1803 выходит на
+    151 — как в принятых роликах серии (медиана Y лица 150–152, SDR с айфона). Первый вариант
+    (npl=100, «на глаз») давал 173 — Валера увидел засвет (12.10.2026). Проверка готового ролика
+    (verify_render) краснеет, если лицо светлее 165. Ставится после уменьшения кадра — в 4K перевод
+    в плавающей точке медленный и тяжёлый по памяти; масштаб в кривой HLG так же честен, как в обычной.
     """
     transfer = info.get("transfer")
     if transfer not in HDR_TRANSFERS:
         return ""
     matrix = info.get("matrix") if info.get("matrix") in ("bt2020nc", "bt2020c") else "bt2020nc"
     rng = info.get("range") if info.get("range") in ("tv", "pc") else "tv"
-    return (f"zscale=tin={transfer}:min={matrix}:pin=bt2020:rin={rng}:t=linear:npl=100,"
+    return (f"zscale=tin={transfer}:min={matrix}:pin=bt2020:rin={rng}:t=linear:npl={HDR_NPL},"
             "format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
             "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
 

@@ -165,15 +165,15 @@ beats = f'''
 '''
 sounds = [
     audio("root", "impact-bass-1", t(2.10), 0.42), audio("sprout", "sparkle", t(4.54), 0.26),
-    audio("roots", "whoosh-short", t(5.60), 0.22), audio("smoke", "pop", t(9.78), 0.26),
-    audio("sq", "whoosh-short", t(10.82), 0.24), audio("cells", "click-soft", t(14.34), 0.36),
+    audio("roots", "whoosh", t(5.60), 0.22), audio("smoke", "pop", t(9.78), 0.26),
+    audio("sq", "whoosh", t(10.82), 0.24), audio("cells", "click", t(14.34), 0.36),
     audio("three", "click", t(16.34), 0.32), audio("side", "pop", t(17.58), 0.28),
-    audio("grow", "whoosh", t(20.00), 0.26), audio("sqroots", "whoosh-short", t(21.34), 0.22),
+    audio("grow", "whoosh", t(20.00), 0.26), audio("sqroots", "whoosh", t(21.34), 0.22),
     audio("koren", "impact-bass-1", t(22.86), 0.40),
     audio("ch1", "click", t(25.10), 0.34), audio("ch2", "click", t(27.84), 0.34), audio("ch3", "click", t(29.36), 0.34),
     audio("xvi", "impact-bass-1", t(31.32), 0.32), audio("r", "pop", t(33.76), 0.28), audio("rroot", "ping", t(34.18), 0.28),
-    audio("radv", "whoosh-short", t(38.54), 0.24), audio("bar", "click", t(39.12), 0.36),
-    audio("desc", "whoosh-short", t(39.96), 0.28), audio("wall", "pop", t(40.90), 0.26),
+    audio("radv", "whoosh", t(38.54), 0.24), audio("bar", "click", t(39.12), 0.36),
+    audio("desc", "whoosh", t(39.96), 0.28), audio("wall", "pop", t(40.90), 0.26),
     audio("x1", "pop", t(43.28), 0.28), audio("brad", "impact-bass-1", t(48.08), 0.36), audio("msk", "pop", t(52.06), 0.28),
 ]
 fg = [(t(2.02), t(3.65)), (t(22.78), t(23.85)), (t(24.58), t(30.65)), (t(30.50), t(32.75)), (t(48.00), t(49.75))]

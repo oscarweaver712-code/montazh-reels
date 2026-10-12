@@ -217,7 +217,7 @@ docs/     — разбор рынка: что взяли и почему
 Если что-то менялось в `scripts/`, прогнать самопроверку:
 
 ```bash
-.venv/bin/python scripts/selfcheck.py          # пара минут, 127 проверок
+.venv/bin/python scripts/selfcheck.py          # пара минут, 134 проверки
 .venv/bin/python scripts/selfcheck.py --long   # 200 сегментов, если трогал рендер
 .venv/bin/python scripts/verify_page.py --all  # все страницы графики, если трогал kit/compose
 ```

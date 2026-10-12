@@ -95,10 +95,10 @@ beats = f'''
       leave(["#pill-in", "#pill-ch"], {t(55.80)}, {{ y: 60 }});
 '''
 sounds = [
-    audio("lead", "whoosh-short", f(1.22), 0.26), audio("tri", "sparkle", f(1.30), 0.24),
+    audio("lead", "whoosh", f(1.22), 0.26), audio("tri", "sparkle", f(1.30), 0.24),
     audio("formula", "impact-bass-1", f(3.22), 0.42),
     audio("bab", "pop", f(7.20), 0.32), audio("ind", "pop", f(8.20), 0.32),
-    audio("pyth", "whoosh-short", f(10.16), 0.28), audio("sect", "impact-bass-1", f(13.20), 0.34),
+    audio("pyth", "whoosh", f(10.16), 0.28), audio("sect", "impact-bass-1", f(13.20), 0.34),
     audio("club", "pop", f(15.78), 0.30), audio("rule", "whoosh", f(21.90), 0.24),
     audio("teacher", "pop", f(27.46), 0.30), audio("qm", "pop", f(36.06), 0.30),
     audio("lines", "click", f(40.20), 0.38), audio("k1000", "impact-bass-1", f(45.30), 0.40),

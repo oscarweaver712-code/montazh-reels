@@ -349,8 +349,9 @@ def check_hdr(report: Report, preset: dict, tmp: Path):
     12.10.2026 пришёл первый HDR-дубль (IMG_1803, 4K HLG). Перевода в конвейере не было:
     ffmpeg принимал HLG за обычный BT.709 — лицо бледно-серое, цвета выцветшие, и заметили бы
     это уже после публикации. Проверка: цветные полосы размечаются в HLG так, как пишет айфон
-    (обычный белый — 203 нита), и проходят настоящую нарезку. Цвета должны вернуться: замер
-    12.10 — с переводом насыщенность 73% от исходной и отклонение 35, без перевода 43% и 72.
+    (обычный белый — 203 нита), и проходят настоящую нарезку. Цвета должны вернуться. Замер
+    12.10 при npl=180 (уровень лица как в серии): с переводом насыщенность 62% от исходной и
+    отклонение 49, без перевода 43% и 72 — пороги посередине, с запасом в обе стороны.
     """
     from render import render
 
@@ -375,9 +376,35 @@ def check_hdr(report: Report, preset: dict, tmp: Path):
     saturation = (result.max(axis=2) - result.min(axis=2)).mean() / (original.max(axis=2) - original.min(axis=2)).mean()
     deviation = np.abs(original - result).mean()
     tags = probe_value(out, "stream=color_transfer,color_primaries", "v:0")
-    report.check(saturation >= 0.6 and deviation < 50 and tags == "bt709,bt709",
+    report.check(saturation >= 0.52 and deviation < 61 and tags == "bt709,bt709",
                  "HDR с айфона (HLG) выходит в обычном цвете, а не бледной пастелью",
                  f"насыщенность {saturation:.0%} от исходной, отклонение {deviation:.0f}, цвет на выходе {tags}")
+
+
+def check_face_exposure(report: Report, tmp: Path):
+    """Засвет лица ловится в готовом ролике (verify_render).
+
+    IMG_1803 v2: лицо на 171 при норме серии 150–152 — Валера: «засвечено лицо» (12.10.2026).
+    Настоящее лицо (снимок NASA, общественное достояние — presets/test) в двух экспозициях:
+    как в серии — проходит, засвеченное — нет.
+    """
+    import verify_render
+
+    print("\nЗасвет лица")
+    face = ROOT / "presets" / "test" / "face_pd.jpg"
+    results = {}
+    for label, gain in (("как в серии", 0.9), ("засвечено", 1.15)):
+        clip = tmp / f"face_{gain}.mp4"
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-loop", "1", "-i", str(face), "-t", "2", "-r", "30", "-vf",
+                        f"scale=1080:-2,pad=1080:1920:0:(oh-ih)/2:black,format=yuv420p,"
+                        f"lutyuv=y=clip(16+(val-16)*{gain}\\,16\\,235)", *source_codec(), str(clip)],
+                       check=True, capture_output=True)
+        results[label] = verify_render.face_brightness(clip, 2.0, frames=3)
+    normal, bright = results["как в серии"], results["засвечено"]
+    passes = lambda r: r[2] > 0 and r[0] <= verify_render.FACE_MAX_Y and r[1] <= verify_render.FACE_MAX_HOT
+    report.check(passes(normal) and not passes(bright),
+                 "лицо как в серии проходит, засвеченное — нет",
+                 f"как в серии {normal[0]}, засвечено {bright[0]} при пороге {verify_render.FACE_MAX_Y:g}")
 
 
 def check_look(report: Report, preset: dict, tmp: Path):
@@ -732,6 +759,79 @@ def check_skill_links(report: Report, tmp: Path):
                  ", ".join(fixed) or "ничего не починено")
     report.check((links / "c" / "SKILL.md").read_text(encoding="utf-8") == "копия",
                  "папку-копию скилла починка не удаляет (её ловит проверка «скиллы общие»)")
+
+
+def check_sfx(report: Report):
+    """Звуки — по правилам Валеры (12.10.2026): тише голоса, без убранных, без копий, без повторов подряд.
+
+    В IMG_1803 басовый удар звучал громче голоса (общая громкость 0.36 на файл, записанный на −2 LUFS),
+    а «чередование» whoosh и whoosh-short давало один и тот же свист шесть раз: файлы были копиями.
+    """
+    import hashlib
+    import kit
+    from verify_page import sound_problems
+
+    print("\nЗвуки")
+    folder = kit.SFX_DIR
+    files = sorted(folder.glob("*.mp3"))
+    digests = {}
+    for f in files:
+        digests.setdefault(hashlib.md5(f.read_bytes()).hexdigest(), []).append(f.stem)
+    twins = [" = ".join(names) for names in digests.values() if len(names) > 1]
+    report.check(not twins, "в presets/sfx нет одинаковых файлов под разными именами", "; ".join(twins) or "чисто")
+
+    manifest = kit.sfx_manifest()
+    off = []
+    for f in files:
+        info = manifest.get(f.stem)
+        err = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(f), "-af", "apad=pad_dur=1,ebur128",
+                              "-f", "null", "-"], capture_output=True, encoding="utf-8", errors="replace").stderr
+        measured = max(float(x) for x in re.findall(r"M:\s*(-?[\d.]+)", err))
+        if not info or "loudness_m" not in info or abs(info["loudness_m"] - measured) > 1.5:
+            off.append(f"{f.stem}: в манифесте {info.get('loudness_m') if info else '—'}, замер {measured:.1f}")
+    report.check(not off, "у каждого звука в манифесте честный замер громкости", "; ".join(off) or f"{len(files)} файлов")
+
+    removed = manifest.get("_removed", {})
+    leftovers = [n for n in removed if (folder / f"{n}.mp3").exists()]
+    try:
+        kit.audio("x", "glitch-1", 1.0)
+        refused = False
+    except ValueError as e:
+        refused = "больше нет" in str(e)
+    report.check("glitch-1" in removed and refused and not leftovers,
+                 "убранный звук (glitch-1 с «бардака») не вернётся: файла нет, kit отказывает с причиной",
+                 ", ".join(leftovers) or "чисто")
+
+    def effective(tag: str) -> float:
+        name, vol = re.search(r'sfx/([\w.\-]+)\.mp3".*data-volume="([\d.]+)"', tag).groups()
+        return manifest[name]["loudness_m"] + 20 * np.log10(float(vol))
+
+    levels = {n: effective(kit.audio("x", n, 1.0)) for n in ("impact-bass-2", "whoosh", "pop")}
+    try:
+        kit.audio("x", "pop", 1.0, level=1.5)
+        louder = True
+    except ValueError:
+        louder = False
+    report.check(all(abs(v - kit.SFX_TARGET) <= 0.5 for v in levels.values()) and not louder,
+                 "громкость звука — от замера файла: удар и щелчок на одной норме, громче нормы нельзя",
+                 ", ".join(f"{n} {v:.1f}" for n, v in levels.items()) + f" LUFS при норме {kit.SFX_TARGET:g}")
+
+    def refused_by_rules(sounds: list) -> bool:
+        try:
+            kit.check_sounds(sounds)
+            return False
+        except ValueError:
+            return True
+
+    ok_seq = [kit.audio("a", "impact-bass-1", 1.0), kit.audio("b", "whoosh", 3.0), kit.audio("c", "impact-bass-2", 5.0)]
+    report.check(not refused_by_rules(ok_seq)
+                 and refused_by_rules([kit.audio("a", "whoosh", 1.0), kit.audio("b", "whoosh-cinematic", 3.0)])
+                 and refused_by_rules([kit.audio(f"p{i}", n, 1.0 + 2 * i) for i, n in enumerate(["pop", "ping", "pop", "click", "pop"])])
+                 and refused_by_rules([kit.audio("a", "pop", 1.0), kit.audio("b", "ping", 1.4)]),
+                 "одинаковое семейство подряд, файл трижды и звуки вплотную — ошибка сборки")
+    loud = '<audio id="sfx-x" src="assets/sfx/impact-bass-1.mp3" data-start="1.00" data-volume="0.36"></audio>'
+    report.check(bool(sound_problems(loud)) and not sound_problems("".join(ok_seq)),
+                 "проверка страницы ловит звук громче нормы (удар 0.36 из старых роликов)")
 
 
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
@@ -1901,6 +2001,7 @@ def main():
 
     section(report, check_module_names)
     section(report, check_ffmpeg_options)
+    section(report, check_sfx)
     section(report, check_agents)
     section(report, check_styles)
     section(report, check_snapping)
@@ -1926,6 +2027,7 @@ def main():
         section(report, check_cut_keeps_speech, preset, tmp)
         section(report, check_voice, preset, tmp)
         section(report, check_hdr, preset, tmp)
+        section(report, check_face_exposure, tmp)
         section(report, check_look, preset, tmp)
         section(report, check_face_memory, tmp)
         section(report, check_matte_memory, tmp)
