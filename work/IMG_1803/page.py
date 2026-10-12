@@ -6,6 +6,12 @@
 Короткая шкала (Россия, США): миллиард = биллион = 10⁹ = тысяча миллионов. Старая британская
 длинная шкала: биллион = миллион миллионов = 10¹², в 1000 раз больше. Официально Британия
 перешла на короткую шкалу в 1974 году (заявление премьера Г. Вильсона в парламенте).
+
+v4 (12.10.2026): всё внутри серых зон площадок (formats.GREY_ZONES, по скринам Валеры) — слова над
+головой ниже вкладок TikTok, таблицы и карточки на груди в полосе 245–835 и выше ника Instagram.
+Фоны за спиной СГЕНЕРИРОВАНЫ (Codex, imagegen; downloads/bg_*.md) — не фото, иллюстрация эпохи:
+контора итальянского купца XIV века (2,9–12,5 с) и русская палата XV века (20,4–37 с). Смена —
+наплыв из размытия с медленным наездом, уход в настоящую студию; «бардак» впечатывается уже в студию.
 """
 import json
 import sys
@@ -31,62 +37,81 @@ css = '''      .flag { display: inline-block; width: 66px; height: 44px; margin-
       .lad-row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 6px; opacity: 0;
                  border-bottom: 2px solid rgba(242,235,221,0.14); }
       .lad-row:last-child { border-bottom: none; }
-      .lad-n { font-family: "JBMono"; font-weight: 700; font-size: 56px; color: var(--cream); white-space: nowrap; }
-      .lad-w { font-family: "Oswald"; font-weight: 700; font-size: 64px; text-transform: uppercase; color: #F5B82E; }
-      .cmp-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 6px; opacity: 0;
+      .lad-n { font-family: "JBMono"; font-weight: 700; font-size: 46px; color: var(--cream); white-space: nowrap; }
+      .lad-w { font-family: "Oswald"; font-weight: 700; font-size: 54px; text-transform: uppercase; color: #F5B82E; }
+      .cmp-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 6px; opacity: 0;
                  border-bottom: 2px solid rgba(242,235,221,0.14); }
       .cmp-row:last-child { border-bottom: none; }
-      .cmp-who { font-family: "Manrope"; font-weight: 800; font-size: 34px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(242,235,221,0.75); }
-      .cmp-w { font-family: "Oswald"; font-weight: 700; font-size: 58px; text-transform: uppercase; color: var(--cream); }
-      .cmp-v { font-family: "Cormorant"; font-weight: 700; font-size: 76px; color: var(--cream); font-variant-numeric: lining-nums; }
+      .cmp-who { max-width: 190px; line-height: 1.15; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(242,235,221,0.75); }
+      .cmp-w { font-family: "Oswald"; font-weight: 700; font-size: 46px; text-transform: uppercase; color: var(--cream); }
+      .cmp-v { font-family: "Cormorant"; font-weight: 700; font-size: 60px; color: var(--cream); font-variant-numeric: lining-nums; }
       .panel { border-radius: 28px; background: rgba(12,12,14,0.88); border: 2px solid rgba(242,235,221,0.16);
                box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
-      .bil { width: 440px; height: 270px; padding: 28px 20px; text-align: center; }
-      .bil-h { font-family: "Manrope"; font-weight: 800; font-size: 28px; letter-spacing: 0.12em; text-transform: uppercase; color: #F5B82E; }
-      .bil-v { margin-top: 18px; font-family: "Cormorant"; font-weight: 700; font-size: 120px; line-height: 1; color: var(--cream);
+      .bil { width: 285px; height: 236px; padding: 22px 12px; text-align: center; }
+      .bil-h { font-family: "Manrope"; font-weight: 800; font-size: 19px; letter-spacing: 0.12em; text-transform: uppercase; color: #F5B82E; }
+      .bil-v { margin-top: 14px; font-family: "Cormorant"; font-weight: 700; font-size: 84px; line-height: 1; color: var(--cream);
                font-variant-numeric: lining-nums; }
-      .bil-s { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 26px; color: rgba(242,235,221,0.6); }
+      .bil-s { margin-top: 10px; font-family: "Manrope"; font-weight: 800; font-size: 18px; color: rgba(242,235,221,0.6); }
+      /* карточка mille + -one = milione: две строки в полосе 590 */
+      #d-it .it-row { flex-wrap: wrap; gap: 6px 34px; }
+      #d-it .it-w { font-size: 74px; }
+      #it-c { flex-basis: 100%; }
+      /* портрет Маска — уже, чтобы не наезжал на голову и не уходил под обрезку Instagram */
+      #c-musk { left: 722px; top: 270px; width: 250px; padding: 12px 12px 10px; }
+      #c-musk .ph, #c-musk img { width: 226px; height: 250px; }
+      #c-musk .card-name { font-size: 20px; }
+      #c-musk .card-sub { font-size: 22px; }
+      /* фоны за спиной (сгенерированы Codex): полный кадр под вырезкой; чуть темнее и мягче студии,
+         чтобы человек оставался главным, края кадра притемнены как у объектива */
+      .bg { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      .bg img { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover;
+                filter: brightness(0.72) saturate(0.9) contrast(1.05); }
+      .bg .vig { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                 background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 38%, rgba(0,0,0,0.55) 100%),
+                             linear-gradient(to bottom, rgba(0,0,0,0) 72%, rgba(0,0,0,0.5) 100%); }
 '''
 
-PANEL = "left: 90px; width: 900px; padding: 22px 44px;"
+PANEL = "left: 245px; width: 590px; padding: 16px 28px;"
 behind = "\n".join([
-    '        <div id="b-mil" class="g big" style="top: 110px; font-size: 210px;">миллион</div>',
-    '        <div id="b-ishe-lead" class="g lead" style="top: 56px;">'
+    '        <div id="bg-it" class="bg"><img src="assets/img/bg_italy.png" alt="" /><div class="vig"></div></div>',
+    '        <div id="bg-rus" class="bg"><img src="assets/img/bg_rus.png" alt="" /><div class="vig"></div></div>',
+    '        <div id="b-mil" class="g big" style="top: 285px; font-size: 192px;">миллион</div>',
+    '        <div id="b-ishe-lead" class="g lead" style="top: 272px; font-size: 30px; letter-spacing: 0.12em;">'
     '<span id="ish1" style="display: inline-block; opacity: 0;">дом-ище</span> · '
     '<span id="ish2" style="display: inline-block; opacity: 0;">кот-ище</span> · '
     '<span id="ish3" style="display: inline-block; opacity: 0;">пепел-ище</span></div>',
-    '        <div id="b-ishe" class="g big" style="top: 100px; font-size: 270px;">-ище</div>',
-    '        <div id="b-tys" class="g big red" style="top: 120px; font-size: 175px;">тысячище</div>',
-    '        <div id="b-tma-lead" class="g lead" style="top: 56px; font-size: 44px;">10 000 =</div>',
-    '        <div id="b-tma" class="g big" style="top: 100px; font-size: 290px;">тьма</div>',
-    '        <div id="b-leo-lead" class="g lead" style="top: 56px;">хочу зарабатывать</div>',
-    '        <div id="b-leo" class="g big red" style="top: 100px; font-size: 270px;">леодр</div>',
-    '        <div id="b-x" class="g big red" style="top: 100px; font-size: 280px;">×1000</div>',
-    '        <div id="b-1974-lead" class="g lead" style="top: 56px;">Британия сдалась только в</div>',
-    '        <div id="b-1974" class="g big" style="top: 100px; font-size: 290px;">1974</div>',
+    '        <div id="b-ishe" class="g big" style="top: 318px; font-size: 250px;">-ище</div>',
+    '        <div id="b-tys" class="g big red" style="top: 285px; font-size: 175px;">тысячище</div>',
+    '        <div id="b-tma-lead" class="g lead" style="top: 272px; font-size: 40px;">10 000 =</div>',
+    '        <div id="b-tma" class="g big" style="top: 318px; font-size: 260px;">тьма</div>',
+    '        <div id="b-leo-lead" class="g lead" style="top: 272px;">хочу зарабатывать</div>',
+    '        <div id="b-leo" class="g big red" style="top: 318px; font-size: 250px;">леодр</div>',
+    '        <div id="b-x" class="g big red" style="top: 285px; font-size: 260px;">×1000</div>',
+    '        <div id="b-1974-lead" class="g lead" style="top: 272px;">Британия сдалась только в</div>',
+    '        <div id="b-1974" class="g big" style="top: 318px; font-size: 260px;">1974</div>',
 ])
 
-italy = ('        <div id="d-it" class="g doc" style="left: 90px; top: 1240px; width: 900px; padding: 26px 20px 22px;">\n'
+italy = ('        <div id="d-it" class="g doc" style="left: 245px; top: 1045px; width: 590px; padding: 20px 16px 16px;">\n'
          '          <div class="it-row">\n'
          '            <div id="it-a" class="it-col"><div class="it-w">mille</div><div class="it-l">тысяча</div></div>\n'
          '            <div id="it-b" class="it-col"><div class="it-w">+ -one</div><div class="it-l">большой</div></div>\n'
          '            <div id="it-c" class="it-col"><div class="it-w" style="color: var(--red);">= milione</div>'
          '<div class="it-l">большая тысяча</div></div>\n'
          '          </div>\n        </div>')
-ladder = ('        <div id="d-lad" class="g panel" style="' + PANEL + ' top: 1265px;">\n'
+ladder = ('        <div id="d-lad" class="g panel" style="' + PANEL + ' top: 1045px;">\n'
           '          <div id="l1" class="lad-row"><span class="lad-n">10 000</span><span class="lad-w">тьма</span></div>\n'
           '          <div id="l2" class="lad-row"><span class="lad-n">100 000</span><span class="lad-w">легион</span></div>\n'
           '          <div id="l3" class="lad-row"><span class="lad-n">1 000 000</span><span class="lad-w" style="color: var(--red);">леодр</span></div>\n'
           '        </div>')
-compare = ('        <div id="d-cmp" class="g panel" style="' + PANEL + ' top: 1265px;">\n'
+compare = ('        <div id="d-cmp" class="g panel" style="' + PANEL + ' top: 1040px;">\n'
            '          <div id="c1" class="cmp-row"><span class="cmp-who">у нас</span><span class="cmp-w">миллиард</span><span class="cmp-v">10<sup>9</sup></span></div>\n'
            '          <div id="c2" class="cmp-row"><span class="cmp-who">США</span><span class="cmp-w">биллион</span><span class="cmp-v">10<sup>9</sup></span></div>\n'
            '          <div id="c3" class="cmp-row"><span class="cmp-who">Британия до 1974</span><span class="cmp-w">биллион</span>'
            '<span class="cmp-v" style="color: var(--red);">10<sup>12</sup></span></div>\n'
            '        </div>')
-bil = ('        <div id="bil1" class="g panel bil" style="left: 70px; top: 1265px;">'
+bil = ('        <div id="bil1" class="g panel bil" style="left: 245px; top: 1050px;">'
        '<div class="bil-h">биллионер до 1974</div><div class="bil-v">10<sup>12</sup> £</div><div class="bil-s">миллион миллионов</div></div>\n'
-       '        <div id="bil2" class="g panel bil" style="left: 570px; top: 1265px;">'
+       '        <div id="bil2" class="g panel bil" style="left: 550px; top: 1050px;">'
        '<div class="bil-h">биллионер сейчас</div><div class="bil-v">10<sup>9</sup> £</div><div class="bil-s">тысяча миллионов</div></div>')
 
 # Счётчик просмотров за спиной: крупно, как остальные слова, человек из вырезки встаёт поверх.
@@ -94,11 +119,11 @@ bil = ('        <div id="bil1" class="g panel bil" style="left: 70px; top: 1265p
 # Цифры сменяются через set — покадровый рендер видит то же, что и снимок.
 VIEWS = [0, 4000, 23000, 87000, 210000, 390000, 580000, 740000, 860000, 940000, 985000, 1000000]
 V_AT, V_STEP = t(65.28) - 0.15, 0.06
-views_html = ('        <div id="b-views" class="g big" style="top: 100px; font-size: 230px;">'
+views_html = ('        <div id="b-views" class="g big" style="top: 318px; font-size: 205px;">'
               + "".join(f'<span id="v{k}" style="position: absolute; left: 0; width: 1080px; opacity: 0;">'
                         + f"{v:,}".replace(",", " ") + "</span>" for k, v in enumerate(VIEWS))
               + '<span style="visibility: hidden;">1 000 000</span></div>\n'
-              '        <div id="b-views-lab" class="g lead" style="top: 330px; font-size: 54px; letter-spacing: 0.14em;">просмотров</div>')
+              '        <div id="b-views-lab" class="g lead" style="top: 272px; font-size: 40px; letter-spacing: 0.14em;">просмотров</div>')
 behind += "\n" + views_html
 views_js = "\n".join(
     [f'      tl.set("#v{k}", {{ opacity: 1 }}, {V_AT + k * V_STEP:.2f});' for k in range(len(VIEWS))]
@@ -109,8 +134,8 @@ front = "\n".join([
     '<span class="flag"></span>для итальянцев</div>',
     italy,
     '        <div id="st-rus" class="g sticker" style="left: 310px; top: 290px; font-size: 56px; white-space: nowrap;">а на Руси?</div>',
-    doc_img("d-cyr", "cyr_numerals.jpg", "старинный счёт: цифры-буквы", left=230, top=1235, width=620,
-            height=300, position="50% 100%"),
+    doc_img("d-cyr", "cyr_numerals.jpg", "старинный счёт: цифры-буквы", left=245, top=1045, width=590,
+            height=230, position="50% 100%"),
     ladder,
     '        <div id="st-spell" class="g sticker" style="left: 330px; top: 300px; font-size: 56px; white-space: nowrap;">как заклинание</div>',
     '        <div id="st-mess" class="g stamp" style="left: 360px; top: 290px; font-size: 90px; white-space: nowrap;">бардак</div>',
@@ -120,6 +145,15 @@ front = "\n".join([
 ])
 
 beats = f'''
+      // ---------- фоны за спиной: наплыв из размытия, медленный наезд, уход обратно в студию ----------
+      function bgIn(sel, tIn, tOut) {{
+        tl.fromTo(sel, {{ opacity: 0, filter: "blur(14px)" }}, {{ opacity: 1, filter: "blur(2px)", duration: 0.8, ease: "power2.out" }}, tIn);
+        tl.fromTo(`${{sel}} img`, {{ scale: 1.08 }}, {{ scale: 1.0, duration: tOut - tIn + 0.6, ease: "none" }}, tIn);
+        tl.to(sel, {{ opacity: 0, filter: "blur(10px)", duration: 0.6, ease: "power2.in" }}, tOut);
+      }}
+      bgIn("#bg-it", {t(2.90)}, {t(11.90)});
+      bgIn("#bg-rus", {t(20.40)}, {t(36.45)});
+
       // ---------- хук: что такое миллион ----------
       slam("#b-mil", {t(1.20)}, {{ fromScale: 1.5 }});
       leave("#b-mil", {t(2.45)}, {{ y: -60 }});
@@ -211,8 +245,9 @@ sounds = [
     audio("musk", "pop", t(61.68), 0.9),
     audio("views", "sparkle", V_AT, 0.8),
 ]
-fg = [(t(1.10), t(2.80)), (t(13.00), t(16.10)), (t(18.40), t(20.80)), (t(23.90), t(30.10)),
-      (t(34.30), t(36.65)), (t(48.55), t(54.15)), (V_AT - 0.1, t(67.40))]
+# человек поверх фонов на всё их время (с наплывами) и поверх слов за спиной
+fg = [(t(1.10), t(12.60)), (t(13.00), t(16.10)), (t(18.40), t(37.15)), (t(48.55), t(54.15)),
+      (V_AT - 0.1, t(67.40))]
 page = build_page("Что такое миллион", DUR, behind, front, beats, sounds, fg, cta_at=t(67.30),
                   extra_css=css, cta_small="переходи ко мне в профиль", fmt=tk.fmt, captions=tk.captions)
 page = page.replace('<div class="cta-big">Больше математики</div>', '<div class="cta-big">80+ на ЕГЭ</div>', 1)
@@ -237,9 +272,11 @@ director = {
     "accent_words": ["тьма", "легион", "леодр", "миллиард", "биллион"],
     # таблички «тьма/легион/леодр» и «миллиард/биллион» повторяют речь — на их время субтитров нет,
     # иначе красное акцентное слово ложится на верх таблички (v2)
-    "hide_captions": [[t(1.15), t(2.40)], [t(13.10), t(13.80)], [t(18.40), t(19.60)], [t(25.60), t(26.40)],
+    # v4: карточки на груди стоят на уровне субтитров (1045–1370, выше ника Instagram) — на их время
+    # субтитры спрятаны: «mille + -one», цифры-буквы, лестница, сравнение, биллионеры
+    "hide_captions": [[t(1.15), t(2.40)], [t(4.65), t(19.60)], [t(22.40), t(26.40)],
                       [t(29.85), t(34.40)], [t(34.95), t(36.20)], [t(38.00), t(49.95)], [t(52.25), t(53.40)],
-                      [t(65.20), t(66.10)], [t(67.25), DUR]],
+                      [t(54.40), t(61.60)], [t(65.20), t(66.10)], [t(67.25), DUR]],
 }
 (ROOT / f"work/{STEM}/director.json").write_text(json.dumps(director, ensure_ascii=False, indent=1), encoding="utf-8")
 print("ok", len(page.splitlines()), "строк, длина", round(DUR, 2))

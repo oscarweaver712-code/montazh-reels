@@ -217,10 +217,15 @@ CHECK_JS = r"""
         const seen = new Set();
         for (const it of items) {
           if (!visible(it.el)) continue;
+          // по высоте строка не выше рамки элемента: у крупного шрифта с плотной строкой (Oswald,
+          // line-height 0.92) «область шрифта» выше заглавных — пустая полоса, а не буквы (IMG_1803 v4)
+          const box = it.el.getBoundingClientRect();
           for (const node of it.nodes) {
             range.selectNodeContents(node);
-            for (const r of range.getClientRects()) {
-              if (r.width < 2 || r.height < 2) continue;
+            for (const raw of range.getClientRects()) {
+              const r = { left: raw.left, right: raw.right,
+                          top: Math.max(raw.top, box.top), bottom: Math.min(raw.bottom, box.bottom) };
+              if (r.right - r.left < 2 || r.bottom - r.top < 2) continue;
               for (const z of zones) {
                 const [x0, y0, x1, y1] = z.rect;
                 const dx = Math.min(r.right, x1) - Math.max(r.left, x0);
