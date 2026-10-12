@@ -847,6 +847,48 @@ def check_module_names(report: Report, folder: Path = Path(__file__).resolve().p
                  ", ".join(f"{name}.py" for name in clash) or "чисто")
 
 
+def check_grey_zones(report: Report, tmp: Path):
+    """Текст не заезжает в серые зоны площадок: шапку, ник и подпись, кнопки справа (12.10.2026).
+
+    Валера: «текстом туда как можно меньше, центрирование — по всему экрану, как было; иногда можно
+    заехать, если надо». Проверка меряет сами строки текста в том же Chrome, что и рендер: слово по
+    центру — не заезд, крупное слово в шапке и надпись под кнопками — заезд, помеченное data-safe —
+    осознанный заезд, отдельным списком.
+    """
+    import formats
+    from kit import build_page
+    from verify_page import run_timeline
+
+    print("\nСерые зоны площадок")
+    project = tmp / "zones"
+    (project / "assets").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    caps = [{"t0": 0.2, "t1": 1.8, "text": "по центру", "accent": False}]
+    (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n",
+                                         encoding="utf-8")
+    behind = '        <div id="z-top" class="g big" style="top: 40px; font-size: 200px;">шапка</div>'
+    front = ('        <div id="z-right" class="g lead" style="top: 1000px; left: 600px; width: 460px;'
+             ' text-align: right; font-size: 60px;">кнопки</div>\n'
+             # рамка .lead — во всю ширину и на высоте кнопок, а само слово — по центру: не заезд
+             '        <div id="z-ok" class="g lead" style="top: 1000px;">центр</div>\n'
+             '        <div id="z-safe" class="g lead" data-safe="стрелка на ник — намеренно"'
+             ' style="top: 1700px;">ник</div>')
+    beats = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("z-top", "z-right", "z-ok", "z-safe"))
+    (project / "index.html").write_text(build_page("зоны", 2.0, behind, front, beats, [], [], cta_at=5.0),
+                                        encoding="utf-8")
+    res = run_timeline(project / "index.html", zones=formats.grey_zones("9:16"))
+    grey = {(g["el"], g["zone"].split(":")[0]) for g in res.get("grey", [])}
+    allowed = {g["el"] for g in res.get("greyAllowed", [])}
+    flagged = {el for el, _ in grey}
+    report.check(("#z-top", "верх") in grey and ("#z-right", "справа") in grey
+                 and not flagged & {"#z-ok", "#z-safe"} and not any(el.startswith("субтитр") for el in flagged),
+                 "текст в шапке и под кнопками ловится, текст по центру — нет",
+                 ", ".join(sorted(f"{el} ({z})" for el, z in grey)) or "ничего не поймано")
+    report.check("#z-safe" in allowed, "осознанный заезд (data-safe) идёт отдельным списком, а не ошибкой",
+                 ", ".join(sorted(allowed)) or "не найден")
+
+
 def check_page_timeline(report: Report, tmp: Path):
     """Ничего не залипает на экране в покадровом рендере HyperFrames.
 
@@ -2018,6 +2060,7 @@ def main():
         section(report, check_atomic_outputs, preset, tmp)
         section(report, check_transcript_source, tmp)
         section(report, check_page_timeline, tmp)
+        section(report, check_grey_zones, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)
         section(report, check_grades, tmp)

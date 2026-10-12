@@ -73,8 +73,14 @@ def contact_sheet(path: Path, out: Path, step: float = 2.5, width: int = 1080, h
     # шаг растёт с длиной ролика: сетка собирается из первых tiles кадров, и при шаге 2.5 с
     # ролик длиннее минуты попадал на неё без конца — финал и плашку глазами не проверить
     step = max(step, duration / tiles)
+    # серые зоны площадок (formats.GREY_ZONES) — полупрозрачным красным на каждой плитке: что
+    # заехало под шапку, ник и подпись или кнопки справа, видно на той же сетке, что и всё остальное
+    k = tile_w / width
+    zones = "".join(f"drawbox=x={x0 * k:.0f}:y={y0 * k:.0f}:w={(x1 - x0) * k:.0f}:h={(y1 - y0) * k:.0f}"
+                    f":color=red@0.22:t=fill,"
+                    for _, (x0, y0, x1, y1) in formats.grey_zones(formats.of_size(width, height)))
     subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-i", str(path), "-vf",
-                    f"fps=1/{step:.3f},scale={tile_w}:{tile_h},tile={cols}x{24 // cols}:padding=4:color=white",
+                    f"fps=1/{step:.3f},scale={tile_w}:{tile_h},{zones}tile={cols}x{24 // cols}:padding=4:color=white",
                     "-frames:v", "1", str(out)], check=True, capture_output=True)
     return out
 

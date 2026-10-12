@@ -180,6 +180,71 @@ CHECK_JS = r"""
     res.stuck = runs(real, flagged);
     res.risky = runs(edge, flagged);
 
+    // ---- серые зоны площадок (formats.GREY_ZONES): буквы, которые стоят под их интерфейсом.
+    // Меряются сами строки текста (Range), а не рамка блока: широкий блок с коротким словом по
+    // центру — не заезд. Кадр — прыжком, как снимок, шаг C.zoneStep. Заезд на время входа
+    // («впечатывание» с увеличением) не в счёт: только два замера подряд и глубже C.zoneDepth px.
+    // data-safe="причина" на элементе или предке — осознанный заезд, отдельным списком.
+    res.grey = []; res.greyAllowed = [];
+    const zones = C.zones || [];
+    if (zones.length) {
+      const items = [];
+      document.querySelectorAll(".g, .cap").forEach((el) => {
+        const nodes = [];
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const n = walker.currentNode;
+          // текст вложенного .g проверяется у него самого
+          if (n.textContent.trim() && n.parentElement.closest(".g, .cap") === el) nodes.push(n);
+        }
+        if (nodes.length) {
+          const safe = el.closest("[data-safe]");
+          items.push({ el, nodes, allowed: safe ? safe.getAttribute("data-safe") : null });
+        }
+      });
+      const visible = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.15) return false;
+        }
+        return true;
+      };
+      const step = C.zoneStep || 0.25, minDepth = C.zoneDepth || 8;
+      const open = new Map(), done = [];
+      const range = document.createRange();
+      for (let t = 0; t < duration; t += step) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        const seen = new Set();
+        for (const it of items) {
+          if (!visible(it.el)) continue;
+          for (const node of it.nodes) {
+            range.selectNodeContents(node);
+            for (const r of range.getClientRects()) {
+              if (r.width < 2 || r.height < 2) continue;
+              for (const z of zones) {
+                const [x0, y0, x1, y1] = z.rect;
+                const dx = Math.min(r.right, x1) - Math.max(r.left, x0);
+                const dy = Math.min(r.bottom, y1) - Math.max(r.top, y0);
+                const depth = Math.min(dx, dy);
+                if (dx <= 0 || dy <= 0 || depth < minDepth) continue;
+                const key = label(it.el) + "|" + z.name;
+                if (seen.has(key)) { open.get(key).depth = Math.max(open.get(key).depth, Math.round(depth)); continue; }
+                seen.add(key);
+                const rec = open.get(key);
+                if (rec) { rec.last = t; rec.count++; rec.depth = Math.max(rec.depth, Math.round(depth)); }
+                else open.set(key, { el: label(it.el), zone: z.name, from: t, last: t, count: 1,
+                                     depth: Math.round(depth), text: node.textContent.trim().slice(0, 40),
+                                     allowed: it.allowed });
+              }
+            }
+          }
+        }
+        for (const [key, rec] of [...open]) if (!seen.has(key)) { if (rec.count >= 2) done.push(rec); open.delete(key); }
+      }
+      for (const rec of open.values()) if (rec.count >= 2) done.push(rec);
+      for (const rec of done) (rec.allowed ? res.greyAllowed : res.grey).push(rec);
+    }
+
     document.querySelectorAll(".g").forEach((el) => {
       const i = els.indexOf(el);
       const peak = i < 0 ? parseFloat(getComputedStyle(el).opacity) : Math.max(...real.map((f) => f[i]));
@@ -247,13 +312,26 @@ def missing_assets(project: Path, page: str) -> list:
     return sorted(r for r in refs if not (project / r).exists())
 
 
-def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180) -> dict:
-    """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS)."""
+def stage_format(page: str) -> str | None:
+    """Формат сцены страницы по её viewport (kit пишет width/height сцены)."""
+    import formats
+
+    found = re.search(r'<meta name="viewport" content="width=(\d+), height=(\d+)"', page)
+    return formats.of_size(int(found.group(1)), int(found.group(2))) if found else None
+
+
+def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: list | None = None) -> dict:
+    """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS).
+
+    zones — серые зоны площадок [(название, (x0, y0, x1, y1))]: текст в них попадёт в res["grey"].
+    """
     page_path = Path(page_path).resolve()
     page = page_path.read_text(encoding="utf-8")
     # видео и звук для разбора не нужны — без них страница грузится за доли секунды
     page = re.sub(r'(<(?:video|audio)\b[^>]*?)\s+src="[^"]*"', r"\1", page)
-    config = json.dumps({"fps": fps, "errors": [], "warnings": []})
+    config = json.dumps({"fps": fps, "errors": [], "warnings": [], "zoneStep": 0.25, "zoneDepth": 8,
+                         "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])]},
+                        ensure_ascii=False)
     head = (f'<head>\n    <base href="{page_path.parent.as_uri()}/">\n'
             f'    <script>window.__HF_CHECK = {config};{EARLY_JS}    </script>')
     page, n_head = re.subn(r"<head>", lambda _: head, page, count=1)
@@ -326,7 +404,9 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         print("  · звуки по правилам до 12.10.2026 — при правке ролика пересобрать page.py")
 
     started = time.time()
-    res = run_timeline(page_path, fps)
+    import formats
+    zones = formats.grey_zones(stage_format(page_text)) if stage_format(page_text) else []
+    res = run_timeline(page_path, fps, zones=zones)
     if not res.get("ok"):
         check(False, "таймлайн разобран", [res.get("crash", "?")])
         return failed
@@ -335,6 +415,15 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     check(not res["stuck"], "в рендере ничего не залипает", [explain(i) for i in res["stuck"]])
     check(not res["risky"], "запас по кадрам: при сдвиге на кадр тоже не залипнет",
           [explain(i) for i in res["risky"]])
+    if zones:
+        grey = [f"{g['el']} «{g['text']}» — {g['zone']}, {g['from']:.2f}–{g['last'] + 0.25:.2f} с, глубина {g['depth']} px"
+                for g in res.get("grey", [])]
+        if strict:
+            check(not grey, "текст не заезжает в серые зоны площадок (шапка, ник и подпись, кнопки справа)", grey)
+        elif grey:
+            print(f"  · текст в серых зонах площадок: {len(grey)} (при правке ролика — поправить или пометить data-safe)")
+        for g in res.get("greyAllowed", []):
+            print(f"  · осознанный заезд: {g['el']} «{g['text']}» — {g['zone']}: {g['allowed']}")
     if res["never"]:
         print(f"  · ни разу не появляются: {', '.join(res['never'][:12])}")
     print(f"  · {res['elements']} элементов, {res['tweens']} твинов прозрачности, {res['frames']} кадров "
