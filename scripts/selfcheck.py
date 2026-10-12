@@ -871,6 +871,38 @@ def check_gen_image(report: Report, tmp: Path):
                  "если Codex только назвал свой путь — берётся его свежая картинка, старая чужая — нет",
                  "свежая взята" if got else "свежая не найдена")
 
+    # под кадр: imagegen отдаёт 941×1672, кадр 1080×1920 и наезд — без запаса браузер тянул её в мыло
+    size = gen_image.refit(out)
+    original = out.with_suffix(".codex.png")
+    fitted = subprocess.run([ffprobe_bin(), "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                             str(out)], capture_output=True, encoding="utf-8").stdout.strip()
+    width, height = (int(x) for x in fitted.split(",")[:2])
+    report.check(width >= 1080 * 1.08 and height >= 1920 * 1.08 and original.exists()
+                 and gen_image.check_image(original)[1].startswith("941×1672"),
+                 "фон готовится под кадр с запасом под наезд, оригинал Codex остаётся рядом",
+                 f"под кадр {size}, оригинал {'на месте' if original.exists() else 'потерян'}")
+
+    # повторная генерация (--force): рядом лежат прежние bg.png и bg.codex.png (синие, час назад), Codex
+    # отдал новую (бордовую) только к себе в generated_images. Новой и быть под кадр — прежняя по пути
+    # засчитывалась как свежая, а под кадр шёл прежний оригинал: «перегенерировал», а фон тот же
+    again = tmp / "again"
+    (again / "generated_images").mkdir(parents=True)
+    redo = again / "bg.png"
+    shutil.copy2(pics["vertical"], redo)
+    gen_image.refit(redo)
+    for path in (redo, redo.with_suffix(".codex.png")):
+        os.utime(path, (time.time() - 3600, time.time() - 3600))
+    started = time.time()
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=maroon:s=941x1672",
+                    "-frames:v", "1", str(again / "generated_images" / "new.png")], check=True, capture_output=True)
+    took = gen_image.collect(redo, started, again / "generated_images")
+    gen_image.refit(redo, fresh=True)
+    pixel = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(redo), "-vf", "scale=1:1",
+                            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+    report.check(took and len(pixel) == 3 and pixel[0] > pixel[2],
+                 "повторная генерация (--force) ставит под кадр новую картинку, а не прежнюю",
+                 "новая" if len(pixel) == 3 and pixel[0] > pixel[2] else "осталась прежняя")
+
 
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
     """Скрипт не называется как модуль стандартной библиотеки.
@@ -925,6 +957,43 @@ def check_grey_zones(report: Report, tmp: Path):
                  ", ".join(sorted(f"{el} ({z})" for el, z in grey)) or "ничего не поймано")
     report.check("#z-safe" in allowed, "осознанный заезд (data-safe) идёт отдельным списком, а не ошибкой",
                  ", ".join(sorted(allowed)) or "не найден")
+
+    # лицо: карточка поверх лица — ошибка (Валера, 12.10.2026: «карточки никогда не должны перекрывать
+    # лицо»); та же карточка ниже подбородка и субтитр — нет. Лицо — как его даёт слежение с камерой.
+    front2 = ('        <div id="f-over" class="g doc" style="left: 245px; top: 950px; width: 590px; height: 200px;">на лице</div>\n'
+              '        <div id="f-below" class="g doc" style="left: 245px; top: 1250px; width: 590px; height: 200px;">ниже</div>')
+    beats2 = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("f-over", "f-below"))
+    (project / "index.html").write_text(build_page("лицо", 2.0, "", front2, beats2, [], [], cta_at=5.0), encoding="utf-8")
+    face = [(round(0.25 * k, 2), 360.0, 600.0, 740.0, 1100.0) for k in range(8)]   # подбородок на 1100
+    res = run_timeline(project / "index.html", faces=face)
+    hit = {h["el"] for h in res.get("faceHits", [])}
+    report.check(hit == {"#f-over"}, "карточка поверх лица ловится, ниже подбородка — нет (лицо по кадрам)",
+                 ", ".join(sorted(hit)) or "ничего не поймано")
+    # вариант для A/B (studio/<имя>--<стиль>/) собран из того же дубля: лицо — из его work/<имя>/. Искалось
+    # в work/<имя>--<стиль>/, не находилось — и проверка лица у вариантов молча не делалась
+    from verify_page import take_dir
+    variant = take_dir(Path("studio") / "IMG_3305--lofi-ugc")
+    report.check(variant.name == "IMG_3305", "у варианта для A/B лицо берётся из его дубля, проверка не пропускается",
+                 f"studio/IMG_3305--lofi-ugc → work/{variant.name}")
+
+    # фон за спиной: наплыв из размытия — можно, а остаться мыльным на весь показ — нет (IMG_1803 v4
+    # держал blur(2px), Валера: «фоны низкокачественные какие-то»)
+    (project / "assets" / "img").mkdir(exist_ok=True)
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1188x2112", "-frames:v", "1",
+                    str(project / "assets" / "img" / "room.png")], check=True, capture_output=True)
+    css = ".bgt { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; opacity: 0; }\n" \
+          ".bgt img { width: 1080px; height: 1920px; object-fit: cover; }\n"
+    behind3 = "\n".join(f'        <div id="{i}" class="bgt"{extra}><img src="assets/img/room.png" alt="" /></div>'
+                        for i, extra in (("bg-soft", ""), ("bg-sharp", ""), ("bg-meant", ' data-safe="туман — замысел"')))
+    beats3 = "".join(f'      tl.fromTo("#{i}", {{ opacity: 0, filter: "blur(14px)" }}, {{ opacity: 1, filter: "blur({end}px)", '
+                     f'duration: 0.5 }}, 0.2);\n' for i, end in (("bg-soft", 2), ("bg-sharp", 0), ("bg-meant", 3)))
+    (project / "index.html").write_text(build_page("фон", 2.5, behind3, "", beats3, [], [], cta_at=5.0, extra_css=css),
+                                        encoding="utf-8")
+    res = run_timeline(project / "index.html")
+    soft = {b["el"]: b.get("allowed") for b in res.get("softBg", [])}
+    report.check(set(soft) == {"#bg-soft", "#bg-meant"} and soft["#bg-meant"] and not soft["#bg-soft"],
+                 "фон, оставшийся размытым на показе, ловится; наплыв из размытия — нет; data-safe — отдельно",
+                 ", ".join(f"{k}{' (осознанно)' if v else ''}" for k, v in sorted(soft.items())) or "ничего не поймано")
 
 
 def check_page_timeline(report: Report, tmp: Path):
@@ -1039,6 +1108,145 @@ def check_matte_memory(report: Report, tmp: Path):
     (n_short, short), (n_long, long_) = peaks[2], peaks[12]
     report.check(n_long > n_short > 0 and long_ - short < 150, "маска не копит кадры в памяти",
                  f"{n_short} кадров — {short:.0f} МБ, {n_long} кадров — {long_:.0f} МБ")
+
+
+def check_cutout(report: Report, tmp: Path):
+    """Вырезка держит вещь в руке целиком, режет край по пустой комнате и не несёт старый фон в край.
+
+    IMG_1803 (12.10.2026): модель считала банку в руке скорее фоном (0,59 против 0,30 у «прочего») —
+    верх банки таял, сквозь него светила свеча с нового фона; в человека попадали полосы старой
+    комнаты, а край нёс её серую дымку. Валера: «вырезка фона хуево работает», «рука и банка — не
+    лишние». Здесь всё на рисованном кадре половинного размера, как его видит matte.py, без модели:
+    проверяется логика, которая это чинит. Потом — настоящее прозрачное видео из короткого клипа.
+    """
+    import cv2
+    import matte
+
+    print("\nВырезка человека")
+    h, w = 960, 540
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    body = ((xx - 300) / 150) ** 2 + ((yy - 640) / 330) ** 2
+    hand = (xx >= 120) & (xx < 175) & (yy >= 420) & (yy < 480)
+    can = (xx >= 40) & (xx < 125) & (yy >= 330) & (yy < 520)            # банка у руки, модель в ней не уверена
+    person = np.full((h, w), 0.03, np.float32)
+    person[body <= 1] = 0.95
+    person[(body > 1) & (body <= 1.05)] = 0.42                          # дымка по контуру — тонкая полоса
+    person[hand] = 0.95
+    person[can] = 0.41
+    far = (xx >= 420) & (yy < 120)                                      # неуверенное пятно вдали — не вещь в руке
+    person[far] = 0.41
+
+    can_in_mask = cv2.erode(can.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0   # край банки ведёт кадр
+    alpha = matte.model_alpha(person)
+    can_in, ring = float(alpha[can_in_mask].min()), float(alpha[(body > 1.01) & (body <= 1.04) & ~can & ~hand].max())
+    report.check(can_in >= 0.9 and ring <= 0.5 and float(alpha[far].max()) <= 0.2,
+                 "вещь в руке остаётся целиком, дымка по контуру и пятно вдали — нет",
+                 f"банка ≥ {can_in:.2f}, дымка ≤ {ring:.2f}, пятно вдали ≤ {float(alpha[far].max()):.2f}")
+
+    # пустая комната: складки занавеса; в кадре — пиджак, рука, красная банка; слева от человека модель
+    # ошибочно взяла полосу комнаты (как красные полосы IMG_1803), справа вверху — блик вдали от человека
+    room = np.dstack([0.32 + 0.08 * np.sin(xx / 9.0)] * 3).astype(np.float32)
+    frame = room.copy()
+    frame[body <= 1] = (0.10, 0.10, 0.12)
+    frame[hand] = (0.80, 0.60, 0.50)
+    frame[can] = (0.80, 0.12, 0.12)
+    flicker = (xx >= 380) & (yy >= 150) & (yy < 230)
+    frame[flicker] = (0.9, 0.9, 0.9)
+    strip = (body > 1.0) & (xx < 300) & (yy > 700) & (np.sqrt(body) <= 1.0 + 12 / 330)
+    person_fp = person.copy()
+    person_fp[strip] = 0.8
+    person_fp[far] = 0.03
+    known = (body > 1.0).astype(np.float32)                             # за спиной комнату не видно
+    plate = matte.Plate(room, np.full_like(room, 2 / 255), cv2.GaussianBlur(known, (0, 0), 3))
+    alpha = matte.hybrid_alpha(person_fp, frame, plate)
+    got = {"банка": float(alpha[can_in_mask].min()),
+           "полоса комнаты": float(alpha[strip & (plate.weight >= 0.95)].max()),
+           "блик вдали": float(alpha[flicker].max()), "середина": float(alpha[body <= 0.8].min())}
+    report.check(got["банка"] >= 0.9 and got["полоса комнаты"] <= 0.1 and got["блик вдали"] <= 0.05
+                 and got["середина"] >= 0.95,
+                 "край режется по пустой комнате: банка — человек, полоса комнаты и блик вдали — нет",
+                 ", ".join(f"{k} {v:.2f}" for k, v in got.items()))
+
+    # толчок штатива: половина выборки сдвинута на 6 точек — по такой «комнате» край резать нельзя
+    rng = np.random.default_rng(7)
+    # занавес со складками слева и ровная стена справа — как в настоящей комнате, где есть и узор, и гладь
+    folds = np.dstack([0.32 + np.where(xx < 330, 0.15 * np.sin(xx / 9.0), 0.0)] * 3).astype(np.float32)
+    frames, sure = [], []
+    for i in range(12):
+        shot = folds + rng.normal(0, 1.5 / 255, room.shape).astype(np.float32)
+        shot[:, 100 + 20 * i:240 + 20 * i] = 0.1                       # человек ходит по кадру
+        frames.append((np.clip(shot, 0, 1) * 255).astype(np.uint8))
+        mask = np.ones((h, w), bool)
+        mask[:, 90 + 20 * i:250 + 20 * i] = False
+        sure.append(mask)
+    still, still_note = matte.build_plate(np.stack(frames), np.stack(sure))
+    moved_frames = [np.roll(f, 6, axis=1) if i % 2 else f for i, f in enumerate(frames)]
+    moved, moved_note = matte.build_plate(np.stack(moved_frames), np.stack(sure))
+    error = np.abs(still.image - folds)[still.weight > 0.9] if still is not None else np.ones(1)
+    exact = float(np.percentile(error, 99)) <= 3 / 255 and float(error.max()) <= 8 / 255   # медиана 4–12 шумных кадров
+    report.check(exact and moved is None and "камера" in moved_note,
+                 "пустая комната собирается со стоящей камеры и не собирается с двигавшейся",
+                 f"стоит: {still_note}; двигалась: {moved_note}")
+
+    # край на месте не «кипит», а за движущейся рукой не тянется шлейф
+    still_img = np.dstack([0.3 + 0.1 * np.sin(xx / 7.0)] * 3).astype(np.float32)
+    moved_img = still_img.copy()
+    moved_img[:, :270] += 0.2                                           # левая половина сменилась: рука прошла
+    last = (still_img, np.full((h, w), 0.4, np.float32))
+    calmed = matte.calm(np.full((h, w), 0.6, np.float32), moved_img, last)
+    report.check(abs(float(calmed[:, 300:].mean()) - 0.5) < 0.01 and abs(float(calmed[:, :250].mean()) - 0.6) < 0.01,
+                 "край на неподвижном не дрожит, за движением не тянется шлейф",
+                 f"на месте {float(calmed[:, 300:].mean()):.2f} (кадр 0.6, прошлый 0.4), "
+                 f"где картинка сменилась {float(calmed[:, :250].mean()):.2f}")
+
+    # цвет края: старый фон светлый (200), человек тёмный (40), новый фон тёмный (16)
+    ramp = np.clip((np.arange(w, dtype=np.float32) - 200) / 40, 0, 1)
+    edge_alpha = np.tile(1.0 - ramp, (64, 1))
+    plane = np.round(edge_alpha * 40 + (1 - edge_alpha) * 200).astype(np.uint8)
+    clean = matte.foreground_plane(plane, edge_alpha, 41).astype(np.float32)
+    ideal = edge_alpha * 40 + (1 - edge_alpha) * 16
+    halo = float((edge_alpha * clean + (1 - edge_alpha) * 16 - ideal).max())
+    raw = float((edge_alpha * plane + (1 - edge_alpha) * 16 - ideal).max())
+    solid_same = bool(np.array_equal(clean[edge_alpha >= 0.999], plane[edge_alpha >= 0.999]))
+    report.check(halo <= 6 and solid_same,
+                 "край без ореола старого фона, сплошной человек — байт в байт",
+                 f"лишняя яркость края на тёмном фоне {halo:.1f} (без чистки было бы {raw:.0f})")
+
+
+def check_cutout_video(report: Report, tmp: Path):
+    """Прозрачное видео человека целое: альфа, длина и цвет как у дубля; чужая маска — громкий отказ.
+
+    Вырезку теперь собирает питон (чистит цвет края) и отдаёт кодеку сырые плоскости — значит, длину,
+    метки цвета и прозрачность больше не гарантирует один вызов ffmpeg, их надо стеречь.
+    """
+    import matte
+
+    print("\nПрозрачное видео человека")
+    src, mask = tmp / "cutout_src.mp4", tmp / "cutout_mask.mkv"
+    make_source(src, 1.0, 30)
+    for path, seconds in ((mask, 1.0), (tmp / "cutout_short.mkv", 0.5)):
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i",
+                        f"color=black:s=1080x1920:r=30:d={seconds},format=gray,"
+                        "geq=lum='if(lt(hypot(X-540\\,Y-900)\\,380)\\,255\\,0)'",
+                        "-c:v", "ffv1", "-pix_fmt", "gray", str(path)], check=True, capture_output=True)
+    out = matte.make_cutout(src, mask, tmp / "cutout.webm")
+    meta = subprocess.run([ffprobe_bin(), "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+                           "stream=codec_name,nb_read_frames,color_space:stream_tags=alpha_mode", "-of", "json", str(out)],
+                          capture_output=True, encoding="utf-8").stdout
+    stream = json.loads(meta)["streams"][0]
+    try:
+        matte.make_cutout(src, tmp / "cutout_short.mkv", tmp / "cutout_bad.webm")
+        refused = False
+    except RuntimeError:
+        refused = True
+    leftovers = sorted(p.name for p in tmp.glob(".cutout*"))
+    report.check(stream.get("codec_name") == "vp9" and stream.get("tags", {}).get("alpha_mode") == "1"
+                 and stream.get("nb_read_frames") == "30" and stream.get("color_space") == "bt709"
+                 and refused and not (tmp / "cutout_bad.webm").exists() and not leftovers,
+                 "прозрачное видео целое: альфа, 30 кадров из 30, цвет bt709; чужая маска — отказ",
+                 f"{stream.get('codec_name')}, альфа {stream.get('tags', {}).get('alpha_mode')}, "
+                 f"кадров {stream.get('nb_read_frames')}, {stream.get('color_space')}; короткая маска — "
+                 f"{'отказ' if refused else 'приняли'}, хвосты: {', '.join(leftovers) or 'нет'}")
 
 
 def check_portable(report: Report, tmp: Path):
@@ -2113,6 +2321,8 @@ def main():
         section(report, check_look, preset, tmp)
         section(report, check_face_memory, tmp)
         section(report, check_matte_memory, tmp)
+        section(report, check_cutout, tmp)
+        section(report, check_cutout_video, tmp)
         section(report, check_portable, tmp)
         section(report, check_approve, tmp)
         section(report, check_batch, tmp)

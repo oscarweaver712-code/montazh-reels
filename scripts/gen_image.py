@@ -12,6 +12,11 @@
 это не фото, в ролике оно фон-иллюстрация, а не документ. Правила для запроса (без людей, без
 надписей, спокойный центр под человека, вертикаль) добавляются сами. Реальных людей, логотипы
 и «документы» не генерировать.
+
+Картинка сразу готовится под кадр (frame_ready): imagegen отдаёт 941×1672, а кадр — 1080×1920, и
+медленный наезд тянет её ещё на 8% — растянутая браузером, она выглядела мылом (Валера, 12.10:
+«фоны низкокачественные какие-то»). Оригинал Codex остаётся рядом: <файл>.codex.png. Для картинки,
+сгенерированной раньше: gen_image.py IMG_1803 bg_italy --refit.
 """
 import argparse
 import os
@@ -26,8 +31,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host
 from brain import clean_env, find_binary
-from common import ROOT, WORK_DIR, ffprobe_bin
+from common import ROOT, WORK_DIR, ffmpeg_bin, ffprobe_bin
 
+FRAME = (1080, 1920)
+HEADROOM = 1.1          # запас под медленный наезд: браузер картинку сжимает, а не растягивает
 RULES = ("вертикальный кадр 9:16; без людей и без лиц; без надписей, букв, цифр и логотипов; "
          "центр кадра спокойный, без мелких деталей — там будет стоять человек; мягкий свет, без пересвета")
 TIMEOUT = 360
@@ -40,8 +47,9 @@ def generated_dir() -> Path:
 
 def collect(out: Path, started: float, folder: Path | None = None) -> bool:
     """Картинка на месте? Codex то копирует её по просьбе, то только называет свой путь —
-    тогда берём самую свежую из generated_images, созданную за этот запуск."""
-    if out.exists() and out.stat().st_size:
+    тогда берём самую свежую из generated_images, созданную за этот запуск. Картинка по пути
+    засчитывается, только если записана за этот запуск: при --force там лежит прежняя."""
+    if out.exists() and out.stat().st_size and out.stat().st_mtime >= started - 1:
         return True
     folder = folder or generated_dir()
     fresh = [f for f in folder.rglob("*") if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")
@@ -73,15 +81,46 @@ def check_image(path: Path) -> tuple:
     return ok, f"{width}×{height}" + ("" if ok else " — нужна вертикаль ~9:16 от 720 px по ширине")
 
 
+def frame_ready(src: Path, out: Path) -> str:
+    """Картинка под кадр с запасом под наезд: увеличение Lanczos и лёгкая резкость — один раз, здесь,
+    а не растяжка браузером на каждом кадре. Возвращает итоговый размер."""
+    width, height = (round(side * HEADROOM / 2) * 2 for side in FRAME)
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-i", str(src), "-vf",
+                    f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+                    f"crop={width}:{height},unsharp=5:5:0.6:5:5:0", "-frames:v", "1", str(out)],
+                   check=True, capture_output=True)
+    return f"{width}×{height}"
+
+
+def refit(out: Path, fresh: bool = False) -> str:
+    """Картинку — под кадр; оригинал Codex сохраняется как <файл>.codex.png.
+
+    fresh — out только что пришёл от Codex и сам становится оригиналом, даже если рядом лежит
+    прежний (повторная генерация с --force): иначе под кадр ушла бы старая картинка вместо новой.
+    """
+    original = out.with_suffix(".codex.png")
+    if fresh or not original.exists():
+        if not out.exists():
+            sys.exit(f"✗ нет ни {out.name}, ни {original.name}")
+        out.replace(original)
+    return frame_ready(original, out)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Фон для ролика через Codex (imagegen)")
     ap.add_argument("stem", help="ролик: IMG_1803")
     ap.add_argument("name", help="имя файла без расширения: babylon")
-    ap.add_argument("description", help="что на фоне, по-русски")
+    ap.add_argument("description", nargs="?", help="что на фоне, по-русски")
     ap.add_argument("--force", action="store_true", help="перезаписать уже сгенерированный")
+    ap.add_argument("--refit", action="store_true", help="только подготовить под кадр уже сгенерированную")
     args = ap.parse_args()
 
     out = WORK_DIR / args.stem / "downloads" / f"{args.name}.png"
+    if args.refit:
+        print(f"  ✓ {out.relative_to(ROOT)} под кадр: {refit(out)} (оригинал Codex — {out.stem}.codex.png)")
+        return
+    if not args.description:
+        ap.error("нужно описание фона")
     if out.exists() and not args.force:
         sys.exit(f"✗ {out.relative_to(ROOT)} уже есть — возьми его или запусти с --force")
     codex = find_binary("codex")
@@ -106,11 +145,13 @@ def main():
     if code != 0 or not ok:
         why = "не уложился в 6 минут" if code is None else f"код {code}" if code else detail
         sys.exit(f"✗ фон не получился ({why}). Вывод Codex:\n" + "\n".join(tail))
+    size = refit(out, fresh=True)
     out.with_suffix(".md").write_text(
         f"# {out.name}\n\nСгенерировано Codex (imagegen, через ChatGPT) {time.strftime('%d.%m.%Y %H:%M')}.\n"
-        f"Описание: {args.description}\nПравила запроса: {RULES}\n\n"
+        f"Описание: {args.description}\nПравила запроса: {RULES}\n"
+        f"Оригинал Codex — {out.stem}.codex.png ({detail}); {out.name} — он же под кадр ({size}).\n\n"
         "Это не фото: в ролике — фон-иллюстрация, а не документ.\n", encoding="utf-8")
-    print(f"  ✓ {out.relative_to(ROOT)} ({detail}) за {time.time() - started:.0f} с")
+    print(f"  ✓ {out.relative_to(ROOT)} ({size}, оригинал {detail}) за {time.time() - started:.0f} с")
 
 
 if __name__ == "__main__":

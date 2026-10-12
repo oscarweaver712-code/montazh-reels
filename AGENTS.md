@@ -11,7 +11,7 @@
 ## Перед тем как отдать любое изменение
 
 ```bash
-.venv/bin/python scripts/selfcheck.py          # пара минут, 138 проверок
+.venv/bin/python scripts/selfcheck.py          # пара минут, 149 проверок
 .venv/bin/python scripts/selfcheck.py --long   # 200 сегментов, если трогал рендер
 .venv/bin/python scripts/verify_page.py --all  # страницы графики, если трогал kit, compose или page.py
 ```

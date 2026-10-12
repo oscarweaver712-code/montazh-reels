@@ -38,7 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import ROOT
+from common import ROOT, WORK_DIR
 
 STUDIO = ROOT / "studio"
 CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell"
@@ -250,6 +250,76 @@ CHECK_JS = r"""
       for (const rec of done) (rec.allowed ? res.greyAllowed : res.grey).push(rec);
     }
 
+    // ---- фон за спиной (жалоба Валеры 12.10.2026: «фоны низкокачественные какие-то»): картинка во весь
+    // кадр (#plate и всё в #behind с картинкой шире 900 px), видимая целиком, не должна стоять размытой —
+    // в IMG_1803 v4 фон держал blur(2px) весь показ. Размытие в наплыве и уходе — да: считается только
+    // от секунды подряд (4 замера по 0.25 с). data-safe="причина" — осознанно мягкий фон.
+    res.softBg = [];
+    const blurOf = (n) => { const m = /blur\(([\d.]+)px\)/.exec(getComputedStyle(n).filter || ""); return m ? parseFloat(m[1]) : 0; };
+    const backs = [...document.querySelectorAll("#plate, #behind > *")].filter((el) => {
+      const img = el.tagName === "IMG" ? el : el.querySelector("img");
+      return img && img.getBoundingClientRect().width >= 900;
+    });
+    if (backs.length) {
+      const open = new Map();
+      for (let t = 0; t <= duration; t += 0.25) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        for (const el of backs) {
+          let alpha = 1, soft = 0;
+          for (let n = el; n && n !== document.body; n = n.parentElement) {
+            alpha *= parseFloat(getComputedStyle(n).opacity);
+            soft = Math.max(soft, blurOf(n));
+          }
+          el.querySelectorAll("img").forEach((img) => { soft = Math.max(soft, blurOf(img)); });
+          const key = label(el), rec = open.get(key);
+          if (alpha >= 0.9 && soft > 0.5) {
+            if (rec) { rec.last = t; rec.count++; rec.blur = Math.max(rec.blur, soft); }
+            else open.set(key, { el: key, from: t, last: t, count: 1, blur: soft,
+                                 allowed: el.closest("[data-safe]") ? el.closest("[data-safe]").getAttribute("data-safe") : null });
+          } else if (rec) { if (rec.count >= 4) res.softBg.push(rec); open.delete(key); }
+        }
+      }
+      for (const rec of open.values()) if (rec.count >= 4) res.softBg.push(rec);
+    }
+
+    // ---- лицо (правило Валеры 12.10.2026: «карточки никогда не должны перекрывать лицо»): рамка
+    // каждого видимого элемента поверх человека (#front .g — карточки, таблицы, плашки) против
+    // рамки лица в этот момент (C.faces: [t, x0, y0, x1, y1] — по слежению и движению камеры).
+    // Два замера подряд глубже 10 px — заезд; исключений нет.
+    res.faceHits = [];
+    const faces = C.faces || [];
+    if (faces.length) {
+      const fronts = [...document.querySelectorAll("#front .g")].filter((el) => el.id !== "flash");
+      const vis = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.15) return false;
+        }
+        return true;
+      };
+      const open = new Map();
+      for (const [t, fx0, fy0, fx1, fy1] of faces) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        const seen = new Set();
+        for (const el of fronts) {
+          if (!vis(el)) continue;
+          const r = el.getBoundingClientRect();
+          const dx = Math.min(r.right, fx1) - Math.max(r.left, fx0);
+          const dy = Math.min(r.bottom, fy1) - Math.max(r.top, fy0);
+          if (dx <= 10 || dy <= 10) continue;
+          const key = label(el);
+          seen.add(key);
+          const rec = open.get(key);
+          if (rec) { rec.last = t; rec.count++; rec.depth = Math.max(rec.depth, Math.round(Math.min(dx, dy)));
+                     rec.faceBottom = Math.max(rec.faceBottom, Math.round(fy1)); }
+          else open.set(key, { el: key, from: t, last: t, count: 1, depth: Math.round(Math.min(dx, dy)),
+                               faceBottom: Math.round(fy1), top: Math.round(r.top) });
+        }
+        for (const [key, rec] of [...open]) if (!seen.has(key)) { if (rec.count >= 2) res.faceHits.push(rec); open.delete(key); }
+      }
+      for (const rec of open.values()) if (rec.count >= 2) res.faceHits.push(rec);
+    }
+
     document.querySelectorAll(".g").forEach((el) => {
       const i = els.indexOf(el);
       const peak = i < 0 ? parseFloat(getComputedStyle(el).opacity) : Math.max(...real.map((f) => f[i]));
@@ -325,7 +395,50 @@ def stage_format(page: str) -> str | None:
     return formats.of_size(int(found.group(1)), int(found.group(2))) if found else None
 
 
-def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: list | None = None) -> dict:
+def take_dir(project: Path) -> Path:
+    """work/<имя>/ дубля, из которого собран проект: вариант для A/B (studio/<имя>--<стиль>/) — из того же."""
+    return WORK_DIR / project.name.split("--")[0]
+
+
+def face_track(project: Path, step: float = 0.25, margin: float = 12.0) -> list:
+    """[(t, x0, y0, x1, y1)] — где лицо на сцене каждые step с: слежение (work/<имя>/aroll.faces.json)
+    плюс движение камеры (camera.js). Ложные срабатывания детектора (рука, банка — IMG_1803:
+    «лицо» до y 1763 и левее кадра) отбрасываются: кадр, далёкий от медианы соседей, не в счёт,
+    рамка сглажена медианой. margin — запас вокруг лица, px. Нет слежения — пустой список."""
+    import numpy as np
+
+    faces_path = take_dir(project) / "aroll.faces.json"
+    camera_path = project / "camera.js"
+    if not faces_path.exists() or not camera_path.exists():
+        return []
+    data = json.loads(faces_path.read_text(encoding="utf-8"))
+    found = re.search(r"window\.CAMERA = (\[.*\]);", camera_path.read_text(encoding="utf-8"), re.S)
+    if not found:
+        return []
+    camera = json.loads(found.group(1))
+    fps = float(data.get("fps") or 30)
+    rows = np.array([f[:4] if f and f[4] >= 0.6 else [np.nan] * 4 for f in data["frames"]], dtype=float)
+    n = len(rows)
+    half = 7
+    med = np.array([np.nanmedian(rows[max(0, k - half): k + half + 1], axis=0)
+                    if not np.all(np.isnan(rows[max(0, k - half): k + half + 1])) else [np.nan] * 4
+                    for k in range(n)])
+    off = np.abs(rows[:, :2] - med[:, :2]).max(axis=1) > 0.25 * med[:, 3]
+    rows[off] = np.nan
+    track = []
+    for k in range(0, n, max(1, int(round(step * fps)))):
+        window = rows[max(0, k - 2): k + 3]
+        if np.all(np.isnan(window)):
+            continue
+        cx, cy, w, h = np.nanmedian(window, axis=0)
+        x, y, scale = camera[min(k, len(camera) - 1)]
+        track.append((round(k / fps, 3), x + scale * (cx - w / 2) - margin, y + scale * (cy - h / 2) - margin,
+                      x + scale * (cx + w / 2) + margin, y + scale * (cy + h / 2) + margin))
+    return track
+
+
+def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: list | None = None,
+                 faces: list | None = None) -> dict:
     """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS).
 
     zones — серые зоны площадок [(название, (x0, y0, x1, y1))]: текст в них попадёт в res["grey"].
@@ -335,7 +448,8 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     # видео и звук для разбора не нужны — без них страница грузится за доли секунды
     page = re.sub(r'(<(?:video|audio)\b[^>]*?)\s+src="[^"]*"', r"\1", page)
     config = json.dumps({"fps": fps, "errors": [], "warnings": [], "zoneStep": 0.25, "zoneDepth": 8,
-                         "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])]},
+                         "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])],
+                         "faces": [list(f) for f in (faces or [])]},
                         ensure_ascii=False)
     head = (f'<head>\n    <base href="{page_path.parent.as_uri()}/">\n'
             f'    <script>window.__HF_CHECK = {config};{EARLY_JS}    </script>')
@@ -411,7 +525,8 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     started = time.time()
     import formats
     zones = formats.grey_zones(stage_format(page_text)) if stage_format(page_text) else []
-    res = run_timeline(page_path, fps, zones=zones)
+    faces = face_track(project)
+    res = run_timeline(page_path, fps, zones=zones, faces=faces)
     if not res.get("ok"):
         check(False, "таймлайн разобран", [res.get("crash", "?")])
         return failed
@@ -420,6 +535,21 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     check(not res["stuck"], "в рендере ничего не залипает", [explain(i) for i in res["stuck"]])
     check(not res["risky"], "запас по кадрам: при сдвиге на кадр тоже не залипнет",
           [explain(i) for i in res["risky"]])
+    if faces:
+        hits = [f"{h['el']} закрывает лицо {h['from']:.2f}–{h['last'] + 0.25:.2f} с на {h['depth']} px — "
+                f"подбородок доходит до y {h['faceBottom']}: верх карточки ≥ {h['faceBottom'] + 20}" for h in res.get("faceHits", [])]
+        if strict:
+            check(not hits, "карточки и графика не закрывают лицо (лицо — по кадрам, с движением камеры)", hits)
+        elif hits:
+            print(f"  · графика поверх лица: {len(hits)} (при правке ролика — опустить или убрать)")
+    elif strict and (take_dir(project) / "aroll.faces.json").exists():
+        check(False, "лицо по кадрам не прочитано — проверка «не закрывает лицо» не сделана")
+    soft = [f"{b['el']} размыт на {b['blur']:.1f} px {b['from']:.2f}–{b['last'] + 0.25:.2f} с — размытие только в "
+            f"наплыве и уходе, на показе фон резкий" for b in res.get("softBg", []) if not b.get("allowed")]
+    if strict:
+        check(not soft, "фон за спиной не стоит размытым, пока виден (размытие — только в наплыве)", soft)
+    elif soft:
+        print(f"  · размытый фон на показе: {len(soft)} (при правке ролика — убрать blur с конечного состояния)")
     if zones:
         grey = [f"{g['el']} «{g['text']}» — {g['zone']}, {g['from']:.2f}–{g['last'] + 0.25:.2f} с, глубина {g['depth']} px"
                 for g in res.get("grey", [])]

@@ -4,18 +4,31 @@
 Маска нужна для двух вещей: крупное слово ЗА спиной (текст между фоном и человеком)
 и замена фона. Движки — открытые и одинаково работают на Mac и Windows:
 
-  mediapipe — MediaPipe Selfie Multiclass (Apache-2.0), по умолчанию. Классы «волосы, кожа,
-              одежда» дают человека вместе с тем, что у него в руках: банку из IMG_3317 он
-              держит даже в смазанном кадре, где прежний Apple Vision её терял. Края доводятся
-              по самому кадру (guided filter), полупрозрачная дымка по контуру сжимается.
+  mediapipe — MediaPipe Selfie Multiclass (Apache-2.0) вместе с пустой комнатой из самого
+              дубля (ниже), по умолчанию.
   rvm       — Robust Video Matting (GPL-3.0), запасной: помнит прошлые кадры, но выкидывает
               предметы из рук. Нужен torch.
 
 Замер 11.10.2026 на IMG_3279/3305/3317 против масок Apple Vision (до этого дня был он):
 MediaPipe совпал на 94–96% (RVM — на 88–92%), а на спорных кадрах выглядит не хуже.
 
+Пустая комната (12.10.2026, жалоба Валеры на IMG_1803: «вырезка фона хуево работает»; «рука и
+банка — не лишние, они тоже должны быть»). Модель смотрит на кадр в 256×256: край у неё мягкий,
+с серой дымкой старого фона, а банку в руке она считает скорее фоном (0,59 против 0,30 у класса
+«прочее») — верх банки таял, сквозь него светила свеча с нового фона, внизу в человека попадали
+красные полосы старой комнаты. Камера в дублях стоит, поэтому пустая комната собирается из самого
+дубля: медиана каждой точки по 24 кадрам, где модель уверена, что там фон. Там, где комнату видно,
+край режется по отличию кадра от неё — рука, банка, микрофон, пряди: всё, чего в пустой комнате
+нет и что одним куском с человеком; модель только говорит, где человек. Где комнату не видно
+никогда (за спиной, под руками), решает модель, а предмет, который держится за человека, она отдаёт
+целиком: широкое пятно неуверенности, касающееся человека, — это вещь в руке, а не дымка по контуру.
+Края на полном кадре ведёт цветной управляемый фильтр: красная банка на сером занавесе одной с ним
+яркости, по одной яркости край расплывался. Камера двигалась — комнаты нет, маска по одной модели,
+и это пишется в вывод.
+
 Кадры идут по одному через канал ffmpeg → модель → ffmpeg: память не зависит от
-длины ролика. Потоки ограничены, чтобы ноутбук оставался живым.
+длины ролика (выборка для комнаты — всегда 24 кадра). Потоки ограничены, чтобы ноутбук
+оставался живым.
 
   .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --cutout
 """
@@ -36,8 +49,208 @@ import models
 from common import ffmpeg_bin, probe
 
 
+PLATE_SAMPLES = 24      # кадров на пустую комнату — сколько бы ни шёл дубль: память постоянная
+SURE_BG = 0.85          # «точно фон» по модели; её потолок для класса «фон» — 0.92
+PLATE_MIN_SEEN = 4      # точка комнаты известна, если чистой её видно хотя бы в 4 кадрах выборки
+PLATE_MIN_AREA = 0.10   # комнаты видно меньше 10% кадра — собирать нечего
+PLATE_MAX_MOVED = 0.08  # столько «фона» не сходится с собранной комнатой — камера двигалась
+NOISE_FLOOR = 4 / 255   # отличие от комнаты меряется в шумах точки, но не мельче этого
+
+
+class Plate:
+    """Пустая комната из самого дубля (половинный кадр): цвет, шум точки и где она известна."""
+
+    def __init__(self, image: np.ndarray, sigma: np.ndarray, weight: np.ndarray):
+        self.image, self.sigma, self.weight = image, sigma, weight
+        self.scale = (1.0 / np.maximum(sigma, NOISE_FLOOR)).astype(np.float32)   # отличие → шумы точки
+
+
+def smoothstep(x: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    x = np.clip((x - lo) / (hi - lo), 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
+
+
+def disk(size: int) -> np.ndarray:
+    import cv2
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+
+
+def square(size: int) -> np.ndarray:
+    """Квадратное ядро: OpenCV считает его по строкам и столбцам — большие ядра впятеро быстрее круга."""
+    return np.ones((size, size), np.uint8)
+
+
+def touching(mask: np.ndarray, seed: np.ndarray) -> np.ndarray:
+    """Куски mask, которые касаются seed (связность по восьми соседям)."""
+    import cv2
+    mask = mask.astype(np.uint8)
+    count, labels = cv2.connectedComponents(mask, connectivity=8)
+    if count <= 1:
+        return np.zeros(mask.shape, bool)
+    hit = np.unique(labels[(seed > 0) & (mask > 0)])
+    hit = hit[hit > 0]
+    return np.isin(labels, hit) if hit.size else np.zeros(mask.shape, bool)
+
+
+def _median_of_seen(values: np.ndarray, seen: np.ndarray) -> np.ndarray:
+    """Медиана по оси 0 среди известных значений (неизвестные — NaN, сортировка уводит их в конец)."""
+    ordered = np.sort(values, axis=0)
+    shape = (1,) + values.shape[1:]
+    lo = np.broadcast_to(np.maximum((seen - 1) // 2, 0)[None, ..., None], shape)
+    hi = np.broadcast_to(np.maximum(seen // 2, 0)[None, ..., None], shape)
+    return 0.5 * (np.take_along_axis(ordered, lo, 0) + np.take_along_axis(ordered, hi, 0))[0]
+
+
+def build_plate(frames: np.ndarray, sure: np.ndarray) -> tuple:
+    """Пустая комната: медиана каждой точки по кадрам, где модель уверена, что там фон.
+
+    frames — K×h×w×3 (uint8, RGB), sure — K×h×w (bool). Возвращает (Plate или None, пояснение):
+    None, если комнаты почти не видно или камера двигалась — тогда фон в выборке не сходится
+    сам с собой, и резать по нему край нельзя.
+    """
+    import cv2
+    count, height, width = sure.shape
+    seen = sure.sum(0)
+    known = seen >= PLATE_MIN_SEEN
+    if known.mean() < PLATE_MIN_AREA:
+        return None, f"пустой комнаты почти не видно ({known.mean() * 100:.0f}% кадра)"
+    image = np.zeros((height, width, 3), np.float32)
+    sigma = np.ones((height, width, 3), np.float32)
+    for y in range(0, height, 64):                   # полосами: память не растёт с размером кадра
+        part = frames[:, y:y + 64].astype(np.float32) / 255.0
+        part[~sure[:, y:y + 64]] = np.nan
+        rows = seen[y:y + 64]
+        med = _median_of_seen(part, rows)
+        image[y:y + 64] = np.nan_to_num(med)
+        sigma[y:y + 64] = np.nan_to_num(_median_of_seen(np.abs(part - med[None]), rows) * 1.4826, nan=1.0)
+    # камера стояла? каждый кадр выборки — с собранной комнатой там, где он сам «точно фон». Порог — от шума
+    # ролика на ровных местах комнаты, а не от шума каждой точки: у сдвинутой камеры он раздувается на узоре
+    # и спрятал бы сам сдвиг. Замер 12.10 на пяти дублях: камера стоит — расходится не больше 1,5% точек;
+    # толчок штатива на 6 точек — 11–54%. Ровная стена сдвига не покажет, но по ровной стене и резать не страшно
+    gray = image.mean(axis=2)
+    slope = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)) + np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
+    flat = known & (slope <= np.percentile(slope[known], 30))
+    noise = float(np.median(sigma.max(axis=2)[flat]))
+    limit = max(6 / 255, 4.0 * noise)
+    moved = []
+    for i in range(count):
+        mask = sure[i] & known
+        if mask.sum() >= 500:
+            shot = frames[i].astype(np.float32) / 255.0
+            gain = np.median(shot[mask], axis=0) / np.maximum(np.median(image[mask], axis=0), 1e-3)
+            off = (np.abs(shot - image * gain) > limit).any(axis=2)
+            moved.append(float(off[mask].mean()))
+    worst = float(np.percentile(moved, 80)) if moved else 1.0
+    if worst > PLATE_MAX_MOVED:
+        return None, f"камера двигалась: {worst * 100:.0f}% фона не сходится с собранной комнатой"
+    weight = cv2.GaussianBlur(cv2.erode(known.astype(np.float32), disk(5)), (0, 0), 3)
+    return Plate(image, sigma, weight), f"пустая комната собрана, её видно в {known.mean() * 100:.0f}% кадра"
+
+
+def model_alpha(person: np.ndarray) -> np.ndarray:
+    """Альфа по одной модели: дымка по контуру сжимается, вещь в руке остаётся целиком."""
+    import cv2
+    alpha = smoothstep(person, 0.35, 0.65)           # уверенность 0.35–0.65 — дымка вокруг контура
+    sure = (person >= 0.6).astype(np.uint8)
+    unsure = ((person >= 0.25) & (person < 0.6)).astype(np.uint8)
+    # дымка по контуру — тонкая полоса, вещь в руке (банка: 0.41) — широкое пятно, касающееся человека
+    wide = cv2.morphologyEx(unsure, cv2.MORPH_OPEN, square(11))
+    held = touching(wide, cv2.dilate(sure, square(15)))
+    if held.any():
+        alpha = np.maximum(alpha, cv2.GaussianBlur(held.astype(np.float32), (0, 0), 1.5))
+    return alpha
+
+
+def plate_trust(person: np.ndarray, img: np.ndarray, plate: Plate) -> tuple:
+    """(насколько кадр сходится с пустой комнатой 0..1, множитель экспозиции по каналам)."""
+    sure = (person[::6, ::6] < 0.1) & (plate.weight[::6, ::6] > 0.5)
+    if sure.sum() < 300:
+        return 1.0, np.ones(3, np.float32)
+    seen, room = img[::6, ::6][sure], plate.image[::6, ::6][sure]
+    gain = (np.median(seen, axis=0) / np.maximum(np.median(room, axis=0), 1e-3)).astype(np.float32)
+    if np.any(gain < 0.6) or np.any(gain > 1.6):     # свет в комнате сменился целиком — не она
+        return 0.0, np.ones(3, np.float32)
+    floor = np.maximum(4.0 * plate.sigma[::6, ::6][sure], 10 / 255)
+    off = float((np.abs(seen - room * gain) > floor).any(axis=1).mean())
+    return float(np.clip((0.30 - off) / 0.15, 0.0, 1.0)), gain
+
+
+def hybrid_alpha(person: np.ndarray, img: np.ndarray, plate: Plate = None, trust: float = 1.0,
+                 gain=1.0) -> np.ndarray:
+    """Альфа половинного кадра: где пустая комната известна — по отличию от неё, где нет — по модели.
+
+    person — уверенность модели «это человек», img — кадр (RGB 0..1) того же размера.
+    """
+    import cv2
+    alpha_model = model_alpha(person)
+    if plate is None or trust <= 0.01:
+        return alpha_model
+    core = (person >= 0.6).astype(np.uint8)
+    differs = (np.abs(img - plate.image * gain) * plate.scale).max(axis=2)
+    alpha_diff = smoothstep(differs, 3.0, 7.0)
+    # отличие от комнаты засчитывается только у человека и одним куском с ним: тень и блик вдали — не он.
+    # «У человека» — от всего, что модель хоть сколько-то считает им: банку (0.41) она видит, но не уверена
+    near = cv2.dilate(((person >= 0.25) | (core > 0)).astype(np.uint8), square(31))
+    piece = touching((alpha_diff > 0.5) & (near > 0), core)
+    piece = cv2.dilate(piece.astype(np.uint8), disk(3)).astype(np.float32)
+    # глубокая середина — от модели: тёмный пиджак на тёмной стене отличием не возьмёшь. Глубокая — дальше
+    # 12 точек от края: полосу старой комнаты у края, которую модель взяла в человека, срезает комната
+    deep = cv2.GaussianBlur(cv2.erode(core, square(25)).astype(np.float32), (0, 0), 1.5)
+    alpha_plate = np.maximum(alpha_diff * piece, deep)
+    weight = plate.weight * trust
+    return weight * alpha_plate + (1.0 - weight) * alpha_model
+
+
+def calm(alpha: np.ndarray, img: np.ndarray, last) -> np.ndarray:
+    """Край не «кипит»: где картинка с прошлого кадра не изменилась, альфа усредняется с прошлой.
+
+    Модель на каждом кадре решает заново, и край на неподвижных волосах дрожал. Где картинка
+    изменилась (рука движется), берётся новая альфа как есть — шлейфа за движением нет.
+    Замер 12.10 на IMG_1803: дрожание края там, где картинка стоит, −20…27%, мигания −30…42%.
+    """
+    if last is None:
+        return alpha
+    still = np.abs(img - last[0]).max(axis=2) < 3 / 255
+    return np.where(still, 0.5 * (alpha + last[1]), alpha)
+
+
+def upscale_alpha(alpha: np.ndarray, small: np.ndarray, frame: np.ndarray, radius: int = 2,
+                  eps: float = 1e-4) -> np.ndarray:
+    """Альфа с половинного кадра на полный: края — по цветному кадру.
+
+    Быстрый управляемый фильтр (He, Sun 2015): коэффициенты считаются на половинном кадре,
+    край берётся из полного. Цветной, а не по яркости: красная банка на сером занавесе той же
+    яркости, по одной яркости её край расплывался.
+    """
+    import cv2
+    box = lambda x: cv2.boxFilter(x, -1, (2 * radius + 1, 2 * radius + 1), borderType=cv2.BORDER_REFLECT)
+    r, g, b = small[..., 0], small[..., 1], small[..., 2]
+    mr, mg, mb, mp_ = box(r), box(g), box(b), box(alpha)
+    cr, cg, cb = box(r * alpha) - mr * mp_, box(g * alpha) - mg * mp_, box(b * alpha) - mb * mp_
+    rr = box(r * r) - mr * mr + eps
+    rg = box(r * g) - mr * mg
+    rb = box(r * b) - mr * mb
+    gg = box(g * g) - mg * mg + eps
+    gb = box(g * b) - mg * mb
+    bb = box(b * b) - mb * mb + eps
+    # обратная к ковариации цвета 3×3 в каждой точке — через алгебраические дополнения
+    i_rr, i_rg, i_rb = gg * bb - gb * gb, gb * rb - rg * bb, rg * gb - gg * rb
+    i_gg, i_gb, i_bb = rr * bb - rb * rb, rb * rg - rr * gb, rr * gg - rg * rg
+    det = rr * i_rr + rg * i_rg + rb * i_rb
+    ar = (i_rr * cr + i_rg * cg + i_rb * cb) / det
+    ag = (i_rg * cr + i_gg * cg + i_gb * cb) / det
+    ab = (i_rb * cr + i_gb * cg + i_bb * cb) / det
+    bias = mp_ - ar * mr - ag * mg - ab * mb
+    height, width = frame.shape[:2]
+    grow = lambda c: cv2.resize(c, (width, height), interpolation=cv2.INTER_LINEAR)
+    out = grow(box(bias))
+    for coef, channel in zip((ar, ag, ab), cv2.split(frame)[:3]):       # кадр RGB или RGBA
+        out = cv2.add(out, cv2.multiply(grow(box(coef) * (1.0 / 255.0)), channel, dtype=cv2.CV_32F))
+    return np.clip(out, 0.0, 1.0, out=out)
+
+
 class MediaPipeMatte:
-    """MediaPipe Selfie Multiclass: человек = всё, кроме класса «фон», с доводкой краёв по кадру."""
+    """MediaPipe Selfie Multiclass + пустая комната из дубля; края — по полному кадру."""
 
     def __init__(self, width: int, height: int):
         import cv2
@@ -54,25 +267,72 @@ class MediaPipeMatte:
             running_mode=vision.RunningMode.VIDEO, output_confidence_masks=True, output_category_mask=False)
         self.segmenter = vision.ImageSegmenter.create_from_options(options)
         self.ms = 0
-        # доводка краёв считается на половинном кадре: на глаз то же, а вчетверо быстрее
+        # модель видит 256×256, так что ей и всей логике маски хватает половинного кадра;
+        # полный нужен только краю (upscale_alpha)
         self.half = (max(2, width // 2), max(2, height // 2))
+        self.plate, self.trust, self.gain = None, 1.0, np.ones(3, np.float32)
+        self.last = None                                # прошлый кадр и его альфа — для покоя края
+
+    def shrink(self, frame: np.ndarray) -> np.ndarray:
+        """Половинный кадр (RGB): при чётном размере — пирамидой, втрое быстрее INTER_AREA."""
+        if not (self.width % 2 or self.height % 2):
+            return self.cv2.pyrDown(frame)[:, :, :3]
+        return self.cv2.resize(frame, self.half, interpolation=self.cv2.INTER_AREA)[:, :, :3]
+
+    def person(self, small: np.ndarray) -> np.ndarray:
+        """Уверенность «это человек» (всё, кроме класса «фон») в точках половинного кадра."""
+        image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(small))
+        result = self.segmenter.segment_for_video(image, self.ms)
+        self.ms += 33                                   # метки времени обязаны расти
+        return 1.0 - np.squeeze(np.asarray(result.confidence_masks[0].numpy_view(), np.float32))
+
+    def prepare(self, video: Path, info: dict) -> str:
+        """Пустая комната по выборке из 24 кадров дубля; вернёт, что вышло, — для вывода."""
+        cv2 = self.cv2
+        width, height = self.half
+        rate = PLATE_SAMPLES / max(info["duration"], 0.1)
+        size = width * height * 3
+        frames, sure = [], []
+        with tempfile.TemporaryFile() as err:
+            reader = subprocess.Popen(
+                [ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
+                 "-vf", f"fps={rate:.6f},scale={width}:{height}:flags=area",
+                 "-frames:v", str(PLATE_SAMPLES), "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
+                stdout=subprocess.PIPE, stderr=err)
+            try:
+                while len(frames) < PLATE_SAMPLES:
+                    raw = reader.stdout.read(size)
+                    if len(raw) < size:
+                        break
+                    small = np.frombuffer(raw, np.uint8).reshape(height, width, 3)
+                    frames.append(small)
+                    room = (self.person(small) <= 1.0 - SURE_BG).astype(np.uint8)
+                    sure.append(cv2.erode(room, disk(9)).astype(bool))      # подальше от края человека
+            finally:
+                reader.stdout.close()
+                reader.wait()
+        if len(frames) < 8:
+            return "пустая комната не собралась: из дубля прочитано мало кадров — маска по модели"
+        self.plate, note = build_plate(np.stack(frames), np.stack(sure))
+        return note if self.plate is not None else f"{note} — маска по одной модели"
 
     def __call__(self, rgba: bytes) -> np.ndarray:
         cv2 = self.cv2
-        frame = np.frombuffer(rgba, np.uint8).reshape(self.height, self.width, 4)[:, :, :3]
-        image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame))
-        result = self.segmenter.segment_for_video(image, self.ms)
-        self.ms += 33                                   # метки времени обязаны расти
-        person = 1.0 - np.asarray(result.confidence_masks[0].numpy_view(), np.float32)   # класс 0 — фон
-        alpha = cv2.resize(person, self.half, interpolation=cv2.INTER_LINEAR)
-        # уверенность 0.35–0.65 — та самая дымка вокруг контура: сжимаем её в плавную ступень
-        alpha = np.clip((alpha - 0.35) / 0.30, 0.0, 1.0)
-        alpha = alpha * alpha * (3.0 - 2.0 * alpha)
-        guide = cv2.cvtColor(cv2.resize(frame, self.half, interpolation=cv2.INTER_AREA),
-                             cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
-        alpha = guided_filter(guide, alpha, 4, 1e-3, cv2)           # край маски — по краю в кадре
+        frame = np.frombuffer(rgba, np.uint8).reshape(self.height, self.width, 4)
+        small = self.shrink(frame)
+        person = self.person(small)
+        img = small.astype(np.float32) / 255.0
+        if self.plate is not None:
+            # кадр, который с комнатой не сходится (свет, толчок камеры), режется по модели — плавно
+            trust, gain = plate_trust(person, img, self.plate)
+            self.trust = 0.8 * self.trust + 0.2 * trust
+            if trust > 0:
+                self.gain = gain
+        alpha = hybrid_alpha(person, img, self.plate, self.trust, self.gain)
         alpha = drop_islands(np.clip(alpha, 0.0, 1.0), cv2)
-        alpha = cv2.resize(alpha, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+        alpha = calm(alpha, img, self.last)
+        self.last = (img, alpha)
+        alpha = upscale_alpha(alpha, img, frame)
         return np.clip(alpha * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
 
@@ -148,6 +408,9 @@ def run_matte(video: Path, backend: str, out: Path) -> dict:
     info = probe(video)
     width, height = info["width"], info["height"]
     model = BACKENDS[backend](width, height)
+    note = model.prepare(video, info) if hasattr(model, "prepare") else ""
+    if note:
+        print(f"     {note}", flush=True)
     frame_bytes = width * height * 4
     expected = round(info["duration"] * info["fps"])
     part = out.with_name(f".{out.stem}.part{out.suffix}")
@@ -201,28 +464,125 @@ def run_matte(video: Path, backend: str, out: Path) -> dict:
     return {"frames": count, "seconds": spent, "fps": count / spent}
 
 
+def foreground_plane(plane: np.ndarray, alpha: np.ndarray, size: int) -> np.ndarray:
+    """Одна плоскость кадра (Y, U или V) с цветом человека без примеси старого фона.
+
+    В полупрозрачной точке кадр — смесь: I = αF + (1−α)B. Старый фон B рядом с краем берётся
+    по соседним точкам фона (вес — (1−α)², окно size), цвет человека F — из уравнения. Где человек
+    сплошной — плоскость как есть, байт в байт; где прозрачно — цвет ближайшего человека: кодек 4:2:0
+    смешивает цвет соседних точек, и цвет старой комнаты за краем просочился бы в край.
+    """
+    import cv2
+    x = plane.astype(np.float32)
+    rest = 1.0 - alpha
+    box = lambda m, k: cv2.boxFilter(m, -1, (k, k), borderType=cv2.BORDER_REFLECT)
+    # старый фон — среднее чистых точек фона рядом: смешанные точки края тянули бы его к цвету человека.
+    # Нет чистых в окне — в окне втрое шире; нет и там — точка остаётся как есть
+    pure = (alpha < 0.02).astype(np.float32)
+    near_sum, near_n = box(x * pure, size), box(pure, size)
+    wide_sum, wide_n = box(x * pure, size * 3), box(pure, size * 3)
+    room = np.where(near_n > 0.02, near_sum / np.maximum(near_n, 1e-6),
+                    np.where(wide_n > 1e-3, wide_sum / np.maximum(wide_n, 1e-6), x))
+    fg = (x - rest * room) / np.maximum(alpha, 0.08)
+    near = size // 3 | 1
+    reach = box(alpha, near)
+    spread = box(fg * alpha, near) / np.maximum(reach, 1e-4)
+    fg = np.where(alpha < 0.02, np.where(reach > 1e-3, spread, x), fg)
+    fg = np.where(alpha >= 0.97, x, fg)
+    return np.clip(fg + 0.5, 0, 255).astype(np.uint8)
+
+
+def cutout_frame(yuv: bytes, mask: bytes, width: int, height: int) -> bytes:
+    """Кадр yuv420p + маска → кадр yuva420p с чистым краем (в цветах самого видео, без RGB)."""
+    import cv2
+    luma, cw, ch = width * height, width // 2, height // 2
+    buf = np.frombuffer(yuv, np.uint8)
+    y = buf[:luma].reshape(height, width)
+    u = buf[luma:luma + cw * ch].reshape(ch, cw)
+    v = buf[luma + cw * ch:luma + 2 * cw * ch].reshape(ch, cw)
+    a = np.frombuffer(mask, np.uint8).reshape(height, width)
+    alpha = a.astype(np.float32) / 255.0
+    alpha_c = cv2.resize(alpha, (cw, ch), interpolation=cv2.INTER_AREA)
+    return b"".join((foreground_plane(y, alpha, 41).tobytes(), foreground_plane(u, alpha_c, 21).tobytes(),
+                     foreground_plane(v, alpha_c, 21).tobytes(), a.tobytes()))
+
+
 def make_cutout(video: Path, matte: Path, out: Path) -> Path:
     """Человек без фона: видео + маска → VP9 с прозрачностью, его понимает браузер.
 
-    Это слой поверх текста «за спиной» и поверх подменённого фона. Потоки кодека
-    ограничены: кодирование долгое, и ноутбук в это время должен оставаться рабочим.
+    Это слой поверх текста «за спиной» и поверх подменённого фона. Цвет края чистится от старого
+    фона (foreground_plane): раньше кадр брался как есть, и полупрозрачный край нёс серый занавес
+    старой комнаты — на новом фоне он светился ореолом. Считается в YUV самого дубля: где человек
+    сплошной, слой совпадает с дублем байт в байт, и текст «за спиной» не даёт шва.
+    Кадры идут по одному (память постоянная), потоки кодека ограничены: ноутбук остаётся рабочим.
     """
-    threads = max(1, (os.cpu_count() or 4) - 4)
+    import cv2
+    cv2.setNumThreads(2)
+    info = probe(video)
+    width, height = info["width"], info["height"]
+    if width % 2 or height % 2:
+        raise RuntimeError(f"Размер {width}×{height} нечётный — yuv420p так не умеет")
+    frame_bytes = width * height * 3 // 2
+    expected = round(info["duration"] * info["fps"])
+    threads = max(1, (os.cpu_count() or 4) - 5)
+    # цвет — как у дубля: кодеку отдаются сырые плоскости, метки цвета ставятся явно
+    tags = []
+    for flag, key, default in (("-colorspace", "matrix", "bt709"), ("-color_primaries", "primaries", "bt709"),
+                               ("-color_trc", "transfer", "bt709"), ("-color_range", "range", "tv")):
+        value = info.get(key) or default
+        tags += [flag, default if value in ("unknown", "reserved") else value]
     part = out.with_name(f".{out.stem}.part{out.suffix}")     # на место — только целое
+    errs = [tempfile.TemporaryFile() for _ in range(3)]
+
+    def tail(err) -> str:
+        err.seek(0)
+        return err.read().decode(errors="replace")[-600:]
+
+    reader = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
+                               "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"],
+                              stdout=subprocess.PIPE, stderr=errs[0])
+    masks = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(matte),
+                              "-pix_fmt", "gray", "-f", "rawvideo", "-"],
+                             stdout=subprocess.PIPE, stderr=errs[1])
+    writer = subprocess.Popen([
+        ffmpeg_bin(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "yuva420p",
+        "-s", f"{width}x{height}", "-r", f"{info['fps']:g}", "-i", "-",
+        "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24",
+        "-deadline", "good", "-cpu-used", "5", "-row-mt", "1", "-threads", str(threads),
+        "-auto-alt-ref", "0", *tags, str(part)], stdin=subprocess.PIPE, stderr=errs[2])
+    count, left = 0, 0
     try:
-        result = subprocess.run([
-            ffmpeg_bin(), "-v", "error", "-y", "-i", str(video), "-i", str(matte),
-            "-filter_complex", "[1:v]format=gray[a];[0:v][a]alphamerge,format=yuva420p[v]",
-            "-map", "[v]", "-an",
-            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24",
-            "-deadline", "good", "-cpu-used", "5", "-row-mt", "1", "-threads", str(threads),
-            "-auto-alt-ref", "0", str(part),
-        ], capture_output=True, encoding="utf-8", errors="replace")
-        if result.returncode != 0:
-            raise RuntimeError(f"Не собралось прозрачное видео:\n{result.stderr[-600:]}")
+        try:
+            while True:
+                yuv = reader.stdout.read(frame_bytes)
+                mask = masks.stdout.read(width * height)
+                if len(yuv) < frame_bytes or len(mask) < width * height:
+                    left = len(yuv) // frame_bytes + len(mask) // (width * height)
+                    break
+                writer.stdin.write(cutout_frame(yuv, mask, width, height))
+                count += 1
+        except BrokenPipeError:
+            pass                                      # кодек упал — причина ниже, из его вывода
+        finally:
+            for proc in (reader, masks):
+                proc.stdout.close()
+                proc.wait()
+            try:
+                writer.stdin.close()
+            except BrokenPipeError:
+                pass
+            writer.wait()
+        if writer.returncode != 0:
+            raise RuntimeError(f"Не собралось прозрачное видео:\n{tail(errs[2])}")
+        if count < expected * 0.98 - 2 or left:
+            raise RuntimeError(f"Вырезка не совпала с дублем по длине: {count} кадров из {expected} — "
+                               f"маска {matte.name} от другого или оборванного дубля, пересчитай её "
+                               f"(matte.py без --cutout)\n{tail(errs[0])}{tail(errs[1])}")
         part.replace(out)
     finally:
         part.unlink(missing_ok=True)
+        for err in errs:
+            err.close()
     return out
 
 

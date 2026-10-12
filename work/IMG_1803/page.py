@@ -7,6 +7,10 @@
 длинная шкала: биллион = миллион миллионов = 10¹², в 1000 раз больше. Официально Британия
 перешла на короткую шкалу в 1974 году (заявление премьера Г. Вильсона в парламенте).
 
+v5 (12.10.2026): карточки на груди — ниже подбородка в каждом кадре (лицо опускается до y≈1236,
+когда Валера наклоняется к камере), заезд под ник Instagram — осознанный (data-safe): лицо важнее.
+Вырезка — по пустой комнате из дубля (matte.py): банка и рука целые, без серой дымки по краю. Фоны
+под кадр 1188×2112 (gen_image --refit) и без постоянного размытия: размытие только в наплыве.
 v4 (12.10.2026): всё внутри серых зон площадок (formats.GREY_ZONES, по скринам Валеры) — слова над
 головой ниже вкладок TikTok, таблицы и карточки на груди в полосе 245–835 и выше ника Instagram.
 Фоны за спиной СГЕНЕРИРОВАНЫ (Codex, imagegen; downloads/bg_*.md) — не фото, иллюстрация эпохи:
@@ -91,27 +95,27 @@ behind = "\n".join([
     '        <div id="b-1974" class="g big" style="top: 318px; font-size: 260px;">1974</div>',
 ])
 
-italy = ('        <div id="d-it" class="g doc" style="left: 245px; top: 1045px; width: 590px; padding: 20px 16px 16px;">\n'
+italy = ('        <div id="d-it" class="g doc" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="left: 245px; top: 1260px; width: 590px; padding: 20px 16px 16px;">\n'
          '          <div class="it-row">\n'
          '            <div id="it-a" class="it-col"><div class="it-w">mille</div><div class="it-l">тысяча</div></div>\n'
          '            <div id="it-b" class="it-col"><div class="it-w">+ -one</div><div class="it-l">большой</div></div>\n'
          '            <div id="it-c" class="it-col"><div class="it-w" style="color: var(--red);">= milione</div>'
          '<div class="it-l">большая тысяча</div></div>\n'
          '          </div>\n        </div>')
-ladder = ('        <div id="d-lad" class="g panel" style="' + PANEL + ' top: 1045px;">\n'
+ladder = ('        <div id="d-lad" class="g panel" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="' + PANEL + ' top: 1225px;">\n'
           '          <div id="l1" class="lad-row"><span class="lad-n">10 000</span><span class="lad-w">тьма</span></div>\n'
           '          <div id="l2" class="lad-row"><span class="lad-n">100 000</span><span class="lad-w">легион</span></div>\n'
           '          <div id="l3" class="lad-row"><span class="lad-n">1 000 000</span><span class="lad-w" style="color: var(--red);">леодр</span></div>\n'
           '        </div>')
-compare = ('        <div id="d-cmp" class="g panel" style="' + PANEL + ' top: 1040px;">\n'
+compare = ('        <div id="d-cmp" class="g panel" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="' + PANEL + ' top: 1240px;">\n'
            '          <div id="c1" class="cmp-row"><span class="cmp-who">у нас</span><span class="cmp-w">миллиард</span><span class="cmp-v">10<sup>9</sup></span></div>\n'
            '          <div id="c2" class="cmp-row"><span class="cmp-who">США</span><span class="cmp-w">биллион</span><span class="cmp-v">10<sup>9</sup></span></div>\n'
            '          <div id="c3" class="cmp-row"><span class="cmp-who">Британия до 1974</span><span class="cmp-w">биллион</span>'
            '<span class="cmp-v" style="color: var(--red);">10<sup>12</sup></span></div>\n'
            '        </div>')
-bil = ('        <div id="bil1" class="g panel bil" style="left: 245px; top: 1050px;">'
+bil = ('        <div id="bil1" class="g panel bil" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="left: 245px; top: 1215px;">'
        '<div class="bil-h">биллионер до 1974</div><div class="bil-v">10<sup>12</sup> £</div><div class="bil-s">миллион миллионов</div></div>\n'
-       '        <div id="bil2" class="g panel bil" style="left: 550px; top: 1050px;">'
+       '        <div id="bil2" class="g panel bil" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="left: 550px; top: 1215px;">'
        '<div class="bil-h">биллионер сейчас</div><div class="bil-v">10<sup>9</sup> £</div><div class="bil-s">тысяча миллионов</div></div>')
 
 # Счётчик просмотров за спиной: крупно, как остальные слова, человек из вырезки встаёт поверх.
@@ -134,8 +138,8 @@ front = "\n".join([
     '<span class="flag"></span>для итальянцев</div>',
     italy,
     '        <div id="st-rus" class="g sticker" style="left: 310px; top: 290px; font-size: 56px; white-space: nowrap;">а на Руси?</div>',
-    doc_img("d-cyr", "cyr_numerals.jpg", "старинный счёт: цифры-буквы", left=245, top=1045, width=590,
-            height=230, position="50% 100%"),
+    doc_img("d-cyr", "cyr_numerals.jpg", "старинный счёт: цифры-буквы", left=245, top=1180, width=590,
+            height=230, position="50% 100%").replace('class="g doc"', 'class="g doc" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)"', 1),
     ladder,
     '        <div id="st-spell" class="g sticker" style="left: 330px; top: 300px; font-size: 56px; white-space: nowrap;">как заклинание</div>',
     '        <div id="st-mess" class="g stamp" style="left: 360px; top: 290px; font-size: 90px; white-space: nowrap;">бардак</div>',
@@ -147,7 +151,7 @@ front = "\n".join([
 beats = f'''
       // ---------- фоны за спиной: наплыв из размытия, медленный наезд, уход обратно в студию ----------
       function bgIn(sel, tIn, tOut) {{
-        tl.fromTo(sel, {{ opacity: 0, filter: "blur(14px)" }}, {{ opacity: 1, filter: "blur(2px)", duration: 0.8, ease: "power2.out" }}, tIn);
+        tl.fromTo(sel, {{ opacity: 0, filter: "blur(14px)" }}, {{ opacity: 1, filter: "blur(0px)", duration: 0.8, ease: "power2.out" }}, tIn);
         tl.fromTo(`${{sel}} img`, {{ scale: 1.08 }}, {{ scale: 1.0, duration: tOut - tIn + 0.6, ease: "none" }}, tIn);
         tl.to(sel, {{ opacity: 0, filter: "blur(10px)", duration: 0.6, ease: "power2.in" }}, tOut);
       }}
