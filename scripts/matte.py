@@ -26,9 +26,17 @@ MediaPipe совпал на 94–96% (RVM — на 88–92%), а на спорн
 яркости, по одной яркости край расплывался. Камера двигалась — комнаты нет, маска по одной модели,
 и это пишется в вывод.
 
+Вещь в руке (12–13.10.2026, Валера: «микрофон туда-сюда, то вырезан, то не вырезан» — он прикреплён
+к банке). Модель смотрит на кадр в 256×256: банка у края и микрофон на ней для неё — пятно в пару
+десятков точек, и она порой уверенно считает их фоном. Отсюда две беды: в кадрах, где банка стояла
+на привычном месте, она «парковалась» в пустую комнату (на месте вырезалась как фон, уходила —
+оставляла дыру), а в остальных пропадала по самой модели. Поэтому комната за кистью собирается
+только из кадров, где руки в другом месте (кисти — класс «кожа тела» без шеи), а вокруг каждой
+кисти модель смотрит второй раз, крупно.
+
 Кадры идут по одному через канал ffmpeg → модель → ffmpeg: память не зависит от
-длины ролика (выборка для комнаты — всегда 24 кадра). Потоки ограничены, чтобы ноутбук
-оставался живым.
+длины ролика (выборка для комнаты — всегда PLATE_SAMPLES кадров). Потоки ограничены, чтобы
+ноутбук оставался живым.
 
   .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --cutout
 """
@@ -49,12 +57,15 @@ import models
 from common import ffmpeg_bin, probe
 
 
-PLATE_SAMPLES = 24      # кадров на пустую комнату — сколько бы ни шёл дубль: память постоянная
+PLATE_SAMPLES = 48      # кадров на пустую комнату — сколько бы ни шёл дубль: память постоянная
 SURE_BG = 0.85          # «точно фон» по модели; её потолок для класса «фон» — 0.92
 PLATE_MIN_SEEN = 4      # точка комнаты известна, если чистой её видно хотя бы в 4 кадрах выборки
 PLATE_MIN_AREA = 0.10   # комнаты видно меньше 10% кадра — собирать нечего
 PLATE_MAX_MOVED = 0.08  # столько «фона» не сходится с собранной комнатой — камера двигалась
 NOISE_FLOOR = 4 / 255   # отличие от комнаты меряется в шумах точки, но не мельче этого
+HAND_REACH = 0.25       # доля ширины кадра: кисть с банкой и микрофоном — ближе комнату не собираем
+HAND_MIN_AREA = 0.0015  # пятно кожи меньше этой доли кадра — шум, а не кисть
+ZOOM_SIDE = 0.55        # квадрат второго взгляда вокруг кисти — доля ширины кадра
 
 
 class Plate:
@@ -90,6 +101,63 @@ def touching(mask: np.ndarray, seed: np.ndarray) -> np.ndarray:
     hit = np.unique(labels[(seed > 0) & (mask > 0)])
     hit = hit[hit > 0]
     return np.isin(labels, hit) if hit.size else np.zeros(mask.shape, bool)
+
+
+def hands_mask(body: np.ndarray, face: np.ndarray) -> np.ndarray:
+    """Кисти: класс «кожа тела» без шеи (кусок кожи, касающийся лица) и без мелких пятен."""
+    import cv2
+    skin = (body >= 0.5).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(skin, connectivity=8)
+    if count <= 1:
+        return np.zeros(body.shape, bool)
+    by_face = cv2.dilate((face >= 0.5).astype(np.uint8), square(15)) > 0
+    neck = np.unique(labels[by_face & (skin > 0)])
+    small = np.flatnonzero(stats[:, cv2.CC_STAT_AREA] < HAND_MIN_AREA * body.size)
+    drop = np.union1d(np.union1d(neck, small), [0])
+    return ~np.isin(labels, drop)
+
+
+def room_mask(background: np.ndarray, hands: np.ndarray) -> np.ndarray:
+    """Где в этом кадре выборки точно комната: модель уверена в фоне, и кисть далеко.
+
+    Вещь в руке модель порой уверенно считает фоном; стоит она на привычном месте — и
+    «паркуется» в пустую комнату. Вещь не дальше HAND_REACH от кисти, так что за ней комната
+    собирается из кадров, где руки в другом месте. Подальше и от края человека (сужение на 9 точек).
+    """
+    import cv2
+    sure = background >= SURE_BG
+    if hands.any():
+        reach = HAND_REACH * background.shape[1]
+        sure &= cv2.distanceTransform((~hands).astype(np.uint8), cv2.DIST_L2, 5) > reach
+    return cv2.erode(sure.astype(np.uint8), disk(9)).astype(bool)
+
+
+def hand_boxes(hands: np.ndarray) -> list:
+    """Квадраты второго взгляда [(x0, y0, сторона)]: вокруг каждой кисти, с запасом вверх (банка)."""
+    import cv2
+    h, w = hands.shape
+    side = min(int(ZOOM_SIDE * w), h, w)
+    count, _, stats, _ = cv2.connectedComponentsWithStats(hands.astype(np.uint8), connectivity=8)
+    boxes = []
+    for x, y, bw, bh, area in stats[1:]:
+        if area >= HAND_MIN_AREA * h * w:
+            boxes.append((int(np.clip(x + bw / 2 - side / 2, 0, w - side)),
+                          int(np.clip(y + bh / 2 - side * 0.6, 0, h - side)), side))
+    return boxes
+
+
+def zoom_feather(x0: int, y0: int, side: int, width: int, height: int) -> np.ndarray:
+    """Вес второго взгляда в квадрате: к обрезу сходит на нет — у обреза модель видит полкартинки.
+
+    У края кадра обреза нет (его же видит и модель на весь кадр): там вес полный, иначе банка
+    у края получала прямоугольный срез.
+    """
+    ramp = np.minimum(np.arange(side, dtype=np.float32) / (0.12 * side), 1.0)
+    ramp = ramp * ramp * (3.0 - 2.0 * ramp)
+    one = np.ones(side, np.float32)
+    rows = np.minimum(one if y0 == 0 else ramp, one if y0 + side >= height else ramp[::-1])
+    cols = np.minimum(one if x0 == 0 else ramp, one if x0 + side >= width else ramp[::-1])
+    return np.minimum(rows[:, None], cols[None, :])
 
 
 def _median_of_seen(values: np.ndarray, seen: np.ndarray) -> np.ndarray:
@@ -262,10 +330,14 @@ class MediaPipeMatte:
         self.width, self.height = width, height
         # модель — байтами, а не путём: MediaPipe на Windows не открывает путь с кириллицей
         model = models.ensure("selfie_multiclass", download=False).read_bytes()
-        options = vision.ImageSegmenterOptions(
-            base_options=BaseOptions(model_asset_buffer=model),
-            running_mode=vision.RunningMode.VIDEO, output_confidence_masks=True, output_category_mask=False)
-        self.segmenter = vision.ImageSegmenter.create_from_options(options)
+
+        def segmenter(mode):
+            return vision.ImageSegmenter.create_from_options(vision.ImageSegmenterOptions(
+                base_options=BaseOptions(model_asset_buffer=model), running_mode=mode,
+                output_confidence_masks=True, output_category_mask=False))
+
+        self.segmenter = segmenter(vision.RunningMode.VIDEO)
+        self.zoom = segmenter(vision.RunningMode.IMAGE)         # второй взгляд у кистей, кадр за кадром
         self.ms = 0
         # модель видит 256×256, так что ей и всей логике маски хватает половинного кадра;
         # полный нужен только краю (upscale_alpha)
@@ -279,16 +351,34 @@ class MediaPipeMatte:
             return self.cv2.pyrDown(frame)[:, :, :3]
         return self.cv2.resize(frame, self.half, interpolation=self.cv2.INTER_AREA)[:, :, :3]
 
-    def person(self, small: np.ndarray) -> np.ndarray:
-        """Уверенность «это человек» (всё, кроме класса «фон») в точках половинного кадра."""
+    def classes(self, small: np.ndarray) -> list:
+        """Уверенность каждого класса: фон, волосы, кожа тела, кожа лица, одежда, прочее."""
         image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(small))
         result = self.segmenter.segment_for_video(image, self.ms)
         self.ms += 33                                   # метки времени обязаны расти
-        return 1.0 - np.squeeze(np.asarray(result.confidence_masks[0].numpy_view(), np.float32))
+        return [np.squeeze(np.asarray(m.numpy_view(), np.float32)) for m in result.confidence_masks]
+
+    def person(self, small: np.ndarray) -> np.ndarray:
+        """Уверенность «это человек» (всё, кроме класса «фон») в точках половинного кадра.
+
+        Вокруг каждой кисти модель смотрит второй раз, крупно (квадрат с запасом на вещь в руке),
+        и берётся бо́льшая уверенность. Замер 12.10 на IMG_1803: верх банки и микрофон на месте
+        в кадрах, где одна модель на весь кадр их теряла; +65 мс на кадр с кистями.
+        """
+        conf = self.classes(small)
+        person = 1.0 - conf[0]
+        height, width = person.shape
+        for x0, y0, side in hand_boxes(hands_mask(conf[2], conf[3])):
+            crop = self.mp.Image(image_format=self.mp.ImageFormat.SRGB,
+                                 data=np.ascontiguousarray(small[y0:y0 + side, x0:x0 + side]))
+            zoom = 1.0 - np.squeeze(np.asarray(self.zoom.segment(crop).confidence_masks[0].numpy_view(), np.float32))
+            zoom = self.cv2.resize(zoom, (side, side), interpolation=self.cv2.INTER_LINEAR)
+            region = person[y0:y0 + side, x0:x0 + side]
+            region += zoom_feather(x0, y0, side, width, height) * np.maximum(zoom - region, 0.0)
+        return person
 
     def prepare(self, video: Path, info: dict) -> str:
-        """Пустая комната по выборке из 24 кадров дубля; вернёт, что вышло, — для вывода."""
-        cv2 = self.cv2
+        """Пустая комната по выборке из PLATE_SAMPLES кадров дубля; вернёт, что вышло, — для вывода."""
         width, height = self.half
         rate = PLATE_SAMPLES / max(info["duration"], 0.1)
         size = width * height * 3
@@ -306,8 +396,8 @@ class MediaPipeMatte:
                         break
                     small = np.frombuffer(raw, np.uint8).reshape(height, width, 3)
                     frames.append(small)
-                    room = (self.person(small) <= 1.0 - SURE_BG).astype(np.uint8)
-                    sure.append(cv2.erode(room, disk(9)).astype(bool))      # подальше от края человека
+                    conf = self.classes(small)
+                    sure.append(room_mask(conf[0], hands_mask(conf[2], conf[3])))
             finally:
                 reader.stdout.close()
                 reader.wait()

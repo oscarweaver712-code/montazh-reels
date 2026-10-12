@@ -27,6 +27,7 @@ import host
 from common import OUTPUT_DIR, ROOT, WORK_DIR
 from compose import HYPERFRAMES, STUDIO, compose, project_name
 from master import master
+from plan import check as plan_problems
 from verify_page import verify
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -57,7 +58,7 @@ def run_logged(cmd: list, cwd: Path, log: Path) -> int:
         return proc.wait()
 
 
-def render_reel(stem: str, version: str, variant: str | None = None) -> Path:
+def render_reel(stem: str, version: str, variant: str | None = None, need_plan: bool = True) -> Path:
     name = project_name(stem, variant)
     project = STUDIO / name
     page_py = f"work/{stem}/page.{variant}.py" if variant else f"work/{stem}/page.py"
@@ -67,6 +68,14 @@ def render_reel(stem: str, version: str, variant: str | None = None) -> Path:
     if out.exists():
         raise Failed(f"{out.relative_to(ROOT)} уже есть — отданный ролик не перезаписываю, "
                      f"возьми другую версию (--version {next_version(name)})")
+    # сначала план, потом сборка (правило Валеры 13.10.2026): без годного плана ролик не считается
+    if need_plan:
+        problems = plan_problems(stem)
+        if problems:
+            raise Failed("план не готов, рендер не запускаю (сначала план — потом сборка): "
+                         + "; ".join(problems[:6]) + f". Проверка: .venv/bin/python scripts/plan.py {stem} --check")
+    else:
+        print("  · без плана (--no-plan): пересборка ролика, смонтированного до 13.10", flush=True)
     started = time.time()
     print(f"▶ {name} {version}", flush=True)
 
@@ -115,12 +124,14 @@ def main():
     ap.add_argument("stem", help="имя ролика, например IMG_3317")
     ap.add_argument("--version", help="v1, v2… (по умолчанию — следующая свободная в output/)")
     ap.add_argument("--variant", help="стиль варианта для A/B (проект studio/<имя>--<стиль>/)")
+    ap.add_argument("--no-plan", action="store_true",
+                    help="пересобрать ролик, смонтированный до 13.10, без плана (осознанно)")
     args = ap.parse_args()
     version = args.version or next_version(project_name(args.stem, args.variant))
     if not re.fullmatch(r"v\d+", version):
         ap.error("версия пишется как v2")
     try:
-        render_reel(args.stem, version, args.variant)
+        render_reel(args.stem, version, args.variant, need_plan=not args.no_plan)
     except Failed as e:
         print(f"✗ {project_name(args.stem, args.variant)} {version}: {e}", flush=True)
         sys.exit(1)

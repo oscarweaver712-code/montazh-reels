@@ -62,8 +62,10 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 `.venv/bin/python scripts/batch.py` из терминала) ведёт по одному ролику, и у каждого — новая
 сессия. Агент в терминале на «смонтируй новые» сам запустит пачку.
 
-Решения по каждому ролику лежат в `work/<имя>/` (`brief.json`, `edit.json`, `director.json`,
+Решения по каждому ролику лежат в `work/<имя>/` (`brief.json`, `edit.json`, `plan.md`, `director.json`,
 `page.py`, `approved.json`) — их можно поправить словами («убери карточку на 12-й секунде») и пересобрать.
+Сначала план (`plan.md`: мысль, хук, раскадровка с инструментом в каждом ударе), потом графика — без
+годного плана рендер не идёт. Что каким инструментом делать — [docs/АРСЕНАЛ.md](docs/АРСЕНАЛ.md).
 
 ## Студия
 
@@ -120,8 +122,9 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 | Распознавание | `scripts/transcribe.py input/X.MOV` | `work/X.txt`, слова с таймингами |
 | Чистовой дубль | `scripts/prep.py input/X.MOV` | `work/X/aroll.mp4` — подрезка по тишине, цвет, голос (решения в `work/X/edit.json`) |
 | Камера и маска | `scripts/track.py`, `scripts/matte.py --cutout` | слежение за лицом, человек без фона для текста «за спиной» |
+| План | `scripts/plan.py X`, потом `--check` | `work/X/plan.md` — разбор исходника и раскадровка: что и чем в каждом месте |
 | Графика | `work/X/page.py` | `studio/X/index.html` — удары по словам, карточки, субтитры |
-| Проверка страницы | `scripts/verify_page.py X` | за 2 с: ничего не залипнет в рендере, все ассеты на месте |
+| Проверка страницы | `scripts/verify_page.py X` | за 2 с: ничего не залипнет, лицо не закрыто, плашки не висят, ассеты на месте |
 | Готовый ролик | `scripts/render_reel.py X` | `output/X_vN.mp4` — рендер, громкость −14 LUFS, проверка файла |
 
 Пачка роликов идёт через очередь `scripts/jobqueue.py` (`work/_queue/`): строго один тяжёлый
@@ -203,7 +206,7 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 ```
 input/    — сюда сырые видео
 output/   — отсюда готовые ролики (варианты A/B: <имя>--<стиль>_vN.mp4)
-work/     — транскрипты, дубли, решения (brief.json, edit.json, director.json, page.py), очередь
+work/     — транскрипты, дубли, решения (brief.json, edit.json, plan.md, director.json, page.py), очередь
 studio/   — проекты HyperFrames: страница графики и её ассеты (пересобираются из work/)
 presets/  — стили монтажа (styles/), пресет быстрого конвейера, шрифты, звуки
 scripts/  — сам пайплайн и сервер студии
@@ -217,7 +220,7 @@ docs/     — разбор рынка (РЫНОК.md) и замер издерж
 Если что-то менялось в `scripts/`, прогнать самопроверку:
 
 ```bash
-.venv/bin/python scripts/selfcheck.py          # пара минут, 151 проверка
+.venv/bin/python scripts/selfcheck.py          # пара минут, 155 проверок
 .venv/bin/python scripts/selfcheck.py --long   # 200 сегментов, если трогал рендер
 .venv/bin/python scripts/verify_page.py --all  # все страницы графики, если трогал kit/compose
 ```

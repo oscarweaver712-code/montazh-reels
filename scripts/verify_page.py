@@ -43,6 +43,7 @@ from common import ROOT, WORK_DIR
 STUDIO = ROOT / "studio"
 CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell"
 FPS = 30
+HOLD_MAX = 5.0      # с: дольше графика без изменений — динамика проседает (Валера 13.10, IMG_1803)
 
 # Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
 # без него страница падает на первой же строке) и сбор ошибок и предупреждений GSAP.
@@ -320,6 +321,71 @@ CHECK_JS = r"""
       for (const rec of open.values()) if (rec.count >= 2) res.faceHits.push(rec);
     }
 
+    // ---- динамика (Валера 13.10.2026: «плашка про миллион очень долго висела, мы теряли в динамике» —
+    // таблица mille/-one в IMG_1803 v5 висела 13 с, из них 8 с без единого изменения). Графика поверх
+    // и за человеком (#front .g, #behind .g; фоны и вспышка — нет) не стоит без изменений дольше
+    // C.holdMax с подряд. Изменение — элемент сдвинулся, или внутри появилось, ушло, сменило цвет или
+    // текст что-то (строка, слово, подсветка, счётчик). Медленный наезд внутри картинки — не изменение:
+    // глазу он не новость. data-hold="причина" — осознанно долгий показ, отдельным списком.
+    res.holds = []; res.holdsAllowed = [];
+    {
+      const holdMax = C.holdMax || 5;
+      const graphics = [...document.querySelectorAll("#front .g, #behind .g")].filter((el) => el.id !== "flash");
+      const shown = (el) => {
+        let a = 1;
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden") return false;
+          a *= parseFloat(cs.opacity);
+        }
+        return a >= 0.5;
+      };
+      const print = (el) => {
+        const r = el.getBoundingClientRect();
+        const inside = [...el.querySelectorAll("*")].map((n) => {
+          const cs = getComputedStyle(n);
+          return (parseFloat(cs.opacity) >= 0.5 && cs.visibility !== "hidden" ? "1" : "0") + cs.color + cs.backgroundColor;
+        }).join("|");
+        return [Math.round(r.left / 6), Math.round(r.top / 6), Math.round(r.width / 6), Math.round(r.height / 6),
+                getComputedStyle(el).color, (el.textContent || "").trim().slice(0, 200), inside].join("·");
+      };
+      // смена у соседа (ближе 120 px) — смена и для плашки: глаз видит место на экране, а не элемент
+      // (пара карточек «было / стало», подводка над впечатанным словом)
+      const near = (r, q) => Math.max(q.left - r.right, r.left - q.right, q.top - r.bottom, r.top - q.bottom) <= 120;
+      const runs = new Map();                     // элемент → {from, last, sig}
+      const close = (el, rec) => {
+        const hold = rec.last - rec.from;
+        if (hold > holdMax + 1e-6) {
+          const safe = el.closest("[data-hold]");
+          const item = { el: label(el), from: rec.from, to: rec.last, hold, allowed: safe ? safe.getAttribute("data-hold") : null };
+          (item.allowed ? res.holdsAllowed : res.holds).push(item);
+        }
+      };
+      let before = new Map();                     // прошлый замер: элемент → рамка
+      for (let t = 0; t <= duration + 1e-6; t += 0.25) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        const now = new Map(), sigs = new Map(), moved = [];
+        for (const el of graphics) {
+          if (!shown(el)) { if (before.has(el)) moved.push(before.get(el)); continue; }
+          const r = el.getBoundingClientRect();
+          now.set(el, r); sigs.set(el, print(el));
+          const rec = runs.get(el);
+          if (!rec || rec.sig !== sigs.get(el)) moved.push(r);
+        }
+        for (const el of graphics) {
+          const rec = runs.get(el);
+          if (!now.has(el)) { if (rec) { close(el, rec); runs.delete(el); } continue; }
+          const r = now.get(el), sig = sigs.get(el);
+          const touched = moved.some((q) => q !== r && near(r, q));
+          if (rec && rec.sig === sig && !touched) { rec.last = t; continue; }
+          if (rec) close(el, rec);
+          runs.set(el, { from: t, last: t, sig });
+        }
+        before = now;
+      }
+      for (const [el, rec] of runs) close(el, rec);
+    }
+
     document.querySelectorAll(".g").forEach((el) => {
       const i = els.indexOf(el);
       const peak = i < 0 ? parseFloat(getComputedStyle(el).opacity) : Math.max(...real.map((f) => f[i]));
@@ -448,6 +514,7 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     # видео и звук для разбора не нужны — без них страница грузится за доли секунды
     page = re.sub(r'(<(?:video|audio)\b[^>]*?)\s+src="[^"]*"', r"\1", page)
     config = json.dumps({"fps": fps, "errors": [], "warnings": [], "zoneStep": 0.25, "zoneDepth": 8,
+                         "holdMax": HOLD_MAX,
                          "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])],
                          "faces": [list(f) for f in (faces or [])]},
                         ensure_ascii=False)
@@ -550,6 +617,14 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         check(not soft, "фон за спиной не стоит размытым, пока виден (размытие — только в наплыве)", soft)
     elif soft:
         print(f"  · размытый фон на показе: {len(soft)} (при правке ролика — убрать blur с конечного состояния)")
+    holds = [f"{h['el']} висит без изменений {h['hold']:.1f} с ({h['from']:.2f}–{h['to']:.2f} с) — оживи изнутри "
+             f"(строка, подсветка), раздели или убери раньше" for h in res.get("holds", [])]
+    if strict:
+        check(not holds, f"графика не висит без изменений дольше {HOLD_MAX:g} с (динамика)", holds)
+    elif holds:
+        print(f"  · графика висит без изменений дольше {HOLD_MAX:g} с: {len(holds)} (при правке ролика — оживить или убрать раньше)")
+    for h in res.get("holdsAllowed", []):
+        print(f"  · осознанно долгий показ: {h['el']} {h['hold']:.1f} с — {h['allowed']}")
     if zones:
         grey = [f"{g['el']} «{g['text']}» — {g['zone']}, {g['from']:.2f}–{g['last'] + 0.25:.2f} с, глубина {g['depth']} px"
                 for g in res.get("grey", [])]

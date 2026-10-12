@@ -906,6 +906,43 @@ def check_gen_image(report: Report, tmp: Path):
                  "новая" if len(pixel) == 3 and pixel[0] > pixel[2] else "осталась прежняя")
 
 
+def check_plan(report: Report, tmp: Path):
+    """План до сборки (правило Валеры, 13.10.2026: «понимать, что и как будешь делать, и какими
+    инструментами где» — до редактуры). Годный план проходит; пустой раздел, инструмент не из
+    арсенала, плашка, стоящая 7 с, и 10 с без смены на экране — нет. Рендер без годного плана не идёт.
+    """
+    import plan
+
+    print("\nПлан монтажа")
+    saved = plan.WORK_DIR
+    plan.WORK_DIR = tmp / "plans"
+    try:
+        (plan.WORK_DIR / "X").mkdir(parents=True)
+        (plan.WORK_DIR / "X" / "aroll.json").write_text(json.dumps({"duration": 20.0}), encoding="utf-8")
+
+        def problems(rows: list, filled: bool = True) -> list:
+            board = "\n".join(f"| {t} | реплика | что на экране | {tool} | почему | {hold} |" for t, tool, hold in rows)
+            thought = "зритель унесёт одно" if filled else f"{plan.TODO} одной фразой"
+            (plan.WORK_DIR / "X" / "plan.md").write_text(
+                f"# План\n\n## Исходник\n- длина 20 с\n\n## Мысль ролика\n{thought}\n\n## Хук\nвопрос в лоб\n\n"
+                f"## Раскадровка\n| время, с | реплика | что на экране | инструмент | почему он | держится, с |\n"
+                f"|---|---|---|---|---|---|\n{board}\n\n## Звук\nудар на главном\n\n## Риски\nлицо низко\n",
+                encoding="utf-8")
+            return plan.check("X")
+
+        good = problems([("0.5", "слово за спиной + звук", "2"), ("4.0", "панель", "3.5"), ("8.0", "наезд", ""),
+                         ("12.5", "счётчик", "3"), ("16.0", "CTA", "4")])
+        bad = " | ".join(problems([("0.5", "голограмма", "2"), ("4.0", "панель", "7"), ("14.0", "наезд", ""),
+                                   ("17.0", "CTA", "3")], filled=False))
+        caught = {"пустой раздел": "«Мысль ролика» не заполнен" in bad, "чужой инструмент": "голограмма" in bad,
+                  "плашка висит": "держится 7" in bad, "дыра без смены": "4.0–14.0" in bad}
+    finally:
+        plan.WORK_DIR = saved
+    report.check(not good and all(caught.values()),
+                 "план: годный проходит; пустой раздел, чужой инструмент, висящая плашка и дыра без смены — нет",
+                 "; ".join(good) if good else ", ".join(k for k, v in caught.items() if not v) or "все четыре пойманы")
+
+
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
     """Скрипт не называется как модуль стандартной библиотеки.
 
@@ -996,6 +1033,26 @@ def check_grey_zones(report: Report, tmp: Path):
     report.check(set(soft) == {"#bg-soft", "#bg-meant"} and soft["#bg-meant"] and not soft["#bg-soft"],
                  "фон, оставшийся размытым на показе, ловится; наплыв из размытия — нет; data-safe — отдельно",
                  ", ".join(f"{k}{' (осознанно)' if v else ''}" for k, v in sorted(soft.items())) or "ничего не поймано")
+
+    # динамика (Валера 13.10.2026: «плашка про миллион очень долго висела, теряли в динамике»): плашка,
+    # простоявшая 7 с без изменений, ловится; та же, в которой каждые 2 с появляется строка, — нет;
+    # помеченная data-hold — отдельным списком
+    rows = "".join(f'<div id="h-row{i}" style="opacity: 0;">строка {i}</div>' for i in range(4))
+    front4 = (f'        <div id="h-static" class="g doc" style="left: 245px; top: 1250px; width: 590px;">висит</div>\n'
+              f'        <div id="h-live" class="g doc" style="left: 245px; top: 1450px; width: 590px;">{rows}</div>\n'
+              f'        <div id="h-meant" class="g doc" data-hold="формулу надо дочитать" '
+              f'style="left: 245px; top: 1050px; width: 590px;">формула</div>')
+    beats4 = ("".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("h-static", "h-live", "h-meant"))
+              + "".join(f'      tl.set("#h-row{i}", {{ opacity: 1 }}, {0.2 + 2 * i});\n' for i in range(4))
+              + "".join(f'      tl.set("#{i}", {{ opacity: 0 }}, 7.4);\n' for i in ("h-static", "h-live", "h-meant")))
+    (project / "index.html").write_text(build_page("динамика", 8.0, "", front4, beats4, [], [], cta_at=20.0),
+                                        encoding="utf-8")
+    res = run_timeline(project / "index.html")
+    stale = {h["el"] for h in res.get("holds", [])}
+    meant = {h["el"] for h in res.get("holdsAllowed", [])}
+    report.check(stale == {"#h-static"} and meant == {"#h-meant"},
+                 "плашка, висящая без изменений, ловится; живущая (новая строка раз в 2 с) — нет; data-hold — отдельно",
+                 f"висит: {', '.join(sorted(stale)) or 'ничего'}; осознанно: {', '.join(sorted(meant)) or 'ничего'}")
 
 
 def check_page_timeline(report: Report, tmp: Path):
@@ -1213,6 +1270,49 @@ def check_cutout(report: Report, tmp: Path):
     report.check(halo <= 6 and solid_same,
                  "край без ореола старого фона, сплошной человек — байт в байт",
                  f"лишняя яркость края на тёмном фоне {halo:.1f} (без чистки было бы {raw:.0f})")
+
+    # вещь в руке не «паркуется» в пустую комнату (IMG_1803, 12–13.10: микрофон на банке модель порой
+    # уверенно звала фоном, банка стояла на привычном месте — и микрофон попадал в комнату: на месте
+    # вырезался как фон, уходил — оставлял дыру; Валера: «то вырезан, то не вырезан»). Тёмный микрофон
+    # стоит у кисти в 60% кадров выборки, модель уверена, что он фон; в остальных рука с ним в другом месте
+    spot = (xx >= 60) & (xx < 110) & (yy >= 300) & (yy < 360)
+    frames, sure = [], []
+    for i in range(20):
+        parked = i % 5 < 3
+        hand_at = hand if parked else (xx >= 400) & (xx < 455) & (yy >= 600) & (yy < 660)
+        mic_at = spot if parked else (xx >= 420) & (xx < 470) & (yy >= 500) & (yy < 560)
+        shot = folds.copy()
+        shot[body <= 1] = (0.10, 0.10, 0.12)
+        shot[hand_at] = (0.80, 0.60, 0.50)
+        shot[mic_at] = (0.05, 0.05, 0.05)
+        background = np.full((h, w), 0.97, np.float32)
+        background[(body <= 1) | hand_at] = 0.05                       # микрофон модель считает фоном
+        frames.append((shot * 255).astype(np.uint8))
+        sure.append(matte.room_mask(background, hand_at))
+    parked_plate, _ = matte.build_plate(np.stack(frames), np.stack(sure))
+    ghost = parked_plate is not None and bool(
+        ((parked_plate.weight[spot] > 0.5) & (np.abs(parked_plate.image[spot] - folds[spot]).max(axis=1) > 0.1)).any())
+    report.check(parked_plate is not None and not ghost,
+                 "вещь в руке не паркуется в пустую комнату: за кистью комната — из кадров, где руки в другом месте",
+                 "призрак микрофона в комнате" if ghost else "на месте микрофона — занавес или «неизвестно»")
+
+    # кисти — кожа без шеи и мелких пятен; второй взгляд — квадрат у кисти, у края кадра без среза
+    skin, face = np.zeros((h, w), np.float32), np.zeros((h, w), np.float32)
+    face[150:335, 240:360] = 0.9
+    skin[330:400, 270:330] = 0.9                                        # шея касается лица
+    skin[600:680, 0:60] = 0.9                                           # кисть у левого края кадра
+    skin[620:700, 430:490] = 0.9
+    skin[800:803, 300:303] = 0.9                                        # пятнышко — не кисть
+    hands = matte.hands_mask(skin, face)
+    boxes = matte.hand_boxes(hands)
+    left = next((b for b in boxes if b[0] == 0), None)
+    edge_full = left is not None and float(matte.zoom_feather(*left, w, h)[left[2] // 2, 0]) == 1.0
+    inner_fades = left is not None and float(matte.zoom_feather(*left, w, h)[left[2] // 2, -1]) < 0.05
+    covers = left is not None and left[1] < 600 - left[2] * 0.3 and left[1] + left[2] >= 680
+    report.check(bool(hands[640, 30]) and bool(hands[660, 460]) and not hands[360, 300] and not hands[801, 301]
+                 and len(boxes) == 2 and edge_full and inner_fades and covers,
+                 "кисти без шеи; крупный второй взгляд у кисти, у края кадра без прямоугольного среза",
+                 f"квадратов {len(boxes)}, у края кадра вес {'полный' if edge_full else 'гаснет'}")
 
 
 def check_cutout_video(report: Report, tmp: Path):
@@ -2331,6 +2431,7 @@ def main():
         section(report, check_transcript_source, tmp)
         section(report, check_page_timeline, tmp)
         section(report, check_grey_zones, tmp)
+        section(report, check_plan, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)
         section(report, check_grades, tmp)

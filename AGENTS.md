@@ -11,7 +11,7 @@
 ## Перед тем как отдать любое изменение
 
 ```bash
-.venv/bin/python scripts/selfcheck.py          # пара минут, 151 проверка
+.venv/bin/python scripts/selfcheck.py          # пара минут, 155 проверок
 .venv/bin/python scripts/selfcheck.py --long   # 200 сегментов, если трогал рендер
 .venv/bin/python scripts/verify_page.py --all  # страницы графики, если трогал kit, compose или page.py
 ```
@@ -139,7 +139,7 @@ docstring `matte.py`. Закрытое не возвращать без разг
 
 Память Claude (`~/.claude/projects/…`) Codex не видит. Всё, что должен знать любой агент
 команды, — правила автора, решения по роликам, ловушки — живёт в репозитории: в скилле,
-в `work/<имя>/` (edit.json, director.json, brief.json, page.py, approved.json) и в docs/.
+в `work/<имя>/` (edit.json, plan.md, director.json, brief.json, page.py, approved.json) и в docs/.
 
 **Один ролик — одна сессия агента** (правило Валеры, 11.10.2026). Контекст у сессии конечный:
 если монтировать пачку в одном разговоре, каждый следующий ролик выходит хуже. Поэтому на

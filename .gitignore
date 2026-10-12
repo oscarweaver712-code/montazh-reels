@@ -25,6 +25,7 @@ work/*/*
 !work/*/director.json
 !work/*/director.*.json
 !work/*/brief.json
+!work/*/plan.md
 !work/*/approved.json
 !work/*/page.py
 !work/*/page.*.py
