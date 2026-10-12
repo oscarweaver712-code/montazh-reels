@@ -862,7 +862,9 @@ def check_gen_image(report: Report, tmp: Path):
     shutil.copy2(pics["landscape"], old)
     os.utime(old, (time.time() - 3600, time.time() - 3600))       # чужая картинка часовой давности
     started = time.time()
-    shutil.copy2(pics["vertical"], fresh)
+    # copyfile, а не copy2: copy2 переносит время исходника, а его сделали раньше запуска — на медленной
+    # машине (Windows CI 12.10) больше чем за секунду, и «свежая» картинка выходила старой
+    shutil.copyfile(pics["vertical"], fresh)
     out = tmp / "bg.png"
     got = gen_image.collect(out, started, folder)
     stale_out = tmp / "bg_stale.png"
