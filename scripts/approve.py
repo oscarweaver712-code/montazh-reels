@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import OUTPUT_DIR, ROOT, WORK_DIR
+from common import OUTPUT_DIR, ROOT, WORK_DIR, plural
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
 GROUPS = {
@@ -140,7 +140,8 @@ def main():
         done = apply(args.stem, args.file, remove)
     except ValueError as e:
         sys.exit(f"✗ {e}")
-    print(f"\n✓ Апрув записан в work/{args.stem}/approved.json. Удалено {len(done['removed'])} файлов, "
+    print(f"\n✓ Апрув записан в work/{args.stem}/approved.json. "
+          f"Удалено {plural(len(done['removed']), 'файл', 'файла', 'файлов')}, "
           f"освобождено {mb(done['freed'])}.")
 
 

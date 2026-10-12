@@ -22,6 +22,12 @@ done/ или failed/. Пока идёт одна задача, вторая не
 Обработчик на машине один: второй запуск видит замок (work/_queue/runner.lock) и тихо
 выходит. Так студия может «будить» очередь сколько угодно раз, а тяжёлый процесс всё равно
 идёт один. Что выполняется сейчас — work/_queue/current.json (его показывает студия).
+
+Идущую задачу можно остановить: кнопка «Остановить» в студии или `jobqueue.py stop`. Шаг
+гасится со всеми своими процессами, задача падает с пометкой «остановлено вручную», очередь
+идёт дальше. Шаг, который 15 минут не тратит ни процессора, ни вывода, считается зависшим и
+гасится сам: долгий, но работающий шаг (маска часовой лекции, распознавание на процессоре)
+процессор тратит всё время и под это не попадает.
 """
 import argparse
 import json
@@ -29,6 +35,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -42,6 +49,8 @@ from common import ROOT, VENV_PY, WORK_DIR
 QUEUE = WORK_DIR / "_queue"
 LOCK = QUEUE / "runner.lock"
 CURRENT = QUEUE / "current.json"
+STOP = QUEUE / "stop"                    # имя задачи, которую просят остановить
+HANG_SECONDS = 15 * 60                   # столько шаг может не делать ничего, прежде чем его сочтут зависшим
 NAME_RE = re.compile(r"\d\d-[\w.\-]+")
 SUFFIXES = (".json",) if host.IS_WINDOWS else (".json", ".sh")
 
@@ -93,14 +102,116 @@ def program(word: str) -> str:
     return host.tool(word)
 
 
+def request_stop(name: str, queue: Path | None = None) -> None:
+    """Попросить обработчик остановить задачу (её гасит сам обработчик: процессы — его)."""
+    (queue or QUEUE).mkdir(parents=True, exist_ok=True)
+    ((queue or QUEUE) / "stop").write_text(name, encoding="utf-8")
+
+
+def stop_requested(name: str) -> bool:
+    try:
+        wanted = STOP.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    if wanted != name:
+        return False
+    STOP.unlink(missing_ok=True)
+    return True
+
+
+def tree_cpu(pid: int) -> float | None:
+    """Процессорное время шага со всеми потомками, с. None — psutil нет, зависание не распознать."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    try:
+        root = psutil.Process(pid)
+        tree = [root, *root.children(recursive=True)]
+    except psutil.Error:
+        return 0.0
+    total = 0.0
+    for proc in tree:
+        try:
+            t = proc.cpu_times()
+            # children_* — уже закончившиеся дети (на Mac): иначе их время пропадало бы из суммы
+            total += t.user + t.system + getattr(t, "children_user", 0.0) + getattr(t, "children_system", 0.0)
+        except psutil.Error:
+            pass
+    return total
+
+
+def stop_tree(proc: subprocess.Popen) -> None:
+    """Погасить шаг со всеми потомками: сначала по-хорошему, потом наверняка.
+
+    На Mac — SIGINT каждому процессу дерева: питон-скрипты успевают убрать временные файлы в
+    finally (инвариант 5), ffmpeg дописывает и выходит. Кто не ушёл за 10 с — SIGKILL; потомки
+    берутся из дерева, а не из группы, — браузер рендера живёт в своей. На Windows мягкого
+    сигнала чужому процессу нет — дерево гасит taskkill.
+    """
+    if host.IS_WINDOWS:
+        host.kill_tree(proc.pid)
+    else:
+        try:
+            import psutil
+            tree = [psutil.Process(proc.pid), *psutil.Process(proc.pid).children(recursive=True)]
+        except Exception:
+            tree = []
+        for each in tree:
+            try:
+                each.send_signal(signal.SIGINT)
+            except Exception:
+                pass
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        for each in tree:
+            try:
+                each.kill()                 # psutil сверяет время запуска: чужой процесс не заденет
+            except Exception:
+                pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def run_step(argv: list, log, name: str, hang: float) -> int:
+    """Один шаг: ждёт конца, кнопки «Остановить» или зависания (ни процессора, ни вывода)."""
+    log.flush()
+    proc = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, env=host.utf8_env())
+    cpu, size, busy = tree_cpu(proc.pid), os.fstat(log.fileno()).st_size, time.time()
+    while True:
+        try:
+            return proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        if stop_requested(name):
+            stop_tree(proc)
+            log.write("\n✗ остановлено вручную — кнопкой «Остановить» в студии или jobqueue.py stop\n")
+            return 130
+        now_cpu, now_size = tree_cpu(proc.pid), os.fstat(log.fileno()).st_size
+        if now_cpu is None:
+            continue                                  # без psutil остаётся только кнопка
+        if abs(now_cpu - cpu) >= 1.0 or now_size != size:
+            cpu, size, busy = now_cpu, now_size, time.time()
+        elif time.time() - busy > hang:
+            stop_tree(proc)
+            log.write(f"\n✗ шаг {hang / 60:g} мин ничего не делал — ни процессора, ни вывода: похоже, завис. "
+                      "Остановлен, очередь идёт дальше.\n")
+            return 124
+
+
 def run_job(job: Path, log) -> int:
     """Выполняет задачу; код возврата первого упавшего шага или 0."""
     if job.suffix == ".sh":
-        return subprocess.run(["/bin/bash", str(job)], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                              env=host.utf8_env()).returncode
+        return run_step(["/bin/bash", str(job)], log, job.stem, HANG_SECONDS)
     try:
         spec = json.loads(job.read_text(encoding="utf-8"))
         steps = [shlex.split(s) if isinstance(s, str) else list(s) for s in spec["steps"]]
+        hang = float(spec.get("hang_minutes") or HANG_SECONDS / 60) * 60
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         log.write(f"✗ задача {job.name} описана с ошибкой: {e}\n")
         return 2
@@ -110,8 +221,7 @@ def run_job(job: Path, log) -> int:
             log.write(f"$ {shlex.join(step)}\n")
             log.flush()
             try:
-                code = subprocess.run([program(step[0]), *step[1:]], cwd=ROOT, stdout=log,
-                                      stderr=subprocess.STDOUT, env=host.utf8_env()).returncode
+                code = run_step([program(step[0]), *step[1:]], log, job.stem, hang)
             except OSError as e:
                 log.write(f"✗ не запустилось «{step[0]}»: {e}\n")
                 code = 127
@@ -200,6 +310,11 @@ def serve(idle: float) -> None:
             continue
 
         name = job.stem
+        try:                                   # просьба остановить ту задачу, что уже кончилась
+            if STOP.read_text(encoding="utf-8").strip() != name:
+                STOP.unlink(missing_ok=True)
+        except OSError:
+            pass
         running = QUEUE / "logs" / f"{name}.log"
         started = time.time()
         print(f"▶ {name}", flush=True)
@@ -228,9 +343,18 @@ def main():
     add.add_argument("name", help="<две цифры>-<имя>: 05-render-IMG_3317, 20-prep-IMG_3317")
     add.add_argument("steps", nargs="+", help="шаги — каждый одной строкой: \"python scripts/prep.py input/X.MOV\"")
     add.add_argument("--no-wake", action="store_true", help="не будить обработчик")
+    sub.add_parser("stop", help="остановить задачу, которая выполняется сейчас")
     ap.add_argument("--idle", type=float, default=900, help="выйти после стольких секунд пустой очереди")
     args = ap.parse_args()
 
+    if args.cmd == "stop":
+        try:
+            name = json.loads(CURRENT.read_text(encoding="utf-8"))["job"]
+        except (OSError, ValueError, KeyError):
+            sys.exit("сейчас ничего не выполняется")
+        request_stop(name)
+        print(f"✓ попросил остановить {name}: задача упадёт с пометкой «остановлено вручную», очередь пойдёт дальше")
+        return
     if args.cmd == "add":
         try:
             path = write_job(args.name, [shlex.split(s) for s in args.steps])

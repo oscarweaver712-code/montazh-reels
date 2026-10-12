@@ -4,7 +4,7 @@
 cd "$(dirname "$0")" || exit 1
 
 if [ ! -x .venv/bin/python ]; then
-  echo "Окружение не найдено — сначала двойной клик по Установка.command"
+  echo "Окружение не найдено — сначала двойной клик по «1 Установка — Mac.command»"
   read -r -p "Enter чтобы закрыть"
   exit 1
 fi

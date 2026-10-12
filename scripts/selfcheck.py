@@ -343,6 +343,43 @@ def band_luma(path: Path, top: int, height: int) -> float:
     return sum(values) / len(values) if values else float("nan")
 
 
+def check_hdr(report: Report, preset: dict, tmp: Path):
+    """HDR с айфона (HLG, BT.2020) выходит в обычном цвете, а не бледной пастелью.
+
+    12.10.2026 пришёл первый HDR-дубль (IMG_1803, 4K HLG). Перевода в конвейере не было:
+    ffmpeg принимал HLG за обычный BT.709 — лицо бледно-серое, цвета выцветшие, и заметили бы
+    это уже после публикации. Проверка: цветные полосы размечаются в HLG так, как пишет айфон
+    (обычный белый — 203 нита), и проходят настоящую нарезку. Цвета должны вернуться: замер
+    12.10 — с переводом насыщенность 73% от исходной и отклонение 35, без перевода 43% и 72.
+    """
+    from render import render
+
+    print("\nHDR-исходник")
+    sdr, hlg, out = tmp / "hdr_sdr.mp4", tmp / "hdr_hlg.mov", tmp / "hdr_out.mp4"
+    make_source(sdr, 1.0, 30)
+    subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", str(sdr), "-vf",
+                    "zscale=tin=bt709:min=bt709:pin=bt709:rin=tv:t=arib-std-b67:m=bt2020nc:p=bt2020:r=tv:npl=203,"
+                    "format=yuv422p10le", "-c:v", "prores_ks", "-profile:v", "3",
+                    "-color_trc", "arib-std-b67", "-color_primaries", "bt2020", "-colorspace", "bt2020nc",
+                    "-color_range", "tv", "-c:a", "copy", str(hlg)], check=True, capture_output=True)
+    # грейд стиля выключен: сравнивается только перевод цвета
+    render(hlg, out, snap_segments([(0.0, 0.9)], 30), {**preset, "look": {"enabled": False}})
+
+    def rgb(path: Path) -> np.ndarray:
+        raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-ss", "0.5", "-i", str(path), "-frames:v", "1",
+                              "-vf", "scale=270:480", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                             capture_output=True, check=True).stdout
+        return np.frombuffer(raw, np.uint8).reshape(480, 270, 3).astype(float)
+
+    original, result = rgb(sdr), rgb(out)
+    saturation = (result.max(axis=2) - result.min(axis=2)).mean() / (original.max(axis=2) - original.min(axis=2)).mean()
+    deviation = np.abs(original - result).mean()
+    tags = probe_value(out, "stream=color_transfer,color_primaries", "v:0")
+    report.check(saturation >= 0.6 and deviation < 50 and tags == "bt709,bt709",
+                 "HDR с айфона (HLG) выходит в обычном цвете, а не бледной пастелью",
+                 f"насыщенность {saturation:.0%} от исходной, отклонение {deviation:.0f}, цвет на выходе {tags}")
+
+
 def check_look(report: Report, preset: dict, tmp: Path):
     """Цвет: диапазон приводится к стандартному, яркость не ломает чёрное и белое.
 
@@ -1680,6 +1717,77 @@ def check_studio(report: Report, tmp: Path):
     check_studio_failures(report, tmp)
 
 
+def check_queue_control(report: Report, tmp: Path):
+    """Идущую задачу можно остановить, а зависшая не держит очередь вечно.
+
+    Аудит 11.10.2026: у очереди не было ни кнопки «Остановить», ни тайм-аута — зависший шаг
+    держал очередь, пока его не убьют руками. Теперь кнопка гасит шаг со всеми потомками, а шаг
+    без процессора и вывода гасится как зависший. Шаг, который молча считает (маска, речь на
+    процессоре), зависшим не считается — иначе очередь убивала бы честную работу.
+    """
+    import jobqueue
+    import psutil
+
+    print("\nОчередь: остановка и зависания")
+    marker = f"selfcheck-queue-{os.getpid()}"
+    saved = (jobqueue.STOP, jobqueue.HANG_SECONDS)
+    jobqueue.STOP = tmp / "stop"
+
+    def leftovers() -> list:
+        found = []
+        for proc in psutil.process_iter(["cmdline"]):
+            try:
+                if marker in " ".join(proc.info["cmdline"] or []):
+                    found.append(proc)
+            except psutil.Error:
+                pass
+        return found
+
+    def run(name: str, code: str, hang: float, stop_after: float | None = None) -> tuple:
+        job = tmp / f"{name}.json"
+        job.write_text(json.dumps({"steps": [["python", "-c", code, marker]]}), encoding="utf-8")
+        jobqueue.HANG_SECONDS = hang
+        log_path, result = tmp / f"{name}.log", {}
+
+        def go():
+            with open(log_path, "w", encoding="utf-8") as log:
+                result["code"] = jobqueue.run_job(job, log)
+
+        worker = threading.Thread(target=go, daemon=True)
+        started = time.time()
+        worker.start()
+        if stop_after is not None:
+            time.sleep(stop_after)
+            jobqueue.request_stop(job.stem, queue=tmp)
+        worker.join(timeout=45)
+        left = leftovers()
+        for proc in left:                     # чтобы проверка не оставила после себя процессов
+            try:
+                proc.kill()
+            except psutil.Error:
+                pass
+        return result.get("code"), time.time() - started, log_path.read_text(encoding="utf-8"), len(left)
+
+    sleeper = "import time; time.sleep(60)"
+    nested = ("import subprocess, sys; "
+              "subprocess.run([sys.executable, '-c', 'import time; time.sleep(60)', sys.argv[1]])")
+    busy = "import time\nt = time.time()\nwhile time.time() - t < 6:\n    pass"
+    try:
+        code, spent, log, left = run("10-stop", nested, hang=600, stop_after=2)
+        report.check(code == 130 and "остановлено вручную" in log and left == 0,
+                     "«Остановить» гасит задачу со всеми её процессами, задача падает с причиной",
+                     f"код {code}, {spent:.0f} с, процессов осталось {left}")
+        code, spent, log, left = run("10-hang", sleeper, hang=3)
+        report.check(code == 124 and "завис" in log and left == 0,
+                     "шаг без процессора и вывода гасится как зависший, очередь идёт дальше",
+                     f"код {code}, {spent:.0f} с")
+        code, spent, log, left = run("10-busy", busy, hang=3)
+        report.check(code == 0, "шаг, который молча считает, зависшим не считается",
+                     f"код {code}, {spent:.0f} с молча при пороге 3 с")
+    finally:
+        jobqueue.STOP, jobqueue.HANG_SECONDS = saved
+
+
 def check_studio_failures(report: Report, tmp: Path):
     """Сбой в одном месте студии не кладёт её целиком и не прячет причину.
 
@@ -1813,9 +1921,11 @@ def main():
         section(report, check_formats, tmp)
         section(report, check_grades, tmp)
         section(report, check_studio, tmp)
+        section(report, check_queue_control, tmp)
         section(report, check_web_import, tmp)
         section(report, check_cut_keeps_speech, preset, tmp)
         section(report, check_voice, preset, tmp)
+        section(report, check_hdr, preset, tmp)
         section(report, check_look, preset, tmp)
         section(report, check_face_memory, tmp)
         section(report, check_matte_memory, tmp)

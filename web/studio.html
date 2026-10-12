@@ -854,7 +854,7 @@ $("batch-start").addEventListener("click", async () => {
 function renderQueue(q) {
   const cur = q.current;
   $("q-state").className = "job" + (cur ? " cur" : "");
-  $("q-state").innerHTML = cur ? `<span class="dot rec"></span>${esc(cur.job)} · ${tc(cur.elapsed)}`
+  $("q-state").innerHTML = cur ? `<span class="dot rec"></span>${esc(cur.job)} · ${tc(cur.elapsed)} <button type="button" class="icon" id="stop-job" data-job="${esc(cur.job)}" title="Погасить задачу со всеми её процессами: она упадёт, очередь пойдёт дальше">Остановить</button>`
     : q.pending.length ? (q.alive ? "ждёт своей очереди" : `<button type="button" class="icon" id="wake">Запустить очередь</button>`) : "пусто — машина свободна";
   $("q-line").textContent = cur && cur.log.length ? cur.log[cur.log.length - 1] : "";
   $("q-pending").innerHTML = q.pending.map((p) => `<span class="pend">${esc(p)}<button type="button" data-cancel="${esc(p)}" aria-label="Убрать ${esc(p)} из очереди">×</button></span>`).join(" ");
@@ -868,6 +868,8 @@ document.querySelector("footer.queue").addEventListener("click", async (e) => {
   try {
     if (c) renderQueue(await api(`/api/studio/queue/cancel/${encodeURIComponent(c.dataset.cancel)}`, { method: "POST" }));
     if (e.target.id === "wake") renderQueue(await api("/api/studio/queue/wake", { method: "POST" }));
+    if (e.target.id === "stop-job" && confirm(`Остановить «${e.target.dataset.job}»? Задача упадёт, очередь пойдёт дальше.`))
+      renderQueue(await api("/api/studio/queue/stop", { method: "POST" }));
   } catch (err) { say("say", err.message, true); }
 });
 

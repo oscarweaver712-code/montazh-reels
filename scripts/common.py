@@ -90,7 +90,22 @@ def probe(video: Path) -> dict:
         "fps": fps,
         "vertical": height >= width,
         "has_audio": any(s["codec_type"] == "audio" for s in data["streams"]),
+        # цвет: HDR с айфона (HLG, BT.2020) надо переводить в обычный — look.hdr_to_sdr
+        "transfer": vstream.get("color_transfer") or "",
+        "primaries": vstream.get("color_primaries") or "",
+        "matrix": vstream.get("color_space") or "",
+        "range": vstream.get("color_range") or "",
     }
+
+
+def decode_threads(info: dict) -> list:
+    """Потоки декодера для исходников больше 1080p (4K HEVC с айфона) — опции перед -i.
+
+    Декодер держит в работе по кадру на поток, а кадр 4K в 10 битах весит 25 МБ: на 10 ядрах
+    кусок занимал 822 МБ. Четыре потока — 476 МБ при +19% времени (IMG_1803, 12.10.2026).
+    Обычным 1080p-дублям это не нужно, их команды не меняются.
+    """
+    return ["-threads", "4"] if max(info["width"], info["height"]) > 1920 else []
 
 
 def detect_silence(video: Path, threshold_db: float = -35.0,

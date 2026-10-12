@@ -56,7 +56,7 @@ def start_server() -> bool:
     python = host.venv_python(ROOT)
     if not python.exists():
         print("Студия не запущена: нет окружения .venv — сначала установка "
-              f"({'Установка.bat' if host.IS_WINDOWS else 'Установка.command'})")
+              f"(«{'1 Установка — Windows.bat' if host.IS_WINDOWS else '1 Установка — Mac.command'}»)")
         return False
     from brain import clean_env
     LOG.parent.mkdir(parents=True, exist_ok=True)

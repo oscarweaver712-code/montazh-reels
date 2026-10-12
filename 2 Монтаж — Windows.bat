@@ -4,7 +4,7 @@ rem Двойной клик — открывается студия монтаж
 rem Остановить сервер: .venv\Scripts\python.exe scripts\studio_up.py --stop
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" (
-  echo Окружение не найдено — сначала двойной клик по Установка.bat
+  echo Окружение не найдено — сначала двойной клик по «1 Установка — Windows.bat»
   pause
   exit /b 1
 )

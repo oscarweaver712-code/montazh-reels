@@ -33,6 +33,7 @@ from common import (FONT_DIR, INPUT_DIR, OUTPUT_DIR, PRESET_DIR, ROOT,
 import host
 import jobqueue
 import studio_api
+from look import hdr_to_sdr
 
 WEB_DIR = ROOT / "web"
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
@@ -425,9 +426,10 @@ def frame(name: str, at: float = 0.35, folder: str = "input"):
     if not shot.exists():
         info = probe_or_none(video)
         seconds = info["duration"] * at if info else 1.0
+        hdr = hdr_to_sdr(info) if info else ""          # HDR с айфона без перевода — серое превью
         subprocess.run([
             ffmpeg_bin(), "-y", "-loglevel", "error", "-ss", f"{seconds:.2f}",
-            "-i", str(video), "-frames:v", "1", "-vf", "scale=540:-2",
+            "-i", str(video), "-frames:v", "1", "-vf", "scale=540:-2" + (f",{hdr}" if hdr else ""),
             "-q:v", "4", str(shot),
         ], capture_output=True)
 

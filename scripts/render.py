@@ -22,8 +22,8 @@ import subprocess
 from pathlib import Path
 
 import host
-from common import FONT_DIR, WORK_DIR, ffmpeg_bin, plural, snap_segments
-from look import look_filter
+from common import FONT_DIR, WORK_DIR, decode_threads, ffmpeg_bin, plural, probe, snap_segments
+from look import hdr_to_sdr, look_filter
 
 FADE = 0.012
 
@@ -222,6 +222,13 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
     # цвет крутится уже после приведения к 16–235: кривая яркости рассчитана на этот диапазон
     grade = look_filter(look)
     grade = f",{grade}" if grade else ""
+    # HDR с айфона — в обычный цвет до грейда; для обычного исходника команда та же, что была
+    try:
+        info = probe(video)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg не читает исходник {video}:\n{(e.stderr or '').strip()[-400:]}") from None
+    hdr = hdr_to_sdr(info)
+    hdr = f"{hdr}," if hdr else ""
 
     seg_files = []
     for i, ((start, end), zoom) in enumerate(zip(segments, zooms)):
@@ -235,11 +242,12 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
         cmd = [
             ffmpeg_bin(), "-y", "-loglevel", "error",
             # запас на входе, чтобы trim точно нашёл нужные кадры; читается всё равно только он
+            *decode_threads(info),
             "-ss", f"{start:.6f}", "-t", f"{duration + 1.0:.6f}", "-i", src,
             "-filter_complex",
             (f"[0:v]trim=0:{duration:.6f},setpts=PTS-STARTPTS,"
              f"scale={zw}:{zh}:force_original_aspect_ratio=increase:out_range=tv,"
-             f"format=yuv420p,crop={width}:{height},setsar=1{grade}[v];"
+             f"{hdr}format=yuv420p,crop={width}:{height},setsar=1{grade}[v];"
              f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,"
              f"afade=t=in:st=0:d={FADE},afade=t=out:st={out_at:.3f}:d={FADE}[a]"),
             "-map", "[v]", "-map", "[a]",

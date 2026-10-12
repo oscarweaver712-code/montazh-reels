@@ -5,6 +5,12 @@
 к torch 2.1.1, под который нет колёс для Python 3.12 основного окружения.
 
   .venv-audio/bin/python scripts/enhance_audio.py вход.wav выход.wav [--denoise-only]
+
+Это ручной инструмент, конвейер его не вызывает. Окружение .venv-audio (2,4 ГБ) удалено 12.10.2026
+за ненадобностью; собрать заново (Mac, было так: Python 3.11, torch 2.1.1, deepspeed 0.12.4):
+
+  uv venv .venv-audio --python 3.11
+  uv pip install --python .venv-audio/bin/python resemble-enhance==0.0.1 torch==2.1.1 torchaudio==2.1.1
 """
 import argparse
 import os

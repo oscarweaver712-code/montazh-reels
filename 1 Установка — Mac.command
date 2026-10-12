@@ -1,5 +1,5 @@
 #!/bin/bash
-# Установка на новом Mac. Двойной клик в Finder или ./Установка.command в терминале.
+# Установка на новом Mac. Двойной клик в Finder или ./"1 Установка — Mac.command" в терминале.
 # Повторный запуск безопасен: ставится только то, чего не хватает. В конце — самопроверка.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -35,6 +35,11 @@ if ! grep -qE '^\s*\S+\s+ass\s' <<<"$filters"; then
   fail "В PATH ffmpeg без libass (наверное, стоит и обычный ffmpeg). Выполни:
   brew unlink ffmpeg && brew link --overwrite ffmpeg-full — и запусти установку снова."
 fi
+# HDR с айфона переводится в обычный цвет фильтром zscale (libzimg) — в урезанных сборках его нет
+if ! grep -qE '^\s*\S+\s+zscale\s' <<<"$filters"; then
+  fail "В PATH ffmpeg без zscale — HDR-видео с айфона выйдут бледными. Выполни:
+  brew unlink ffmpeg && brew link --overwrite ffmpeg-full — и запусти установку снова."
+fi
 # сборка ролика читает граф из файла через «-/filter_complex» — так умеет ffmpeg 7.0 и новее
 major="$(ffmpeg -version 2>/dev/null | sed -n '1s/^ffmpeg version \([0-9][0-9]*\)\..*/\1/p')"
 if [ -n "$major" ] && [ "$major" -lt 7 ]; then
@@ -65,6 +70,6 @@ ls presets/sfx/*.mp3 >/dev/null 2>&1 || fail "Нет звуков в presets/sfx
 step "Самопроверка (около минуты: честно кодирует видео)"
 .venv/bin/python scripts/selfcheck.py || fail "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."
 
-printf '\n✓ Готово. Открой папку в терминале и запусти claude или codex — студия откроется в браузере сама.\n  Без агента: двойной клик по Монтаж.command. Подробности в README.md\n'
+printf '\n✓ Готово. Открой папку в терминале и запусти claude или codex — студия откроется в браузере сама.\n  Без агента: двойной клик по «2 Монтаж — Mac.command». Подробности в README.md\n'
 [ -t 0 ] && read -r -p "Enter — закрыть" _
 exit 0

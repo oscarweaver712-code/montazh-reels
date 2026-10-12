@@ -266,6 +266,16 @@ def cancel_job(job: str):
     return queue_state()
 
 
+@router.post("/api/studio/queue/stop")
+def stop_job():
+    """Остановить идущую задачу: её гасит обработчик со всеми процессами, задача падает, очередь идёт дальше."""
+    current = queue_state().get("current")
+    if not current:
+        raise HTTPException(409, "сейчас ничего не выполняется")
+    jobqueue.request_stop(current["job"], queue=QUEUE)
+    return queue_state()
+
+
 @router.get("/api/studio/log/{job}")
 def job_log(job: str):
     if not re.fullmatch(r"[\w.\-]+", job, re.UNICODE):

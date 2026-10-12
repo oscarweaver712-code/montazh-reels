@@ -1,4 +1,4 @@
-﻿# Установка на Windows 10/11. Запускается из Установка.bat (двойной клик).
+﻿# Установка на Windows 10/11. Запускается из «1 Установка — Windows.bat» (двойной клик).
 # Повторный запуск безопасен: ставится только то, чего не хватает. В конце — самопроверка.
 # Файл сохранён в UTF-8 с BOM: иначе Windows PowerShell 5 прочтёт кириллицу как кракозябры.
 $ErrorActionPreference = "Stop"
@@ -37,6 +37,10 @@ foreach ($command in $missing) {
 $filters = (& ffmpeg -hide_banner -filters) -join "`n"
 if ($filters -notmatch "(?m)^\s*\S+\s+ass\s") {
   Fail "ffmpeg в PATH собран без libass. Нужна полная сборка: winget install Gyan.FFmpeg — и запусти установку снова."
+}
+# HDR с айфона переводится в обычный цвет фильтром zscale (libzimg)
+if ($filters -notmatch "(?m)^\s*\S+\s+zscale\s") {
+  Fail "ffmpeg в PATH собран без zscale — HDR-видео с айфона выйдут бледными. Нужна полная сборка: winget install Gyan.FFmpeg."
 }
 # сборка ролика читает граф из файла через «-/filter_complex» — так умеет ffmpeg 7.0 и новее
 $ffmpegVersion = (& ffmpeg -version | Select-Object -First 1)
@@ -79,5 +83,5 @@ Check "Самопроверка не прошла — пришли её выво
 
 Write-Host ""
 Write-Host "✓ Готово. Открой папку в терминале и запусти claude или codex — студия откроется в браузере сама."
-Write-Host "  Без агента: двойной клик по Монтаж.bat. Подробности в README.md"
+Write-Host "  Без агента: двойной клик по «2 Монтаж — Windows.bat». Подробности в README.md"
 exit 0

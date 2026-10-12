@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import FONT_DIR, WORK_DIR, ffmpeg_bin
+from common import FONT_DIR, WORK_DIR, ffmpeg_bin, probe
 
 # Границы стандартного диапазона яркости в 8 битах
 BLACK, WHITE = 16, 235
@@ -57,6 +57,29 @@ def brightness_gamma(brightness: float) -> float:
 def range_filter() -> str:
     """Любой исходник → стандартный диапазон 16–235, 8 бит 4:2:0."""
     return "scale=out_range=tv,format=yuv420p"
+
+
+# HDR с айфона пишется в HLG (у других камер бывает PQ) и в цветах BT.2020. Без перевода ffmpeg
+# принимает такой кадр за обычный BT.709: лицо бледно-серое, цвета выцветшие (IMG_1803, 12.10.2026).
+HDR_TRANSFERS = ("arib-std-b67", "smpte2084")
+
+
+def hdr_to_sdr(info: dict) -> str:
+    """Перевод HDR-исходника в обычный цвет BT.709, 8 бит, 16–235. Пустая строка — исходник обычный.
+
+    Тон сжимает hable при npl=100 без обесцвечивания. Выбрано глазами на IMG_1803 против прошлых
+    дублей той же студии: кожа естественная, тени глубокие; npl=203 темнит лицо, mobius и clip
+    желтят кожу и выбивают света. Ставится после уменьшения кадра — в 4K перевод в плавающей
+    точке медленный и тяжёлый по памяти; масштаб в кривой HLG так же честен, как в обычной.
+    """
+    transfer = info.get("transfer")
+    if transfer not in HDR_TRANSFERS:
+        return ""
+    matrix = info.get("matrix") if info.get("matrix") in ("bt2020nc", "bt2020c") else "bt2020nc"
+    rng = info.get("range") if info.get("range") in ("tv", "pc") else "tv"
+    return (f"zscale=tin={transfer}:min={matrix}:pin=bt2020:rin={rng}:t=linear:npl=100,"
+            "format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
 
 
 def look_filter(look: dict | None) -> str:
@@ -111,13 +134,14 @@ def strip(video: Path, moments: list, values: list, out: Path) -> Path:
         font.write_bytes((FONT_DIR / "Montserrat-ExtraBold.ttf").read_bytes())
 
     n_cols = len(values)
+    hdr = hdr_to_sdr(probe(video))
     branches, labels = [], []
     for r in range(len(moments)):
         branches.append(f"[{r}:v]split={n_cols}" + "".join(f"[s{r}_{c}]" for c in range(n_cols)))
         for c, value in enumerate(values):
             chain = ",".join(part for part in (
                 "scale=360:640:force_original_aspect_ratio=increase:out_range=tv",
-                "format=yuv420p", "crop=360:640",
+                hdr, "format=yuv420p", "crop=360:640",
                 look_filter({"brightness": value}),
                 f"drawtext=fontfile=fonts/{font.name}:text='{value:+g}':x=16:y=16"
                 ":fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=8",
