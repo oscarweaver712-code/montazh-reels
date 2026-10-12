@@ -7,6 +7,9 @@
 длинная шкала: биллион = миллион миллионов = 10¹², в 1000 раз больше. Официально Британия
 перешла на короткую шкалу в 1974 году (заявление премьера Г. Вильсона в парламенте).
 
+v6 (13.10.2026): плашка про миллион — двумя показами: уходит на «как у нас -ище», возвращается на
+«мили плюс ван, миллион» с итогом; субтитры между показами снова видны (Валера: «очень долго висела,
+теряли в динамике»). Вырезка — комната без «припаркованной» банки и второй взгляд у кистей (микрофон).
 v5 (12.10.2026): карточки на груди — ниже подбородка в каждом кадре (лицо опускается до y≈1236,
 когда Валера наклоняется к камере), заезд под ник Instagram — осознанный (data-safe): лицо важнее.
 Вырезка — по пустой комнате из дубля (matte.py): банка и рука целые, без серой дымки по краю. Фоны
@@ -57,9 +60,9 @@ css = '''      .flag { display: inline-block; width: 66px; height: 44px; margin-
                font-variant-numeric: lining-nums; }
       .bil-s { margin-top: 10px; font-family: "Manrope"; font-weight: 800; font-size: 18px; color: rgba(242,235,221,0.6); }
       /* карточка mille + -one = milione: две строки в полосе 590 */
-      #d-it .it-row { flex-wrap: wrap; gap: 6px 34px; }
-      #d-it .it-w { font-size: 74px; }
-      #it-c { flex-basis: 100%; }
+      #d-it .it-row, #d-it2 .it-row { flex-wrap: wrap; gap: 6px 34px; }
+      #d-it .it-w, #d-it2 .it-w { font-size: 74px; }
+      #it-c2 { flex-basis: 100%; }
       /* портрет Маска — уже, чтобы не наезжал на голову и не уходил под обрезку Instagram */
       #c-musk { left: 722px; top: 270px; width: 250px; padding: 12px 12px 10px; }
       #c-musk .ph, #c-musk img { width: 226px; height: 250px; }
@@ -99,9 +102,17 @@ italy = ('        <div id="d-it" class="g doc" data-safe="лицо важнее 
          '          <div class="it-row">\n'
          '            <div id="it-a" class="it-col"><div class="it-w">mille</div><div class="it-l">тысяча</div></div>\n'
          '            <div id="it-b" class="it-col"><div class="it-w">+ -one</div><div class="it-l">большой</div></div>\n'
-         '            <div id="it-c" class="it-col"><div class="it-w" style="color: var(--red);">= milione</div>'
-         '<div class="it-l">большая тысяча</div></div>\n'
          '          </div>\n        </div>')
+# Вторая карточка — на «мили плюс ван, миллион»: обе части уже стоят, итог выходит на «миллион».
+# Первая уходит на «как у нас -ище» (там над головой «-ИЩЕ»): одна плашка висела 13 с, из них 8 без
+# изменений — Валера 13.10: «очень долго висела, теряли в динамике».
+italy2 = ('        <div id="d-it2" class="g doc" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="left: 245px; top: 1260px; width: 590px; padding: 20px 16px 16px;">\n'
+          '          <div class="it-row">\n'
+          '            <div class="it-col" style="opacity: 1;"><div class="it-w">mille</div><div class="it-l">тысяча</div></div>\n'
+          '            <div class="it-col" style="opacity: 1;"><div class="it-w">+ -one</div><div class="it-l">большой</div></div>\n'
+          '            <div id="it-c2" class="it-col"><div class="it-w" style="color: var(--red);">= milione</div>'
+          '<div class="it-l">большая тысяча</div></div>\n'
+          '          </div>\n        </div>')
 ladder = ('        <div id="d-lad" class="g panel" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="' + PANEL + ' top: 1225px;">\n'
           '          <div id="l1" class="lad-row"><span class="lad-n">10 000</span><span class="lad-w">тьма</span></div>\n'
           '          <div id="l2" class="lad-row"><span class="lad-n">100 000</span><span class="lad-w">легион</span></div>\n'
@@ -137,6 +148,7 @@ front = "\n".join([
     '        <div id="st-it" class="g sticker" style="left: 330px; top: 290px; font-size: 56px; white-space: nowrap;">'
     '<span class="flag"></span>для итальянцев</div>',
     italy,
+    italy2,
     '        <div id="st-rus" class="g sticker" style="left: 310px; top: 290px; font-size: 56px; white-space: nowrap;">а на Руси?</div>',
     doc_img("d-cyr", "cyr_numerals.jpg", "старинный счёт: цифры-буквы", left=245, top=1180, width=590,
             height=230, position="50% 100%").replace('class="g doc"', 'class="g doc" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)"', 1),
@@ -165,12 +177,16 @@ beats = f'''
       // ---------- Италия: mille + -one = milione ----------
       enter("#st-it", {t(2.86)}, {{ fromScale: 0.6, rot: -4 }});
       leave("#st-it", {t(4.50)}, {{ y: -30, rot: -10 }});
-      doc("#d-it", {t(4.70)}, {t(17.80)}, {{ rot: -1 }});
+      doc("#d-it", {t(4.70)}, {t(12.25)}, {{ rot: -1 }});
       enter("#it-a", {t(4.80)}, {{ fromScale: 1.4, dur: 0.18, blur: 6 }});
       enter("#it-b", {t(8.78)}, {{ fromScale: 1.4, dur: 0.18, blur: 6 }});
       tl.to("#it-b", {{ scale: 1.15, duration: 0.25, ease: "back.out(2)" }}, {t(10.02)});
       tl.to("#it-b", {{ scale: 1, duration: 0.3, ease: "power2.out" }}, {t(10.60)});
-      enter("#it-c", {t(17.02)}, {{ fromScale: 1.4, dur: 0.18, blur: 6 }});
+      // «то есть милли, уана» — обе части загораются, следом плашка уходит на «как у нас -ище»
+      tl.to("#it-a .it-w", {{ color: "#F0352C", duration: 0.15 }}, {t(11.60)});
+      tl.to("#it-b .it-w", {{ color: "#F0352C", duration: 0.15 }}, {t(11.98)});
+      doc("#d-it2", {t(16.10)}, {t(17.80)}, {{ rot: 1, fromRot: -5 }});
+      enter("#it-c2", {t(17.02)}, {{ fromScale: 1.4, dur: 0.18, blur: 6 }});
 
       // ---------- как у нас: -ище ----------
       enter("#b-ishe-lead", {t(13.10)}, {{ fromScale: 0.9, dur: 0.25 }});
@@ -207,6 +223,8 @@ beats = f'''
       enter("#d-cmp", {t(38.04)}, {{ fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" }});
       tl.fromTo("#c1", {{ opacity: 0, x: -30 }}, {{ opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }}, {t(39.06)});
       tl.fromTo("#c2", {{ opacity: 0, x: -30 }}, {{ opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }}, {t(40.66)});
+      // «это то же самое число» — оба 10⁹ загораются одним цветом: число одно, названия разные
+      tl.to(["#c1 .cmp-v", "#c2 .cmp-v"], {{ color: "#F5B82E", duration: 0.2 }}, {t(42.20)});
       tl.fromTo("#c3", {{ opacity: 0, x: -30 }}, {{ opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }}, {t(45.76)});
       leave("#d-cmp", {t(49.70)}, {{ y: 80 }});
       slam("#b-x", {t(48.64)}, {{ fromScale: 1.6 }});
@@ -278,7 +296,7 @@ director = {
     # иначе красное акцентное слово ложится на верх таблички (v2)
     # v4: карточки на груди стоят на уровне субтитров (1045–1370, выше ника Instagram) — на их время
     # субтитры спрятаны: «mille + -one», цифры-буквы, лестница, сравнение, биллионеры
-    "hide_captions": [[t(1.15), t(2.40)], [t(4.65), t(19.60)], [t(22.40), t(26.40)],
+    "hide_captions": [[t(1.15), t(2.40)], [t(4.65), t(12.25)], [t(16.05), t(19.60)], [t(22.40), t(26.40)],
                       [t(29.85), t(34.40)], [t(34.95), t(36.20)], [t(38.00), t(49.95)], [t(52.25), t(53.40)],
                       [t(54.40), t(61.60)], [t(65.20), t(66.10)], [t(67.25), DUR]],
 }

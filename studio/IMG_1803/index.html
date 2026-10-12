@@ -177,9 +177,9 @@
                font-variant-numeric: lining-nums; }
       .bil-s { margin-top: 10px; font-family: "Manrope"; font-weight: 800; font-size: 18px; color: rgba(242,235,221,0.6); }
       /* карточка mille + -one = milione: две строки в полосе 590 */
-      #d-it .it-row { flex-wrap: wrap; gap: 6px 34px; }
-      #d-it .it-w { font-size: 74px; }
-      #it-c { flex-basis: 100%; }
+      #d-it .it-row, #d-it2 .it-row { flex-wrap: wrap; gap: 6px 34px; }
+      #d-it .it-w, #d-it2 .it-w { font-size: 74px; }
+      #it-c2 { flex-basis: 100%; }
       /* портрет Маска — уже, чтобы не наезжал на голову и не уходил под обрезку Instagram */
       #c-musk { left: 722px; top: 270px; width: 250px; padding: 12px 12px 10px; }
       #c-musk .ph, #c-musk img { width: 226px; height: 250px; }
@@ -230,7 +230,13 @@
           <div class="it-row">
             <div id="it-a" class="it-col"><div class="it-w">mille</div><div class="it-l">тысяча</div></div>
             <div id="it-b" class="it-col"><div class="it-w">+ -one</div><div class="it-l">большой</div></div>
-            <div id="it-c" class="it-col"><div class="it-w" style="color: var(--red);">= milione</div><div class="it-l">большая тысяча</div></div>
+          </div>
+        </div>
+        <div id="d-it2" class="g doc" data-safe="лицо важнее серой зоны: карточка ниже подбородка (Валера, 12.10)" style="left: 245px; top: 1260px; width: 590px; padding: 20px 16px 16px;">
+          <div class="it-row">
+            <div class="it-col" style="opacity: 1;"><div class="it-w">mille</div><div class="it-l">тысяча</div></div>
+            <div class="it-col" style="opacity: 1;"><div class="it-w">+ -one</div><div class="it-l">большой</div></div>
+            <div id="it-c2" class="it-col"><div class="it-w" style="color: var(--red);">= milione</div><div class="it-l">большая тысяча</div></div>
           </div>
         </div>
         <div id="st-rus" class="g sticker" style="left: 310px; top: 290px; font-size: 56px; white-space: nowrap;">а на Руси?</div>
@@ -257,11 +263,11 @@
           <div class="card-name">Илон Маск</div>
           <div class="card-sub">а это — не я</div>
         </div>
-        <div id="cta" class="g cta" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
           <div class="cta-big">80+ на ЕГЭ</div>
           <div class="cta-small">переходи ко мне в профиль</div>
         </div>
-        <svg id="cta-arrow" class="g" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
           <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
                 stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
           <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
@@ -400,12 +406,16 @@
       // ---------- Италия: mille + -one = milione ----------
       enter("#st-it", 2.16, { fromScale: 0.6, rot: -4 });
       leave("#st-it", 3.8, { y: -30, rot: -10 });
-      doc("#d-it", 4.0, 17.1, { rot: -1 });
+      doc("#d-it", 4.0, 11.55, { rot: -1 });
       enter("#it-a", 4.1, { fromScale: 1.4, dur: 0.18, blur: 6 });
       enter("#it-b", 8.08, { fromScale: 1.4, dur: 0.18, blur: 6 });
       tl.to("#it-b", { scale: 1.15, duration: 0.25, ease: "back.out(2)" }, 9.32);
       tl.to("#it-b", { scale: 1, duration: 0.3, ease: "power2.out" }, 9.9);
-      enter("#it-c", 16.32, { fromScale: 1.4, dur: 0.18, blur: 6 });
+      // «то есть милли, уана» — обе части загораются, следом плашка уходит на «как у нас -ище»
+      tl.to("#it-a .it-w", { color: "#F0352C", duration: 0.15 }, 10.9);
+      tl.to("#it-b .it-w", { color: "#F0352C", duration: 0.15 }, 11.28);
+      doc("#d-it2", 15.4, 17.1, { rot: 1, fromRot: -5 });
+      enter("#it-c2", 16.32, { fromScale: 1.4, dur: 0.18, blur: 6 });
 
       // ---------- как у нас: -ище ----------
       enter("#b-ishe-lead", 12.4, { fromScale: 0.9, dur: 0.25 });
@@ -442,6 +452,8 @@
       enter("#d-cmp", 37.34, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
       tl.fromTo("#c1", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 38.36);
       tl.fromTo("#c2", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 39.96);
+      // «это то же самое число» — оба 10⁹ загораются одним цветом: число одно, названия разные
+      tl.to(["#c1 .cmp-v", "#c2 .cmp-v"], { color: "#F5B82E", duration: 0.2 }, 41.5);
       tl.fromTo("#c3", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 45.06);
       leave("#d-cmp", 49.0, { y: 80 });
       slam("#b-x", 47.94, { fromScale: 1.6 });
