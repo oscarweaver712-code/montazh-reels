@@ -2079,6 +2079,27 @@ def check_studio(report: Report, tmp: Path):
                  "безопасный режим мозга не снимает ограничения")
     report.check(brain.child_env().get(brain.CHILD_ENV) == "1", "агент студии помечен для хука старта")
 
+    # цена хода (13.10.2026): total_cost_usd у Claude — нарастающий итог сессии, а студия показывала его
+    # под каждым ходом как цену хода — у IMG_1803 сумма по ходам выходила $13,41 при настоящих $3,90
+    talk = [{"role": "user", "text": "x"}]
+    for session, total in (("s1", 0.36), ("s1", 0.71), ("s1", 2.49), ("s2", 0.5)):
+        talk += [{"role": "assistant", "events": [{"type": "result", "session": session, "cost": total}]},
+                 {"role": "user", "text": "x"}]
+    brain.fill_turn_costs(talk)
+    turns = [e["turn"] for m in talk for e in m.get("events", []) if e.get("type") == "result"]
+    report.check([round(t, 2) for t in turns] == [0.36, 0.35, 1.78, 0.5],
+                 "цена хода — разница нарастающих итогов, новая сессия — с нуля (сумма ходов = цена разговора)",
+                 ", ".join(f"{t:.2f}" for t in turns))
+
+    # «что идёт сейчас» (current.json) лежит рядом с задачами, но задачей не считается
+    queue_dir = tmp / "queue_files"
+    queue_dir.mkdir()
+    for name in ("current.json", "05-render-X.json"):
+        (queue_dir / name).write_text("{}", encoding="utf-8")
+    listed = [p.name for p in jobqueue.job_files(queue_dir)]
+    report.check(listed == ["05-render-X.json"], "в очереди — только задачи, «что идёт сейчас» не задача",
+                 ", ".join(listed) or "пусто")
+
     first = jobqueue.take_lock()
     if first is None:
         # рядом работает настоящий обработчик — его замок и есть проверка

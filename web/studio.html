@@ -735,7 +735,10 @@ function botHtml(m) {
   const res = evs.find((e) => e.type === "result");
   if (res) {
     const bits = [];
-    if (res.cost != null) bits.push(`≈ $${Number(res.cost).toFixed(2)} по API-ценам`);
+    // cost у Claude — нарастающий итог разговора, turn — цена этого хода (сервер считает разницу)
+    if (res.cost != null) bits.push(res.turn != null
+      ? `ход ≈ $${Number(res.turn).toFixed(2)} · разговор ≈ $${Number(res.cost).toFixed(2)} по API-ценам`
+      : `разговор ≈ $${Number(res.cost).toFixed(2)} по API-ценам`);
     if (res.denied && res.denied.length) bits.push(`не разрешено: ${res.denied.map(esc).join("; ")} — включи «Полный доступ», если так и надо`);
     if (bits.length) parts.push(`<div class="result">${bits.join(" · ")}</div>`);
   }

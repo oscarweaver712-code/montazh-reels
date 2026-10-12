@@ -56,11 +56,15 @@ SUFFIXES = (".json",) if host.IS_WINDOWS else (".json", ".sh")
 
 
 def job_files(folder: Path) -> list:
-    """Задачи в папке очереди (или done/, failed/), по имени."""
+    """Задачи в папке очереди (или done/, failed/), по имени.
+
+    Только файлы с именем задачи (05-render-IMG_3317.json): «что идёт сейчас» (current.json) лежит
+    рядом с ними, и студия показывала его в очереди призрачной задачей «current».
+    """
     if not folder.exists():
         return []
     return sorted(p for p in folder.iterdir()
-                  if p.is_file() and p.suffix in SUFFIXES and not p.name.startswith("."))
+                  if p.is_file() and p.suffix in SUFFIXES and NAME_RE.fullmatch(p.stem))
 
 
 def find_job(folder: Path, name: str) -> Path | None:

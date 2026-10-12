@@ -332,6 +332,34 @@ def save_thread(thread: dict) -> None:
     tmp.replace(path)
 
 
+def turn_cost(messages: list, result: dict) -> float | None:
+    """Цена хода по итогу Claude: разница с прошлым итогом той же сессии в разговоре.
+
+    total_cost_usd у Claude Code — нарастающий итог сессии, а не цена хода (у IMG_1803 итоги ходов
+    0,36 → 0,71 → … → 3,90). Студия показывала его под каждым ходом как цену хода, и сумма по ходам
+    выходила $13,41 вместо $3,90. Новая сессия (номер сменился) считается с нуля.
+    """
+    total = result.get("cost")
+    if total is None:
+        return None
+    for message in reversed(messages):
+        prev = next((e for e in message.get("events") or [] if e.get("type") == "result"), None)
+        if prev is None or prev.get("cost") is None:
+            continue
+        if prev.get("session") == result.get("session") and prev["cost"] <= total:
+            return round(total - prev["cost"], 4)
+        return total
+    return total
+
+
+def fill_turn_costs(messages: list) -> None:
+    """Цена хода — итогам, у которых её нет (разговоры, сохранённые до 13.10.2026)."""
+    for i, message in enumerate(messages):
+        for ev in message.get("events") or []:
+            if ev.get("type") == "result" and "turn" not in ev:
+                ev["turn"] = turn_cost(messages[:i], ev)
+
+
 def list_threads() -> list:
     if not THREADS.exists():
         return []

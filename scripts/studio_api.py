@@ -380,6 +380,7 @@ def brain_thread(thread_id: str):
         raise HTTPException(404, str(e))
     run = runs.get(thread_id)
     thread["running"] = bool(run and not run["done"])
+    brain.fill_turn_costs(thread["messages"])
     return thread
 
 
@@ -437,6 +438,8 @@ async def _run_turn(thread: dict, text: str, mode: str, model: str | None):
                     thread["session"] = ev["id"]
                 if ev["type"] == "result" and ev.get("session"):
                     thread["session"] = ev["session"]
+                if ev["type"] == "result":
+                    ev["turn"] = brain.turn_cost(thread["messages"][:-1], ev)   # без текущего ответа
                 add(ev)
                 if ev["type"] in ("text", "result", "error"):
                     brain.save_thread(thread)
