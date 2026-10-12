@@ -834,6 +834,44 @@ def check_sfx(report: Report):
                  "проверка страницы ловит звук громче нормы (удар 0.36 из старых роликов)")
 
 
+def check_gen_image(report: Report, tmp: Path):
+    """Фон через Codex (gen_image.py, 12.10.2026): правила в запросе, отбор картинки, подхват результата.
+
+    Сам Codex не зовётся — самопроверка не тратит лимит ChatGPT и не зависит от сети. Проверяется
+    то, что ломалось бы тихо: Codex то копирует картинку по просьбе, то только называет свой путь
+    (второй же пробный запуск) — скрипт берёт свежую из generated_images, но не старую чужую.
+    """
+    import gen_image
+
+    print("\nФон через Codex")
+    prompt = gen_image.build_prompt("ворота Иштар", ROOT / "work" / "X" / "downloads" / "bg.png")
+    rules_in = all(w in prompt for w in ("без людей", "без надписей", "9:16", "work/X/downloads/bg.png"))
+    pics = {}
+    for name, size in (("vertical", "941x1672"), ("landscape", "1672x941"), ("tiny", "300x533")):
+        pics[name] = tmp / f"gen_{name}.png"
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=navy:s={size}",
+                        "-frames:v", "1", str(pics[name])], check=True, capture_output=True)
+    picked = [gen_image.check_image(pics[n])[0] for n in ("vertical", "landscape", "tiny")]
+    report.check(rules_in and picked == [True, False, False],
+                 "запрос несёт правила (без людей, без надписей, вертикаль), годится только вертикаль от 720 px",
+                 f"правила {'на месте' if rules_in else 'потеряны'}, отбор {picked}")
+
+    folder = tmp / "generated_images" / "thread"
+    folder.mkdir(parents=True)
+    old, fresh = folder / "old.png", folder / "fresh.png"
+    shutil.copy2(pics["landscape"], old)
+    os.utime(old, (time.time() - 3600, time.time() - 3600))       # чужая картинка часовой давности
+    started = time.time()
+    shutil.copy2(pics["vertical"], fresh)
+    out = tmp / "bg.png"
+    got = gen_image.collect(out, started, folder)
+    stale_out = tmp / "bg_stale.png"
+    stale = gen_image.collect(stale_out, time.time() + 60, folder)   # за этот запуск ничего нового
+    report.check(got and gen_image.check_image(out)[0] and not stale,
+                 "если Codex только назвал свой путь — берётся его свежая картинка, старая чужая — нет",
+                 "свежая взята" if got else "свежая не найдена")
+
+
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
     """Скрипт не называется как модуль стандартной библиотеки.
 
@@ -2057,6 +2095,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:
         tmp = Path(tmpdir)
         section(report, check_skill_links, tmp)
+        section(report, check_gen_image, tmp)
         section(report, check_atomic_outputs, preset, tmp)
         section(report, check_transcript_source, tmp)
         section(report, check_page_timeline, tmp)
