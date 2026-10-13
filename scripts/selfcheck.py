@@ -950,6 +950,70 @@ def check_board(report: Report, tmp: Path):
                  f"длина на странице {dur.group(1) if dur else '?'} с при клипе {stats['duration']:.2f} с")
 
 
+def check_techniques(report: Report, tmp: Path):
+    """Приёмы арсенала (13.10.2026, по рилсам Валеры): маркер на слове, индикатор шагов, сплит «верх —
+    контент, низ — спикер». Страница гоняется в том же Chrome, что и рендер; состояние элементов
+    спрашивается в нужные моменты. Сплит двигает человека — проверка лица обязана видеть лицо там,
+    где оно сейчас, иначе карточка «ниже подбородка» на деле легла бы на лицо.
+    """
+    import kit
+    import verify_page
+    from verify_page import run_timeline
+
+    print("\nПриёмы: маркер, шаги, сплит")
+    project = tmp / "studio" / "T"
+    (project / "assets").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n", encoding="utf-8")
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    face = [(round(0.25 * k, 2), 360.0, 600.0, 740.0, 1100.0) for k in range(33)]   # центр лица — 850
+    saved = verify_page.face_track
+    verify_page.face_track = lambda project, *a, **k: face
+    try:
+        sp_html, sp_js = kit.split("sp", "T", 1.5, 5.5, '<div style="color: #F2EBDD;">контент</div>')
+    finally:
+        verify_page.face_track = saved
+    st_html, st_js = kit.steps("st", [1.0, 3.0, 5.0], 7.0)
+    card = (f'        <div id="t-card" class="g doc" style="left: 245px; top: 1250px; width: 590px;">это '
+            f'{kit.mark("миллиард", "m1")}</div>')
+    beats = '      tl.set("#t-card", { opacity: 1 }, 0.2);\n      marker("#m1", 1.0);\n' + st_js + "\n" + sp_js + "\n"
+    (project / "index.html").write_text(
+        kit.build_page("приёмы", 8.0, "", "\n".join([card, st_html, sp_html]), beats, [], [], cta_at=20.0,
+                       cutout=False), encoding="utf-8")
+    shift = int(re.search(r'data-shift="(\d+)"', sp_html).group(1))
+    probes = [[0.9, "#m1", "backgroundSize"], [1.6, "#m1", "backgroundSize"],
+              [2.0, "#st-1", "backgroundColor"], [4.0, "#st-1", "backgroundColor"], [4.0, "#st-2", "backgroundColor"],
+              [3.5, "#speaker", "transform"], [6.5, "#speaker", "transform"], [3.5, "#sp", "rect"]]
+    got = run_timeline(project / "index.html", probes=probes).get("probes") or [None] * len(probes)
+    red, done = "rgb(240, 53, 44)", "rgba(242, 235, 221, 0.92)"
+    report.check(got[0] == "0% 100%" and got[1] == "100% 100%", "маркер выезжает под словом к своему моменту",
+                 f"до — {got[0]}, после — {got[1]}")
+    report.check(got[2] == red and got[3] == done and got[4] == red,
+                 "индикатор шагов: свой номер загорается, прошлые — пройдены", f"{got[2]} → {got[3]}, второй {got[4]}")
+    moved = re.search(r"matrix\(1, 0, 0, 1, 0, ([\d.]+)\)", got[5] or "")
+    report.check(shift == 570 and moved is not None and abs(float(moved.group(1)) - shift) < 1
+                 and got[6] in ("none", "matrix(1, 0, 0, 1, 0, 0)") and got[7] is not None and got[7][1] == 0,
+                 "сплит: человек уезжает вниз по лицу, панель встаёт сверху, потом всё возвращается",
+                 f"сдвиг {shift}, в окне {got[5]}, после {got[6]}, панель {got[7]}")
+
+    # проверка лица видит сдвиг: слежение того же лица, страница со сплитом
+    work = tmp / "work" / "T"
+    work.mkdir(parents=True)
+    (work / "aroll.faces.json").write_text(json.dumps({"fps": 30, "frames": [[550, 850, 380, 500, 0.95]] * 240}),
+                                          encoding="utf-8")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = " + json.dumps([[0, 0, 1]] * 240) + ";\n",
+                                       encoding="utf-8")
+    saved_dir = verify_page.WORK_DIR
+    verify_page.WORK_DIR = tmp / "work"
+    try:
+        track = {round(t, 2): y0 for t, _, y0, _, _ in verify_page.face_track(project)}
+    finally:
+        verify_page.WORK_DIR = saved_dir
+    report.check(abs(track.get(3.5, 0) - track.get(0.5, 0) - shift) < 1 and abs(track.get(7.0, 0) - track.get(0.5, 0)) < 1,
+                 "проверка лица видит лицо там, где оно в сплите: сдвинутым вниз и вернувшимся",
+                 f"верх лица: до {track.get(0.5)}, в сплите {track.get(3.5)}, после {track.get(7.0)}")
+
+
 def check_plan(report: Report, tmp: Path):
     """План до сборки (правило Валеры, 13.10.2026: «понимать, что и как будешь делать, и какими
     инструментами где» — до редактуры). Годный план проходит; пустой раздел, инструмент не из
@@ -2480,6 +2544,7 @@ def main():
         section(report, check_grey_zones, tmp)
         section(report, check_plan, tmp)
         section(report, check_board, tmp)
+        section(report, check_techniques, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)
         section(report, check_grades, tmp)

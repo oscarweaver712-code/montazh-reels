@@ -11,6 +11,7 @@
 Горизонталь, квадрат и 4:5 получают ту же разметку, пересчитанную под свой размер.
 """
 import functools as _functools
+import html as _html
 import json as _json
 import re as _re
 import sys as _sys
@@ -253,6 +254,9 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
                                      f"left: {cl}px; top: {ct}px; width: 900px;")
                     .replace("left: 70px; top: 1480px;", f"left: {al}px; top: {at}px;"))
     style_css = stage_style(fmt) + (caption_css(captions, fmt) if captions else "")
+    used = [name for name, (marker, _, _) in TECHNIQUES.items() if marker in behind or marker in front]
+    style_css += "".join(TECHNIQUES[name][1] for name in used)
+    beats = "".join(TECHNIQUES[name][2] for name in used) + beats
     if not cutout and fg_windows:
         raise ValueError("Окна вырезки (fg_windows) без слоя вырезки: передай cutout=True и сделай matte.py")
     helpers = HELPERS if not captions else HELPERS.replace(CAPTIONS_JS, caption_js(captions))
@@ -304,6 +308,7 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{d}" data-width="{width}" data-height="{height}">
+      <div id="speaker" class="layer">
       <div id="cam-bg" class="cam">
         <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
                data-start="0" data-duration="{d}" data-track-index="0"></video>
@@ -312,6 +317,7 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
 {behind}
       </div>
 {cutout_html}
+      </div>
       <div id="front" class="layer">
         <div id="caps"></div>
 {front}
@@ -336,6 +342,175 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
   </body>
 </html>
 '''
+
+
+# ---------------------------------------------------------------- приёмы арсенала (13.10.2026)
+# docs/АРСЕНАЛ.md, по 15 рилсам Валеры: маркер на слове, индикатор шагов, скриншот-доказательство,
+# сплит «верх — контент, низ — спикер». Стили и движение ложатся на страницу, только если приём на ней
+# есть: остальные страницы не меняются ни на байт.
+
+MARK_CSS = """      .mk { background-image: linear-gradient(transparent 56%, var(--mk) 56%, var(--mk) 94%, transparent 94%);
+            background-repeat: no-repeat; background-size: 0% 100%; padding: 0 0.06em;
+            -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+"""
+MARK_JS = """      // маркер: полоса выделителя выезжает под словом слева направо
+      function marker(sel, t, o = {}) {
+        tl.fromTo(sel, { backgroundSize: "0% 100%" },
+                  { backgroundSize: "100% 100%", duration: o.dur ?? 0.32, ease: o.ease ?? "power2.out", immediateRender: false }, t);
+      }
+
+"""
+STEPS_CSS = """      .steps { left: 0; width: 1080px; display: flex; justify-content: center; gap: 14px; }
+      .st { width: 58px; height: 58px; border-radius: 29px; display: flex; align-items: center; justify-content: center;
+            font-family: "Oswald"; font-weight: 700; font-size: 32px; color: rgba(242,235,221,0.6);
+            background: rgba(16,14,12,0.6); border: 2px solid rgba(242,235,221,0.3); }
+"""
+PROOF_CSS = """      .proof { background: #FFFFFF; border-radius: 22px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .proof-view { position: relative; overflow: hidden; }
+      .proof-zoom { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+      .proof-zoom img { position: absolute; left: 0; top: 0; display: block; }
+      .proof-box { position: absolute; left: 0; top: 0; overflow: visible; }
+      .proof-box rect { fill: rgba(240,53,44,0.07); stroke: #F0352C; stroke-width: 6; }
+      .proof-src { height: 46px; padding: 9px 22px; font-family: "Manrope"; font-weight: 800; font-size: 21px;
+                   letter-spacing: 0.06em; color: #5C5C5C; background: #EFEFEC; white-space: nowrap; overflow: hidden; }
+"""
+SPLIT_CSS = """      .split-top { left: 0; top: 0; overflow: hidden; background: #141210; box-shadow: 0 24px 60px rgba(0,0,0,0.6); }
+"""
+# приём: (признак на странице, стиль, движение)
+TECHNIQUES = {"mark": ('class="mk"', MARK_CSS, MARK_JS), "steps": ('class="g steps"', STEPS_CSS, ""),
+              "proof": ('class="g proof"', PROOF_CSS, ""), "split": ('class="g split-top"', SPLIT_CSS, "")}
+MARK_COLORS = {"dark": "#F0352C", "light": "#F7D23E"}
+
+
+def mark(word: str, mid: str, light: bool = False) -> str:
+    """Слово с маркером: `marker("#mid", t)` в ударах — полоса выделителя выезжает под ним.
+
+    На тёмном (субтитры, панели) — красная полоса под светлым текстом; light=True — на светлой
+    плашке, жёлтый выделитель под тёмным текстом, как маркером по бумаге.
+    """
+    color = MARK_COLORS["light" if light else "dark"]
+    return f'<span id="{mid}" class="mk" style="--mk: {color};">{_html.escape(word)}</span>'
+
+
+def steps(sid: str, at: list, end: float, top: int | None = None, fmt: str = "9:16") -> tuple:
+    """Индикатор шагов 1/2/3…: ряд кружков по центру, номер загорается на своём шаге, прошлые — пройдены.
+
+    Для списков («4 приёма», «три ошибки») — зритель видит, сколько осталось, и досматривает. В 9:16
+    стоит сразу под вкладками TikTok (серая зона до y 260). Держится весь список — это не висящая
+    плашка (data-hold). Крупное слово за спиной на это время ставь ниже ряда.
+    """
+    if len(at) < 2:
+        raise ValueError("шагов меньше двух — индикатор не нужен")
+    if any(b <= a for a, b in zip(at, at[1:])) or end <= at[-1]:
+        raise ValueError("время шагов должно расти, а уход ряда — быть после последнего шага")
+    top = top if top is not None else (272 if fmt == "9:16" else 60)
+    width = formats.size(fmt)[0]
+    dots = "".join(f'<div id="{sid}-{i}" class="st">{i}</div>' for i in range(1, len(at) + 1))
+    html = (f'        <div id="{sid}" class="g steps" data-hold="индикатор шагов держится весь список" '
+            f'style="top: {top}px; width: {width}px;">{dots}</div>')
+    js = [f'      enter("#{sid}", {at[0] - 0.15:.2f}, {{ fromY: -24, fromScale: 0.9, dur: 0.3, ease: "power3.out" }});']
+    for i, t in enumerate(at, 1):
+        js.append(f'      tl.to("#{sid}-{i}", {{ backgroundColor: "#F0352C", borderColor: "#F0352C", color: "#F2EBDD", '
+                  f'scale: 1.18, duration: 0.18, ease: "back.out(2)" }}, {t:.2f});')
+        if i > 1:
+            js.append(f'      tl.to("#{sid}-{i - 1}", {{ backgroundColor: "rgba(242,235,221,0.92)", '
+                      f'borderColor: "rgba(242,235,221,0.92)", color: "#141210", scale: 1, duration: 0.18 }}, {t:.2f});')
+    js.append(f'      leave("#{sid}", {end:.2f}, {{ y: -30 }});')
+    return html, "\n".join(js)
+
+
+def proof(pid: str, stem: str, img: str, at: float, dur: float, place: tuple = (90, 1250, 900, 520),
+          zoom: float = 1.18, source: str = "") -> tuple:
+    """Скриншот-доказательство: снимок страницы на плашке, рамка рисуется вокруг фразы, потом наезд на неё.
+
+    Снимок и место фразы делает scripts/web_shot.py (work/<имя>/downloads/<img> и <img>.json): рамка
+    стоит по координатам, найденным в самой странице, а не на глаз. Окно плашки показывает кусок снимка
+    так, чтобы фраза была посередине. source — домен источника, подпись снизу: это цитата.
+    """
+    from common import WORK_DIR
+
+    shot = WORK_DIR / stem / "downloads" / img
+    meta_path = shot.with_suffix(".json")
+    if not shot.exists() or not meta_path.exists():
+        raise FileNotFoundError(f"нет снимка work/{stem}/downloads/{img} или его .json — сначала scripts/web_shot.py")
+    meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+    (iw, ih), (bx, by, bw, bh) = meta["size"], meta["box"]
+    left, top, width, height = place
+    view_h = height - (46 if source else 0)
+    scale = width / iw
+    img_h = ih * scale
+    offset = min(max((by + bh / 2) * scale - view_h / 2, 0), max(img_h - view_h, 0))
+    pad = 12
+    x, y, w, h = bx * scale - pad, by * scale - offset - pad, bw * scale + 2 * pad, bh * scale + 2 * pad
+    src = f'          <div class="proof-src">источник: {_html.escape(source)}</div>\n' if source else ""
+    html = (f'        <div id="{pid}" class="g proof" style="left: {left}px; top: {top}px; width: {width}px; height: {height}px;">\n'
+            f'          <div class="proof-view" style="height: {view_h:.0f}px;">\n'
+            f'            <div id="{pid}-zoom" class="proof-zoom" style="transform-origin: {x + w / 2:.0f}px {y + h / 2:.0f}px;">\n'
+            f'              <img src="assets/img/{_html.escape(img, quote=True)}" alt="" '
+            f'style="width: {width}px; height: {img_h:.0f}px; transform: translateY({-offset:.0f}px);" />\n'
+            f'              <svg class="proof-box" viewBox="0 0 {width} {view_h:.0f}" style="width: {width}px; height: {view_h:.0f}px;">\n'
+            f'                <rect id="{pid}-box" x="{x:.0f}" y="{y:.0f}" width="{w:.0f}" height="{h:.0f}" rx="12" '
+            f'pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />\n'
+            f'              </svg>\n            </div>\n          </div>\n{src}        </div>')
+    js = (f'      enter("#{pid}", {at:.2f}, {{ fromY: 120, fromScale: 0.94, dur: 0.4, ease: "power3.out" }});\n'
+          f'      draw("#{pid}-box", {at + 0.55:.2f}, 0.45);\n'
+          f'      tl.fromTo("#{pid}-zoom", {{ scale: 1 }}, {{ scale: {zoom}, duration: {max(dur - 1.4, 0.6):.2f}, '
+          f'ease: "power1.inOut" }}, {at + 1.0:.2f});\n'
+          f'      leave("#{pid}", {at + dur - 0.3:.2f}, {{ y: 80 }});')
+    return html, js
+
+
+def ease_inout3(p: float) -> float:
+    """power3.inOut из GSAP — тот же ход, что у сдвига в сплите (для проверки лица)."""
+    p = min(max(p, 0.0), 1.0)
+    return 4 * p ** 3 if p < 0.5 else 1 - (-2 * p + 2) ** 3 / 2
+
+
+SPLIT_RAMP = 0.5
+
+
+def split_offset(t: float, windows: list) -> float:
+    """На сколько пикселей вниз уехал человек в момент t (окна сплита: [(t0, t1, сдвиг)])."""
+    for t0, t1, shift in windows:
+        if t0 <= t <= t1:
+            return shift * min(ease_inout3((t - t0) / SPLIT_RAMP), ease_inout3((t1 - t) / SPLIT_RAMP))
+    return 0.0
+
+
+def split(sid: str, stem: str, t0: float, t1: float, panel: str, target: int = 1420,
+          caps_top: int = 1150) -> tuple:
+    """Сплит «верх — контент, низ — спикер»: человек уезжает вниз, сверху выезжает панель с контентом.
+
+    Сдвиг — по лицу (слежение с движением камеры): центр лица встаёт на target, верх кадра закрывает
+    панель высотой со сдвиг (с запасом — щели не будет). Субтитры (caps_top — их верх в стиле ролика)
+    на это время встают над головой. Метка .split-mark — для проверки лица: она двигает лицо вместе с
+    человеком. Нужен собранный проект (compose.py: camera.js) — page.py и так идёт после него.
+    """
+    import statistics
+
+    from common import ROOT
+    from verify_page import face_track
+
+    if t1 - t0 < 2 * SPLIT_RAMP + 0.5:
+        raise ValueError(f"сплит {t0}–{t1} короче {2 * SPLIT_RAMP + 0.5:g} с — не успеет показать контент")
+    track = [f for f in face_track(ROOT / "studio" / stem) if t0 <= f[0] <= t1]
+    if not track:
+        raise ValueError(f"нет лица в {t0}–{t1} с — сначала track.py и compose.py (camera.js)")
+    center = statistics.median((f[2] + f[4]) / 2 for f in track)
+    head = min(f[2] for f in track)
+    shift = int(round(min(max(target - center, 300), 900)))
+    cap_top = max(shift + 30, head + shift - 160)
+    html = (f'        <div id="{sid}" class="g split-top" style="width: 1080px; height: {shift + 40}px;">\n{panel}\n        </div>\n'
+            f'        <div class="split-mark" data-t0="{t0:.2f}" data-t1="{t1:.2f}" data-shift="{shift}" hidden></div>')
+    ramp = f'duration: {SPLIT_RAMP}, ease: "power3.inOut"'
+    js = (f'      tl.to("#speaker", {{ y: {shift}, {ramp} }}, {t0:.2f});\n'
+          f'      tl.fromTo("#{sid}", {{ opacity: 1, yPercent: -100 }}, {{ opacity: 1, yPercent: 0, {ramp}, immediateRender: false }}, {t0:.2f});\n'
+          f'      tl.to("#caps", {{ y: {cap_top - caps_top:.0f}, {ramp} }}, {t0:.2f});\n'
+          f'      tl.to("#speaker", {{ y: 0, {ramp} }}, {t1 - SPLIT_RAMP:.2f});\n'
+          f'      tl.to("#{sid}", {{ yPercent: -100, {ramp} }}, {t1 - SPLIT_RAMP:.2f});\n'
+          f'      tl.set("#{sid}", {{ opacity: 0 }}, {t1:.2f});\n'
+          f'      tl.to("#caps", {{ y: 0, {ramp} }}, {t1 - SPLIT_RAMP:.2f});')
+    return html, js
 
 
 class Take:

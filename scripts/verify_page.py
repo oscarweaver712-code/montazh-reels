@@ -39,6 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import ROOT, WORK_DIR
+from kit import split_offset
 
 STUDIO = ROOT / "studio"
 CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell"
@@ -394,6 +395,14 @@ CHECK_JS = r"""
       const peak = i < 0 ? parseFloat(getComputedStyle(el).opacity) : Math.max(...real.map((f) => f[i]));
       if (!(peak > 0.01)) res.never.push(label(el));
     });
+    // пробы для самопроверки: [t, селектор, что] → стиль или рамка элемента в этот момент
+    res.probes = (C.probes || []).map(([t, sel, what]) => {
+      tl.totalTime(0, false); tl.totalTime(t, false);
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      if (what === "rect") { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round); }
+      return getComputedStyle(el)[what];
+    });
     Object.assign(res, { ok: true, frames: N, elements: els.length, tweens });
   } catch (e) {
     res.ok = false;
@@ -485,6 +494,10 @@ def face_track(project: Path, step: float = 0.25, margin: float = 12.0) -> list:
     if not found:
         return []
     camera = json.loads(found.group(1))
+    page_path = project / "index.html"
+    splits = [(float(a), float(b), float(c)) for a, b, c in re.findall(
+        r'class="split-mark" data-t0="([\d.]+)" data-t1="([\d.]+)" data-shift="(\d+)"',
+        page_path.read_text(encoding="utf-8"))] if page_path.exists() else []
     fps = float(data.get("fps") or 30)
     rows = np.array([f[:4] if f and f[4] >= 0.6 else [np.nan] * 4 for f in data["frames"]], dtype=float)
     n = len(rows)
@@ -501,13 +514,14 @@ def face_track(project: Path, step: float = 0.25, margin: float = 12.0) -> list:
             continue
         cx, cy, w, h = np.nanmedian(window, axis=0)
         x, y, scale = camera[min(k, len(camera) - 1)]
+        y += split_offset(k / fps, splits)              # сплит: человек уехал вниз вместе с лицом
         track.append((round(k / fps, 3), x + scale * (cx - w / 2) - margin, y + scale * (cy - h / 2) - margin,
                       x + scale * (cx + w / 2) + margin, y + scale * (cy + h / 2) + margin))
     return track
 
 
 def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: list | None = None,
-                 faces: list | None = None) -> dict:
+                 faces: list | None = None, probes: list | None = None) -> dict:
     """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS).
 
     zones — серые зоны площадок [(название, (x0, y0, x1, y1))]: текст в них попадёт в res["grey"].
@@ -519,7 +533,7 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     config = json.dumps({"fps": fps, "errors": [], "warnings": [], "zoneStep": 0.25, "zoneDepth": 8,
                          "holdMax": HOLD_MAX,
                          "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])],
-                         "faces": [list(f) for f in (faces or [])]},
+                         "faces": [list(f) for f in (faces or [])], "probes": [list(p) for p in (probes or [])]},
                         ensure_ascii=False)
     head = (f'<head>\n    <base href="{page_path.parent.as_uri()}/">\n'
             f'    <script>window.__HF_CHECK = {config};{EARLY_JS}    </script>')
