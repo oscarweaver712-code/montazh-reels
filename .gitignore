@@ -30,6 +30,10 @@ work/*/*
 !work/*/page.py
 !work/*/page.*.py
 !work/*/downloads/
+!work/*/manim/
+work/*/manim/*.mp4
+work/*/manim/*.png
+work/*/manim/*.srt
 
 # окружения python: .venv основное, .venv-audio отдельное под torch (вместе ~3,6 ГБ)
 .venv*/

@@ -50,6 +50,10 @@ step "Окружение Python (.venv)"
 [ -x .venv/bin/python ] || uv venv .venv --python 3.12 || fail "Не создалось окружение Python."
 uv pip install --python .venv/bin/python -r requirements.txt || fail "Не поставились пакеты Python — проверь интернет."
 
+step "Математика движением: ManimGX (своё окружение — ему нужен Python 3.13)"
+[ -x .venv-manim/bin/python ] || uv venv .venv-manim --python 3.13 || fail "Не создалось окружение для ManimGX."
+uv pip install --python .venv-manim/bin/python -r requirements-manim.txt || fail "Не поставился ManimGX — проверь интернет."
+
 step "Модели: речь (~1,6 ГБ), лица, маска человека, текст в кадре (один раз)"
 .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$WHISPER')" \
   || fail "Не скачалась модель $WHISPER — проверь интернет и запусти установку снова."

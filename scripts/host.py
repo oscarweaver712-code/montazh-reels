@@ -27,6 +27,12 @@ def venv_python(root: Path = ROOT) -> Path:
     return root / ".venv" / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
 
 
+def manim_bin(root: Path = ROOT) -> Path:
+    """ManimGX из своего окружения (.venv-manim, requirements-manim.txt): ему нужен Python 3.13,
+    основному окружению — 3.12. На Windows — .venv-manim\\Scripts\\manimgx.exe."""
+    return root / ".venv-manim" / ("Scripts/manimgx.exe" if IS_WINDOWS else "bin/manimgx")
+
+
 def utf8_env(env: dict | None = None) -> dict:
     """Окружение для дочерних питонов: ввод-вывод и файлы по умолчанию — UTF-8."""
     env = dict(os.environ if env is None else env)

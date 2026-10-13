@@ -906,6 +906,50 @@ def check_gen_image(report: Report, tmp: Path):
                  "новая" if len(pixel) == 3 and pixel[0] > pixel[2] else "осталась прежняя")
 
 
+def check_board(report: Report, tmp: Path):
+    """«Доска» (13.10.2026, арсенал Валеры): ManimGX рендерит сцену в клип, а viz.board ставит его на
+    страницу. Проверяется по-настоящему: своё окружение .venv-manim (Python 3.13) на месте, кадр не
+    пустой, длина и размер — как заказаны, плашка видна ровно столько, сколько идёт клип.
+    """
+    import common
+    import viz
+    from manim_clip import render
+
+    print("\nДоска: математика движением (ManimGX)")
+    scene = tmp / "board_check.py"
+    scene.write_text('import manimgx as m\n\n\nclass Check(m.Scene):\n    def construct(self):\n'
+                     '        self.camera.background_color = "#141210"\n'
+                     '        self.play(m.Write(m.MathTex(r"x^2 = 4", color="#F2EBDD").scale(2)), run_time=0.8)\n'
+                     '        self.wait(0.2)\n', encoding="utf-8")
+    clip_dir = tmp / "work" / "X" / "manim"
+    out = clip_dir / "Check.mp4"
+    try:
+        stats = render(scene, out, size="360x360")
+    except Exception as e:                       # не установлен, упал, не отдал файл — громко
+        report.check(False, "ManimGX рендерит сцену в клип нужной длины и размера, кадр не пустой", str(e)[:300])
+        return
+    frame = subprocess.run([ffmpeg_bin(), "-v", "error", "-ss", "0.9", "-i", str(out), "-frames:v", "1",
+                            "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+    contrast = (max(frame) - min(frame)) if frame else 0
+    frames = int(probe_value(out, "stream=nb_frames", "v:0") or 0)
+    steady = abs(frames - round(stats["duration"] * 30)) <= 1          # постоянные 30 к/с, пауза — кадрами
+    report.check(0.8 <= stats["duration"] <= 1.5 and (stats["width"], stats["height"]) == (360, 360) and contrast > 100
+                 and steady,
+                 "ManimGX рендерит сцену в клип нужной длины и размера, кадры ровно 30 в секунду, кадр не пустой",
+                 f"{stats['duration']:.2f} с, {frames} кадров, {stats['width']}×{stats['height']}, контраст {contrast}")
+    saved = common.WORK_DIR
+    common.WORK_DIR = tmp / "work"
+    try:
+        html, js = viz.board("bd", "X", "Check.mp4", at=2.0)
+    finally:
+        common.WORK_DIR = saved
+    dur = re.search(r'data-duration="([\d.]+)"', html)
+    report.check('class="clip"' in html and 'src="assets/manim/Check.mp4"' in html and dur is not None
+                 and abs(float(dur.group(1)) - stats["duration"]) < 0.05 and 'leave("#bd"' in js,
+                 "доска на странице: клип-слой с длиной из файла, плашка входит и уходит движением",
+                 f"длина на странице {dur.group(1) if dur else '?'} с при клипе {stats['duration']:.2f} с")
+
+
 def check_plan(report: Report, tmp: Path):
     """План до сборки (правило Валеры, 13.10.2026: «понимать, что и как будешь делать, и какими
     инструментами где» — до редактуры). Годный план проходит; пустой раздел, инструмент не из
@@ -1041,17 +1085,20 @@ def check_grey_zones(report: Report, tmp: Path):
     front4 = (f'        <div id="h-static" class="g doc" style="left: 245px; top: 1250px; width: 590px;">висит</div>\n'
               f'        <div id="h-live" class="g doc" style="left: 245px; top: 1450px; width: 590px;">{rows}</div>\n'
               f'        <div id="h-meant" class="g doc" data-hold="формулу надо дочитать" '
-              f'style="left: 245px; top: 1050px; width: 590px;">формула</div>')
-    beats4 = ("".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("h-static", "h-live", "h-meant"))
+              f'style="left: 245px; top: 1050px; width: 590px;">формула</div>\n'
+              f'        <div id="h-clip" class="g viz" style="left: 245px; top: 150px; width: 590px; height: 300px;">'
+              f'<video class="clip" src="assets/manim/x.mp4" muted data-start="0.2" data-duration="7.2" data-track-index="2"></video></div>')
+    beats4 = ("".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("h-static", "h-live", "h-meant", "h-clip"))
               + "".join(f'      tl.set("#h-row{i}", {{ opacity: 1 }}, {0.2 + 2 * i});\n' for i in range(4))
-              + "".join(f'      tl.set("#{i}", {{ opacity: 0 }}, 7.4);\n' for i in ("h-static", "h-live", "h-meant")))
+              + "".join(f'      tl.set("#{i}", {{ opacity: 0 }}, 7.4);\n' for i in ("h-static", "h-live", "h-meant", "h-clip")))
     (project / "index.html").write_text(build_page("динамика", 8.0, "", front4, beats4, [], [], cta_at=20.0),
                                         encoding="utf-8")
     res = run_timeline(project / "index.html")
     stale = {h["el"] for h in res.get("holds", [])}
     meant = {h["el"] for h in res.get("holdsAllowed", [])}
     report.check(stale == {"#h-static"} and meant == {"#h-meant"},
-                 "плашка, висящая без изменений, ловится; живущая (новая строка раз в 2 с) — нет; data-hold — отдельно",
+                 "плашка, висящая без изменений, ловится; живущая (новая строка раз в 2 с) и доска с идущим клипом — нет; "
+                 "data-hold — отдельно",
                  f"висит: {', '.join(sorted(stale)) or 'ничего'}; осознанно: {', '.join(sorted(meant)) or 'ничего'}")
 
 
@@ -2432,6 +2479,7 @@ def main():
         section(report, check_page_timeline, tmp)
         section(report, check_grey_zones, tmp)
         section(report, check_plan, tmp)
+        section(report, check_board, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)
         section(report, check_grades, tmp)

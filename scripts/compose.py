@@ -310,6 +310,9 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
             copy_if_newer(src, assets / "img" / src.name)
     for src in SFX_DIR.glob("*.mp3"):
         copy_if_newer(src, assets / "sfx" / src.name)
+    for src in (work / "manim").glob("*.mp4"):                  # «доска»: клипы ManimGX (manim_clip.py)
+        (assets / "manim").mkdir(exist_ok=True)
+        copy_if_newer(src, assets / "manim" / src.name)
 
     transforms = [[round(v, 3) for v in css_transform(z, cx, cy, width, height)]
                   for z, cx, cy in frames]

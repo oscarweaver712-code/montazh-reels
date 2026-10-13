@@ -1,0 +1,2 @@
+# Математика движением: ManimGX (MIT, API Manim CE) — своё окружение .venv-manim, ему нужен Python 3.13
+manimgx==0.1.1

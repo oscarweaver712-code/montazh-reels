@@ -368,7 +368,10 @@ CHECK_JS = r"""
         for (const el of graphics) {
           if (!shown(el)) { if (before.has(el)) moved.push(before.get(el)); continue; }
           const r = el.getBoundingClientRect();
-          now.set(el, r); sigs.set(el, print(el));
+          // внутри идёт клип («доска» ManimGX): видео в разборе не грузится, но кадр в нём меняется
+          const playing = [...el.querySelectorAll("video.clip")].some((v) =>
+            t >= parseFloat(v.dataset.start) && t < parseFloat(v.dataset.start) + parseFloat(v.dataset.duration));
+          now.set(el, r); sigs.set(el, print(el) + (playing ? "·" + t : ""));
           const rec = runs.get(el);
           if (!rec || rec.sig !== sigs.get(el)) moved.push(r);
         }

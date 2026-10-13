@@ -53,6 +53,12 @@ if (-not (Test-Path $Python)) { uv venv .venv --python 3.12; Check "Не соз�
 uv pip install --python $Python -r requirements.txt
 Check "Не поставились пакеты Python — проверь интернет."
 
+Step "Математика движением: ManimGX (своё окружение — ему нужен Python 3.13)"
+$ManimPython = ".venv-manim\Scripts\python.exe"
+if (-not (Test-Path $ManimPython)) { uv venv .venv-manim --python 3.13; Check "Не создалось окружение для ManimGX." }
+uv pip install --python $ManimPython -r requirements-manim.txt
+Check "Не поставился ManimGX — проверь интернет."
+
 Step "Модели: речь (~1,6 ГБ), лица, маска человека, текст в кадре (один раз)"
 & $Python -c "from huggingface_hub import snapshot_download; snapshot_download('mobiuslabsgmbh/faster-whisper-large-v3-turbo')"
 Check "Не скачалась модель распознавания речи — проверь интернет и запусти установку снова."

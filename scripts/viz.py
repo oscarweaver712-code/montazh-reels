@@ -213,6 +213,28 @@ def formula(cid: str, latex: str, at: float, dur: float, fmt: str = "9:16", wher
     return frame(cid, (left, top, width, height), inner), motion(cid, at, dur, entry="slam")
 
 
+def board(cid: str, stem: str, clip: str, at: float, fmt: str = "9:16", where: str = "chest",
+          place: tuple | None = None, track: int = 2) -> tuple:
+    """«Доска»: клип ManimGX (scripts/manim_clip.py) на плашке — формула преобразуется, график строится.
+
+    Плашка видна ровно столько, сколько идёт клип (длительность — из самого файла), входит и уходит
+    движением, как остальные. Клип — слой страницы с дорожкой track: два клипа одновременно — разные
+    дорожки (0 — дубль, 1 — вырезка). Нет клипа — громкая ошибка: сначала manim_clip.py.
+    """
+    from common import WORK_DIR, probe
+
+    path = WORK_DIR / stem / "manim" / clip
+    if not path.exists():
+        raise FileNotFoundError(f"нет клипа work/{stem}/manim/{clip} — сначала scripts/manim_clip.py {stem} <сцена>")
+    dur = round(float(probe(path)["duration"]), 2)
+    left, top, width, height = place or box(fmt, where)
+    inner = (f'          <video id="{cid}-clip" class="clip" src="assets/manim/{html_lib.escape(clip, quote=True)}" muted '
+             f'playsinline data-start="{at:.2f}" data-duration="{dur:.2f}" data-track-index="{track}"\n'
+             f'                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; '
+             f'border-radius: 26px; background: #141210;"></video>')
+    return frame(cid, (left, top, width, height), inner), motion(cid, at, dur)
+
+
 def plot(cid: str, fn, x: tuple, y: tuple, at: float, dur: float, fmt: str = "9:16", where: str = "chest",
          place: tuple | None = None, label: str = "", points: list | None = None, samples: int = 240,
          draw: float = 1.2) -> tuple:
