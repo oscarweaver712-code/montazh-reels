@@ -1,0 +1,149 @@
+# Sound design: the effects kit, placed by frame, heard over the score
+
+Every anidoodle sound effect is **built in code, from nothing**: no samples, no recordings, ever.
+(The music's acoustic instruments can play recordings from the optional sound pack; effects never
+do.) Every effect is deterministic: the same cue and seed give identical samples.
+
+Code: `engine/src/canvas-core/music/sfxKit.ts` (the kit), `sfxMix.ts` (placement), `sfxCore.ts`
+(building blocks). Tool: `engine/tools/sfx.mjs`.
+
+## What makes an effect sound designed, not generated
+
+- **Layers.** Every sound has a transient (the contact: a 1-4 ms filtered noise burst), a body
+  (modes of the struck object, a pitch-dropping sine, a friction band) and a tail (a small room from
+  `dsp.room`). A single noise burst is not an effect. It is a click.
+- **Physics, cheaply.** Plastic, bricks and bells are *modal*: a few damped sines at inharmonic
+  ratios. Drops and bubbles ring with a *rising* pitch. A whoosh is a *pass-by*: distance sets
+  level and air, radial speed sets the doppler glide (bright coming, darker going), angle sets pan.
+  A pen's friction band brightens with stroke speed.
+- **Stereo that moves.** Moving sounds travel across the field (`dir: 1` = left to right).
+  Hits sit a little off-centre with a Haas offset. Tails are decorrelated.
+- **No two hits alike.** Pitch, decay, pan, mode tuning and level (±1 dB) vary per seed. Twenty
+  key ticks are twenty different ticks. `mixSfx` gives each cue its own seed from (kind, frame), so
+  inserting a cue never changes the others.
+- **Tuned where it is tonal.** chime, riser, `press:confirm` and `impact:bloom` follow the film's
+  key. A sparkle in the wrong key sounds like a mistake, so there is **no default key or tempo**.
+  Pass `plan.score: { piece, tempo? }` (key, bpm and bar come from the film's piece) or set
+  `plan.key` / `plan.bpm`. A tuned kind with no key, or a riser with no bpm, throws.
+
+## The kit
+
+`node tools/sfx.mjs list` prints this live. The level is the target loudness over the sound's own
+speaking window (K-weighted, see below). Duck is how far the score dips under it.
+
+| kind | variants (first = default) | use it for | level | duck |
+|---|---|---|---|---|
+| tick | key, soft, ui, space | typing, one per character; a UI tick | -20.5 | 0 |
+| press | thock, soft, confirm | the Generate button; `confirm` adds a tuned answer | -13 | 2 |
+| pop | pop, cork, tiny | something appears; a card lands; a badge | -16 | 1 |
+| ink | plip, double, bloom | an ink drop; `bloom` opens an ink-bloom frame | -15 | 2 |
+| scratch | nib, pencil, marker | lettering being written (`lengthS` = writing time) | -18.5 | 1.5 |
+| paper | slide, flip, rustle | a sheet lands (hit = landing), a page turn (hit = snap) | -18 | 1.5 |
+| whoosh | soft, air, fast, deep | something passes the camera (hit = the pass-by) | -16 | 2 |
+| swish | in, out, soft | a UI panel or card slides | -17 | 1 |
+| riser | soft, air, tonal | THE build into the reveal (hit = its end) | -15 | 2 |
+| impact | boom, soft, bloom | THE reveal; `bloom` breathes in first and shimmers in key | -9 | 6 |
+| chime | sparkle, bell, glint | magic / success, tuned to the key | -17 | 1.5 |
+| bubble | bubbles, splash, gloop | water life, the koi | -16.5 | 1.5 |
+| brick | clack, snap, tumble | toy bricks: tap, press onto studs, drop on a pile | -15 | 1.5 |
+| thread | pull, pierce, stitch | embroidery: thread through cloth (hit = the tug), the needle | -17.5 | 1.5 |
+
+## Placing effects in a film
+
+Cues are addressed by **film frame**, a whole number (a fractional frame throws; to land a hit
+between frames, `snap` it to the beat). The frame is where the sound's sync point lands: the hit;
+the pass-by of a whoosh; the landing of a paper slide; the END of a riser. Pre-roll (a whoosh's
+approach, a riser's build) is rendered before the frame. If it would start before frame 0,
+the plan throws and names the earliest legal frame.
+
+```ts
+import { filmSfx, filmAudio, composePiece, type SfxPlan } from "./music";
+import { myScore } from "./myScore";                  // the Material YOU composed for this film (compose.md)
+const score = composePiece(myScore);
+const plan: SfxPlan = {
+  fps: 30, frames: 450, score: { piece: score }, beatZeroS: 0, seed: 7,  // key, bpm, bar from the score
+  cues: [
+    { frame: 12, kind: "tick" },                                          // ...one per typed character
+    { frame: 157, kind: "press", variant: "thock", snap: "beat", label: "Generate" },
+    { frame: 182, kind: "scratch", variant: "nib", lengthS: 1.4 },
+    { frame: 232, kind: "whoosh", variant: "soft", dir: 1 },
+    { frame: 400, kind: "riser", beats: 4 },                              // ends ON bar 5
+    { frame: 400, kind: "impact", variant: "bloom", snap: "bar" },
+  ],
+};
+export const audio = filmSfx(filmAudio(score, 15), plan);   // Film.audio: score + effects
+```
+
+- `snap: "bar" | "beat" | "8th" | "16th"` moves the sync point to the tempo grid (`bpm`,
+  `beatZeroS`, `beatsPerBar`). Snap musical moments: the reveal on the bar, a sparkle on the beat.
+  Keep UI sounds (typing, clicks) on the picture.
+- `beats` sizes a riser in tempo. Its chord pulses in 8ths, then 16ths, then 32nds, and it stops
+  on the downbeat.
+- Per cue: `variant`, `seed`, `pitch` (semitones), `gainDb`, `dir`, `lengthS`, `duckDb`, `minDb`,
+  `label`.
+- `mixSfx(music, plan)` returns the mix, the stems (`sfx`, ducked `music`), the duck curve, every
+  placed cue and the audibility table. `filmSfx` wraps it for `Film.audio` and **throws on a
+  buried cue**.
+- One master at the very end: a look-ahead true-peak ceiling at -1 dBTP (`ceilingDb`). The score
+  arrives already mastered, so nothing is renormalised.
+
+## Levels and the audibility rule
+
+A cue nobody hears is a bug, not a subtle choice. (The first effects PR sat 13-19 dB under its
+music, and its test only checked that they existed.)
+
+- Every cue is measured against the ducked score **at its own moment**. The yardstick is
+  K-weighted (BS.1770) loudness over the cue's *speaking window*: the 10 ms frames within 10 dB of
+  its loudest, 15-500 ms long. The score is measured over the same window, at least 100 ms.
+- **margin = cue - score.** The mix fails if any cue is more than `minDb` under (default **-6
+  dB**). Short transients cut through at -3 to -6. Sustained textures (scratch, thread) want -3
+  or better.
+- To fix a failing cue, raise its `gainDb` first. Raise its `duckDb` only for the moments that
+  matter.
+- Ducking: the score dips before the cue's window (40 ms raised-cosine attack), holds, and comes
+  back over 280 ms (1.2 s after an impact). Typing does not duck. The reveal ducks 6 dB.
+- Measured on our own launch film's score (`launchLofi3`: a demo, never a score for your film;
+  first 15 s, 33 cues): -15.5 LUFS, -1.9 dBTP, every cue audible. Margins: typing +3 to +8 dB over the intro pad; groove cues -3.5 to +5 dB; the reveal +10.7 dB.
+
+## Taste: when to use effects
+
+- **Effects only on real direction changes.** A press, an appearance, a scene move, a landing.
+  Never under every motion, and never a constant bed of whooshes. Silence around a cue is what
+  makes it land.
+- **One signature riser, one impact per film.** They mark the big reveal. A second riser halves
+  both.
+- Transitions are gentle moves by default, so their sound is gentle: `whoosh:soft` and
+  `swish:soft`. A matched hard cut takes a short hit on the beat or nothing. Never a sharp swoosh.
+- Typing is one `tick` per character at the typing cadence, with `space` on spaces. Its level sits
+  above the intro and under the groove.
+- Put at most two cues in any 100 ms. A thock on the kick merges into the kick, which is lovely
+  when it starts the groove and mud anywhere else.
+- Hear it in context before it ships. Render the kit page (`node tools/sfx.mjs kit <dir>`) and a
+  demo over the real score, and check the audibility table.
+
+## Tools and checks
+
+```
+node tools/sfx.mjs list                              # kinds, variants, levels, uses
+node tools/sfx.mjs one whoosh soft 3 out.mp3         # one sound
+node tools/sfx.mjs kit <dir>                          # every variant x3 + demo + page + meters.json + spectra/
+node tools/sfx.mjs test                               # the gate
+```
+
+The test checks every kind and variant for:
+
+- determinism (md5 of two renders) and seed variation;
+- no NaN, no DC, a peak of -1 dBFS or lower, an end at zero, and no fizz above 20 kHz (a
+  16.5 kHz air roll-off is built in);
+- a non-silent sound whose level stays stable across seeds.
+
+It also checks:
+
+- the whoosh's doppler and pan travel;
+- a chime tuned to its key;
+- a riser synced to tempo, and snap-to-beat;
+- the demo: deterministic, at film length, true peak within ceiling, every cue audible, the score
+  ducked under the impact;
+- that a buried cue fails;
+- that validation throws clearly on an unknown kind or variant, a pre-roll before frame 0, a bad
+  seed, a frame outside the film, a snap without bpm, a bad key, or a pitch out of range.

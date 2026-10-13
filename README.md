@@ -123,6 +123,7 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 | Чистовой дубль | `scripts/prep.py input/X.MOV` | `work/X/aroll.mp4` — подрезка по тишине, цвет, голос (решения в `work/X/edit.json`) |
 | Камера и маска | `scripts/track.py`, `scripts/matte.py --cutout` | слежение за лицом, человек без фона для текста «за спиной» |
 | План | `scripts/plan.py X`, потом `--check` | `work/X/plan.md` — разбор исходника и раскадровка: что и чем в каждом месте |
+| Доска (по месту) | `scripts/manim_clip.py X work/X/manim/сцена.py` | клип ManimGX: формула преобразуется, график строится |
 | Графика | `work/X/page.py` | `studio/X/index.html` — удары по словам, карточки, субтитры |
 | Проверка страницы | `scripts/verify_page.py X` | за 2 с: ничего не залипнет, лицо не закрыто, плашки не висят, ассеты на месте |
 | Готовый ролик | `scripts/render_reel.py X` | `output/X_vN.mp4` — рендер, громкость −14 LUFS, проверка файла |
@@ -220,7 +221,7 @@ docs/     — разбор рынка (РЫНОК.md) и замер издерж
 Если что-то менялось в `scripts/`, прогнать самопроверку:
 
 ```bash
-.venv/bin/python scripts/selfcheck.py          # пара минут, 155 проверок
+.venv/bin/python scripts/selfcheck.py          # пара минут, 157 проверок
 .venv/bin/python scripts/selfcheck.py --long   # 200 сегментов, если трогал рендер
 .venv/bin/python scripts/verify_page.py --all  # все страницы графики, если трогал kit/compose
 ```

@@ -11,7 +11,7 @@
 ## Перед тем как отдать любое изменение
 
 ```bash
-.venv/bin/python scripts/selfcheck.py          # пара минут, 155 проверок
+.venv/bin/python scripts/selfcheck.py          # пара минут, 157 проверок
 .venv/bin/python scripts/selfcheck.py --long   # 200 сегментов, если трогал рендер
 .venv/bin/python scripts/verify_page.py --all  # страницы графики, если трогал kit, compose или page.py
 ```
@@ -82,7 +82,7 @@ Mac на Apple Silicon или Windows 10/11 (x64). Эталон — Mac: 16 ГБ
 стоит на 1500 МБ, чтобы возврат к «одному большому графу» гарантированно в него упёрся.
 
 Всё, что различается между системами, — в `scripts/host.py`, и только там: путь к питону
-окружения (`.venv/bin/python` на Mac, `.venv\Scripts\python.exe` на Windows), «показать в
+окружения и к ManimGX в `.venv-manim` (`.venv/bin/python` на Mac, `.venv\Scripts\python.exe` на Windows), «показать в
 Finder/Проводнике», фоновый процесс, остановка процесса с детьми, замок файла, кодек
 (аппаратный на Mac, `libx264` с ограничением потоков на Windows), UTF-8 для вывода, ссылки на
 общие скиллы (git на Windows кладёт вместо них текстовые файлы — `host.link_skills` делает из них
@@ -107,11 +107,15 @@ ffmpeg — 7.0 и новее: граф сборки читается из фай
 Весь конвейер — открытый, на обеих системах одинаковый: Whisper large-v3-turbo (MIT) — через
 mlx-whisper на Apple Silicon и faster-whisper на остальных; лица — YuNet (OpenCV, MIT); маска
 человека — MediaPipe Selfie Multiclass (Apache-2.0); текст в кадре — EasyOCR (Apache-2.0);
-ffmpeg, HyperFrames (Apache-2.0), Chromium; визуализации — каталог HyperFrames (Apache-2.0),
+ffmpeg, HyperFrames (Apache-2.0), Chromium; математика движением — ManimGX (MIT, своё окружение
+`.venv-manim`: ему нужен Python 3.13); визуализации — каталог HyperFrames (Apache-2.0),
 D3 и TopoJSON (ISC), KaTeX (MIT), всё вендорено в `presets/viz` и `studio/_vendor`. Модели — `scripts/models.py`: откуда, лицензия,
 контрольная сумма; скачиваются при установке, во время монтажа сеть не нужна. До 11.10.2026
 лица, маску и текст в кадре делал Apple Vision — закрытый и только для Mac; замер замены — в
 docstring `matte.py`. Закрытое не возвращать без разговора с владельцем.
+
+Материалы чужих открытых проектов (скиллы, правила, справочники) — в `vendor/`, у каждого лицензия
+и источник; это справочник, а не правила проекта.
 
 Одно исключение, о котором владелец знает: GSAP (анимация страниц) бесплатен для нас, но его
 лицензия — не OSI-открытая. Замена — переписать всю графику, это отдельное решение.

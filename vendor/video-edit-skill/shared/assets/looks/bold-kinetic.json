@@ -1,0 +1,29 @@
+{
+  "id": "bold-kinetic",
+  "label": "Bold Kinetic",
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font": "Anton",
+    "size": 20,
+    "primaryColor": "#ffffff",
+    "outlineColor": "#000000",
+    "safeBottomPx": 420,
+    "highlightColor": "#ffe14d",
+    "punchColor": "#ff4d6d"
+  },
+  "render": {
+    "proofWidth": 720,
+    "crfReview": 24,
+    "crfFinal": 18
+  },
+  "rules": [
+    "Short-form captions: 2-4 uppercase words, spoken word lit, punch words in a stronger colour.",
+    "Pair with motion.py graphics only where a number or a promise earns one.",
+    "Check one composited frame (render.py --frame) before a full render."
+  ]
+}
