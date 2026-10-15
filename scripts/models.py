@@ -6,7 +6,8 @@
 модель поиска лиц лежит прямо в репозитории (presets/models/).
 
 Всё открытое: распознавание речи — Whisper (MIT, скачивает сам движок), лица — YuNet (MIT),
-маска человека — MediaPipe Selfie Multiclass (Apache-2.0), запасная маска — RVM (GPL-3.0).
+маска человека — BiRefNet lite (MIT) на видеочипе, без видеочипа — MediaPipe Selfie Multiclass
+(Apache-2.0), запасная маска — RVM (GPL-3.0).
 
   .venv/bin/python scripts/models.py           # скачать недостающие и проверить все
 """
@@ -33,6 +34,13 @@ MODELS = {
         "url": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite",
         "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
         "license": "Apache-2.0", "what": "маска человека (MediaPipe)",
+    },
+    "birefnet_lite": {
+        # код модели — scripts/birefnet/ (MIT, тот же автор); замер против MediaPipe и Vision — matte.py
+        "path": DOWNLOADS / "BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth",
+        "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth",
+        "sha256": "6a1e050c6ec2697e5ed268455df544782b023acf8643ab771250979094875ab1",
+        "license": "MIT", "what": "маска человека с вещью в руке (BiRefNet lite)",
     },
     "rvm": {
         "path": DOWNLOADS / "rvm_mobilenetv3_fp32.torchscript",

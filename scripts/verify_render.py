@@ -118,6 +118,22 @@ def face_brightness(path: Path, duration: float, frames: int = 12) -> tuple:
     return float(np.median(medians)), float(np.mean(hot)), len(medians)
 
 
+def face_limit(stem: str | None) -> tuple:
+    """(порог яркости лица или None, чей он) — из project.json проекта ролика.
+
+    Порог 165 снят с серии антишколы (лицо 150–152); у чужого проекта свой свет и своя кожа,
+    и мерить его по нашей серии — значит браковать или пропускать наугад (14.10.2026).
+    """
+    import projects
+    try:
+        project = projects.of_or_default(stem) if stem else None
+    except projects.ProjectError:
+        project = None
+    if project is None:
+        return FACE_MAX_Y, "по серии антишколы"
+    return project.config["face_max"], f"проект {project.name}"
+
+
 def main():
     ap = argparse.ArgumentParser(description="Проверка готового ролика")
     ap.add_argument("video")
@@ -166,9 +182,12 @@ def main():
             worst.append(f"пусто: {name} на {holes[:5]} с")
     check(not any(w.startswith("пусто") for w in worst), "по краям нет пустых полос", ", ".join(worst))
 
-    face, hot, seen = face_brightness(video, duration)
-    if seen:
-        check(face <= FACE_MAX_Y and hot <= FACE_MAX_HOT, f"лицо не засвечено (яркость лица до {FACE_MAX_Y:g}, у серии 150–152)",
+    face_max, whose = face_limit(args.stem)
+    face, hot, seen = face_brightness(video, duration) if face_max is not None else (0, 0, 0)
+    if face_max is None:
+        print(f"  · засвет лица не проверялся: у проекта {whose} нет порога (project.json face_max)")
+    elif seen:
+        check(face <= face_max and hot <= FACE_MAX_HOT, f"лицо не засвечено (яркость лица до {face_max:g}, {whose})",
               f"медиана {face:.0f}, почти белых {hot:.1f}%, кадров с лицом {seen}")
     else:
         print("  · лица в кадре нет — засвет лица не проверялся")

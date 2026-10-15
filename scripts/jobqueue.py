@@ -13,7 +13,7 @@ done/ или failed/. Пока идёт одна задача, вторая не
 Старые задачи .sh (до 11.10.2026) на Mac всё ещё выполняются через bash.
 
   .venv/bin/python scripts/jobqueue.py add 20-prep-IMG_3317 \\
-      "python scripts/prep.py input/IMG_3317.MOV" "python scripts/track.py work/IMG_3317/aroll.mp4"
+      "python scripts/prep.py projects/antishkola/input/IMG_3317.MOV" "python scripts/track.py work/IMG_3317/aroll.mp4"
   .venv/bin/python scripts/jobqueue.py --idle 900      # обработчик: живёт, пока очередь не пустует 15 мин
 
 `add` сам будит обработчик, если его нет. Каждая строка вывода обработчика — событие
@@ -345,7 +345,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd")
     add = sub.add_parser("add", help="положить задачу в очередь (и разбудить обработчик)")
     add.add_argument("name", help="<две цифры>-<имя>: 05-render-IMG_3317, 20-prep-IMG_3317")
-    add.add_argument("steps", nargs="+", help="шаги — каждый одной строкой: \"python scripts/prep.py input/X.MOV\"")
+    add.add_argument("steps", nargs="+", help="шаги — каждый одной строкой: \"python scripts/prep.py projects/<проект>/input/X.MOV\"")
     add.add_argument("--no-wake", action="store_true", help="не будить обработчик")
     sub.add_parser("stop", help="остановить задачу, которая выполняется сейчас")
     ap.add_argument("--idle", type=float, default=900, help="выйти после стольких секунд пустой очереди")

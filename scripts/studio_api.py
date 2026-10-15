@@ -25,8 +25,9 @@ import brain
 import formats
 import host
 import jobqueue
+import projects
 import styles
-from common import INPUT_DIR, OUTPUT_DIR, ROOT, WORK_DIR, ffprobe_bin
+from common import ROOT, WORK_DIR, ffprobe_bin
 from jobqueue import CURRENT, QUEUE, runner_alive
 
 router = APIRouter()
@@ -69,10 +70,22 @@ def quick_probe(path: Path) -> dict:
     return info
 
 
-def outputs_for(stem: str) -> list:
+def source_of(stem: str) -> Path | None:
+    """Исходник ролика в input/ его проекта; нет — None. Одно имя в двух проектах — 409 с объяснением."""
+    try:
+        return projects.source(stem)
+    except projects.ProjectError as e:
+        raise HTTPException(409, str(e))
+
+
+def outputs_for(stem: str, project: "projects.Project | None" = None) -> list:
     items = []
     final = (approve.approved(stem) or {}).get("file")
-    for path in OUTPUT_DIR.glob(f"{stem}*"):
+    try:
+        folder = (project or projects.of(stem)).output
+    except projects.ProjectError:
+        return []
+    for path in folder.glob(f"{stem}*"):
         if path.suffix.lower() not in VIDEO_EXT:
             continue
         rest = path.stem[len(stem):]
@@ -86,7 +99,7 @@ def outputs_for(stem: str) -> list:
     return sorted(items, key=lambda i: -i["mtime"])
 
 
-def video_state(path: Path) -> dict:
+def video_state(path: Path, project: "projects.Project") -> dict:
     stem = path.stem
     work = WORK_DIR / stem
     try:
@@ -101,6 +114,7 @@ def video_state(path: Path) -> dict:
             "квадрат" if info["width"] == info["height"] else "вертикаль")
     return {
         "stem": stem, "name": path.name, "mtime": path.stat().st_mtime,
+        "project": project.name, "project_title": project.title,
         "size_mb": round(path.stat().st_size / 1_048_576, 1), **info, "orientation": fmt_src,
         "steps": {
             "transcribed": (WORK_DIR / f"{stem}.words.json").exists(),
@@ -112,7 +126,7 @@ def video_state(path: Path) -> dict:
         "brief": {"exists": bool(brief.get("exists")), "style": brief["style"],
                   "formats": brief["formats"], "variants": brief["variants"],
                   "error": brief.get("error")},
-        "outputs": outputs_for(stem),
+        "outputs": outputs_for(stem, project),
         "approved": (approve.approved(stem) or {}).get("file"),
     }
 
@@ -127,15 +141,20 @@ def ping():
 @router.get("/api/studio/state")
 def studio_state():
     seen["at"] = time.time()
-    # скрытые — недописанные загрузки и служебные «._имя» macOS на внешних дисках
-    inputs = sorted((p for p in INPUT_DIR.glob("*") if p.suffix.lower() in VIDEO_EXT
-                     and not p.name.startswith(".")), key=lambda p: -p.stat().st_mtime)
+    # исходники всех проектов (скрытые — недописанные загрузки и «._имя» macOS — Project.sources
+    # не отдаёт). Одно имя в двух проектах — ошибка на весь список: у них общий work/<имя>/
+    try:
+        inputs, problem = projects.sources(), None
+    except projects.ProjectError as e:
+        inputs, problem = [], str(e)
     queue = queue_state()
     if queue["pending"] and not queue["alive"]:
         # задачи мозг кладёт в очередь файлами; выполняет их студия — сама, без кнопки
         ensure_runner()
         queue = queue_state()
-    return {"videos": [video_state(p) for p in inputs], "queue": queue, "batch": batch_view(),
+    return {"videos": [video_state(path, project) for project, path in inputs], "problem": problem,
+            "projects": [{"name": p.name, "title": p.title} for p in projects.all_projects()],
+            "default_project": projects.DEFAULT, "queue": queue, "batch": batch_view(),
             "formats": {k: dict(v, id=k) for k, v in formats.FORMATS.items()},
             "goals": styles.GOALS, "tiers": styles.TIERS}
 
@@ -177,9 +196,8 @@ def get_brief(stem: str):
 @router.post("/api/studio/brief/{stem}")
 def post_brief(stem: str, data: dict = Body(...)):
     stem = safe_stem(stem)
-    if not any((INPUT_DIR / f"{stem}{ext}").exists() for ext in (".MOV", ".mov", ".mp4", ".MP4", ".m4v", ".mkv")) \
-            and not (WORK_DIR / stem).exists():
-        raise HTTPException(404, f"Ролика {stem} нет в input/")
+    if source_of(stem) is None and not (WORK_DIR / stem).exists():
+        raise HTTPException(404, f"Ролика {stem} нет в input/ ни одного проекта")
     try:
         brief = styles.save_brief(stem, data)
         return {"ok": True, "brief": brief, "text": styles.director_brief(brief=brief)}
@@ -294,13 +312,13 @@ def fast_job(data: dict = Body(...)):
         formats.get(fmt)
     except (styles.StyleError, ValueError) as e:
         raise HTTPException(400, str(e))
-    source = next((p for p in INPUT_DIR.glob(f"{stem}.*") if p.suffix.lower() in VIDEO_EXT), None)
+    source = source_of(stem)
     if not source:
-        raise HTTPException(404, f"Нет исходника {stem} в input/")
+        raise HTTPException(404, f"Нет исходника {stem} в input/ проектов")
     tag = fmt.replace(":", "x")
     name = f"30-fast-{stem}-{style_id}-{tag}-{int(time.time()) % 100000}"
     # шаг — список слов, а не строка оболочки: имя файла с пробелами или кавычками его не сломает
-    steps = [["python", "scripts/reels.py", f"input/{source.name}", "--style", style_id, "--format", fmt]]
+    steps = [["python", "scripts/reels.py", projects.rel(source), "--style", style_id, "--format", fmt]]
     return {"job": enqueue(name, steps, title=f"Быстрый монтаж {stem}: {style_id}, {fmt}"), **queue_state()}
 
 
@@ -328,22 +346,31 @@ def approve_apply(stem: str, data: dict = Body(...)):
 
 @router.get("/api/studio/file/{folder}/{name}")
 def studio_file(folder: str, name: str):
-    base = {"output": OUTPUT_DIR, "input": INPUT_DIR}.get(folder)
-    if base is None:
-        raise HTTPException(404, "нет такой папки")
-    path = base / Path(name).name
-    if not path.exists():
-        raise HTTPException(404, "нет файла")
+    try:
+        path = projects.locate(folder, name)
+    except projects.ProjectError as e:
+        raise HTTPException(404, str(e))
     media = {".jpg": "image/jpeg", ".png": "image/png"}.get(path.suffix.lower(), "video/mp4")
     return FileResponse(path, media_type=media)
 
 
 @router.post("/api/studio/reveal")
 def reveal(data: dict = Body(...)):
-    folder = {"output": OUTPUT_DIR, "input": INPUT_DIR, "work": WORK_DIR}.get(data.get("folder", "output"))
-    if folder is None:
+    folder, name = data.get("folder", "output"), data.get("name")
+    if folder == "work":
+        target = WORK_DIR / Path(name).name if name else WORK_DIR
+    elif folder not in ("input", "output"):
         raise HTTPException(400, "нет такой папки")
-    target = folder / Path(data.get("name", "")).name if data.get("name") else folder
+    elif name:
+        try:
+            target = projects.locate(folder, name)
+        except projects.ProjectError as e:
+            raise HTTPException(404, str(e))
+    else:
+        try:
+            target = getattr(projects.get(data.get("project") or projects.DEFAULT), folder)
+        except projects.ProjectError as e:
+            raise HTTPException(404, str(e))
     if target.exists():
         host.reveal(target)               # Finder на Mac, Проводник на Windows
     return {"ok": True}
@@ -387,12 +414,24 @@ def brain_thread(thread_id: str):
 def studio_context(stem: str | None) -> str:
     """Что мозгу знать о выбранном ролике: файлы, этапы и бриф."""
     if not stem:
-        return "Ролик не выбран: работай с тем, о чём просит человек (по умолчанию — новые из input/)."
-    path = next((p for p in INPUT_DIR.glob(f"{stem}.*") if p.suffix.lower() in VIDEO_EXT), None)
-    lines = [f"Выбран ролик {stem} ({path.name if path else 'исходника в input/ нет'}). Эта сессия — только "
-             f"про него: другие ролики монтируются в своих сессиях, не трогай их."]
+        return ("Ролик не выбран: работай с тем, о чём просит человек. Проекты: " +
+                ", ".join(f"{p.name} ({p.title})" for p in projects.all_projects()) +
+                f"; по умолчанию — {projects.DEFAULT}.")
+    try:
+        path, project = projects.source(stem), projects.of(stem)
+    except projects.ProjectError as e:
+        path, project = None, None
+        lines = [f"Ролик {stem}: {e}"]
+    if project:
+        lines = [f"Выбран ролик {stem} ({projects.rel(path) if path else 'исходника нет'}), "
+                 f"проект {project.name} — «{project.title}». Эта сессия — только про него: другие ролики "
+                 f"монтируются в своих сессиях, не трогай их.",
+                 f"Правила проекта — projects/{project.name}/rules.md: прочитай до плана, они важнее стиля. "
+                 f"Язык речи {project.config['language']}, финальная плашка CTA "
+                 f"{'нужна' if project.config['cta'] else 'НЕ нужна (build_page(cta=False))'}; "
+                 f"выпуски — projects/{project.name}/output/."]
     if path:
-        state = video_state(path)
+        state = video_state(path, project)
         done = [k for k, v in state["steps"].items() if v]
         lines.append(f"Готовые этапы: {', '.join(done) or 'ничего'}. Выпуски: "
                      f"{', '.join(o['name'] for o in state['outputs'][:6]) or 'нет'}.")
@@ -573,13 +612,14 @@ async def brain_stream(thread_id: str, request: Request, since: int = 0):
 # (правило Валеры, 11.10.2026). Между ходами студия ждёт очередь и сама продолжает разговор,
 # когда тяжёлые задачи отработали. Конец ролика мозг отмечает строкой «СТАТУС: …».
 BATCH_TURNS = 12
-BATCH_FIRST = """Смонтируй {stem} по брифу (work/{stem}/brief.json; нет брифа — по умолчанию, вирусный 9:16).
+BATCH_FIRST = """Смонтируй {stem} по брифу (work/{stem}/brief.json; нет брифа — умолчания проекта из project.json).
+Ролик из проекта {project}: прочитай projects/{project}/rules.md до плана — правила проекта важнее стиля.
 Сначала план: scripts/plan.py {stem} → заполни work/{stem}/plan.md (инструменты — docs/АРСЕНАЛ.md) →
 plan.py {stem} --check, и только потом страница; без годного плана рендер не пойдёт.
 Это пачка: человек не отвечает по ходу — решай сам, каждое решение с откатом в отчёт.
 Тяжёлое — в очередь (scripts/jobqueue.py add …): когда очередь отработает, студия сама напишет тебе сюда.
 В конце КАЖДОГО ответа — одна строка:
-  СТАТУС: ГОТОВО — ролик в output/ и прошёл verify_render;
+  СТАТУС: ГОТОВО — ролик в projects/{project}/output/ и прошёл verify_render;
   СТАТУС: ЖДУ ОЧЕРЕДЬ — поставил задачи, продолжу после них;
   СТАТУС: НУЖЕН ЧЕЛОВЕК — <что решить> — если без человека дальше нельзя (сорванный дубль и т.п.)."""
 batch: dict = {"running": False, "items": [], "engine": None, "mode": "safe", "stop": False, "started": None}
@@ -629,10 +669,19 @@ async def run_batch() -> None:
             thread = brain.new_thread(batch["engine"], f"{stem}: пачка", stem)
             item.update(thread=thread["id"], status="working", note="")
             batch_save()
-            text = BATCH_FIRST.format(stem=stem)
+            try:
+                project = projects.of(stem).name
+            except projects.ProjectError as e:
+                item.update(status="failed", note=str(e)[:300])
+                batch_save()
+                continue
+            text = BATCH_FIRST.format(stem=stem, project=project)
             for turn in range(BATCH_TURNS):
                 before = all_jobs()
                 reply = await batch_turn(thread, text)
+                if batch["stop"]:
+                    item.update(status="skipped", note="пачку остановили посреди ролика")
+                    break
                 errors = [e["text"] for e in reply.get("events", []) if e["type"] == "error"]
                 status, why = status_of(reply)
                 if errors:
@@ -687,10 +736,13 @@ async def run_batch() -> None:
 def new_videos() -> list:
     """Ролики без выпусков и без апрува — кандидаты в пачку."""
     found = []
-    for path in sorted(INPUT_DIR.glob("*")):
-        if path.suffix.lower() in VIDEO_EXT and not path.name.startswith("."):
-            if not outputs_for(path.stem) and not approve.approved(path.stem):
-                found.append(path.stem)
+    try:
+        index = projects.index()
+    except projects.ProjectError:
+        return []                       # одно имя в двух проектах: студия уже показывает ошибку
+    for stem, (project, _) in sorted(index.items()):
+        if not outputs_for(stem, project) and not approve.approved(stem):
+            found.append(stem)
     return found
 
 

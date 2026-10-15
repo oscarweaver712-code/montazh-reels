@@ -1,0 +1,1236 @@
+{
+ "words": [
+  {
+   "word": "I",
+   "start": 0.0,
+   "end": 0.6,
+   "prob": 0.95751953125
+  },
+  {
+   "word": "always",
+   "start": 0.6,
+   "end": 0.88,
+   "prob": 0.9658203125
+  },
+  {
+   "word": "thought",
+   "start": 0.88,
+   "end": 1.22,
+   "prob": 0.98974609375
+  },
+  {
+   "word": "that",
+   "start": 1.22,
+   "end": 1.46,
+   "prob": 0.60546875
+  },
+  {
+   "word": "I",
+   "start": 1.46,
+   "end": 1.54,
+   "prob": 0.98681640625
+  },
+  {
+   "word": "have",
+   "start": 1.54,
+   "end": 1.78,
+   "prob": 0.84765625
+  },
+  {
+   "word": "to",
+   "start": 1.78,
+   "end": 1.94,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "do",
+   "start": 1.94,
+   "end": 2.12,
+   "prob": 0.9970703125
+  },
+  {
+   "word": "it",
+   "start": 2.12,
+   "end": 2.34,
+   "prob": 0.99365234375
+  },
+  {
+   "word": "alone",
+   "start": 2.34,
+   "end": 2.74,
+   "prob": 0.9970703125
+  },
+  {
+   "word": "and",
+   "start": 2.74,
+   "end": 3.14,
+   "prob": 0.6669921875
+  },
+  {
+   "word": "I",
+   "start": 3.14,
+   "end": 3.34,
+   "prob": 0.89404296875
+  },
+  {
+   "word": "have",
+   "start": 3.34,
+   "end": 3.76,
+   "prob": 0.98193359375
+  },
+  {
+   "word": "to",
+   "start": 3.76,
+   "end": 3.88,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "be",
+   "start": 3.88,
+   "end": 4.08,
+   "prob": 0.99658203125
+  },
+  {
+   "word": "fierce",
+   "start": 4.08,
+   "end": 4.88,
+   "prob": 0.98046875
+  },
+  {
+   "word": "and",
+   "start": 4.88,
+   "end": 5.14,
+   "prob": 0.935546875
+  },
+  {
+   "word": "I",
+   "start": 5.14,
+   "end": 5.22,
+   "prob": 0.96875
+  },
+  {
+   "word": "have",
+   "start": 5.22,
+   "end": 5.38,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "to",
+   "start": 5.38,
+   "end": 5.52,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "be",
+   "start": 5.52,
+   "end": 5.7,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "strong.",
+   "start": 5.7,
+   "end": 6.18,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "But",
+   "start": 6.54,
+   "end": 7.16,
+   "prob": 0.994140625
+  },
+  {
+   "word": "really",
+   "start": 7.16,
+   "end": 7.6,
+   "prob": 0.986328125
+  },
+  {
+   "word": "I",
+   "start": 7.6,
+   "end": 7.84,
+   "prob": 0.6396484375
+  },
+  {
+   "word": "can",
+   "start": 7.84,
+   "end": 8.06,
+   "prob": 0.89892578125
+  },
+  {
+   "word": "rely",
+   "start": 8.06,
+   "end": 8.5,
+   "prob": 0.9580078125
+  },
+  {
+   "word": "on",
+   "start": 8.5,
+   "end": 9.28,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "my",
+   "start": 9.28,
+   "end": 9.46,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "wound",
+   "start": 9.46,
+   "end": 9.9,
+   "prob": 0.8427734375
+  },
+  {
+   "word": "that",
+   "start": 9.9,
+   "end": 10.22,
+   "prob": 0.990234375
+  },
+  {
+   "word": "is",
+   "start": 10.22,
+   "end": 10.36,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "connected",
+   "start": 10.36,
+   "end": 10.82,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "to",
+   "start": 10.82,
+   "end": 11.08,
+   "prob": 0.99609375
+  },
+  {
+   "word": "the",
+   "start": 11.08,
+   "end": 11.24,
+   "prob": 0.99658203125
+  },
+  {
+   "word": "earth.",
+   "start": 11.24,
+   "end": 11.6,
+   "prob": 0.90087890625
+  },
+  {
+   "word": "During",
+   "start": 12.3,
+   "end": 12.72,
+   "prob": 0.9970703125
+  },
+  {
+   "word": "my",
+   "start": 12.72,
+   "end": 13.0,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "first",
+   "start": 13.0,
+   "end": 13.34,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "ceremony",
+   "start": 13.34,
+   "end": 13.94,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "I",
+   "start": 13.94,
+   "end": 14.96,
+   "prob": 0.62841796875
+  },
+  {
+   "word": "really",
+   "start": 14.96,
+   "end": 15.26,
+   "prob": 0.9833984375
+  },
+  {
+   "word": "felt",
+   "start": 15.26,
+   "end": 15.72,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "that",
+   "start": 15.72,
+   "end": 16.36,
+   "prob": 0.99609375
+  },
+  {
+   "word": "the",
+   "start": 16.36,
+   "end": 17.32,
+   "prob": 0.95703125
+  },
+  {
+   "word": "secret",
+   "start": 17.32,
+   "end": 17.64,
+   "prob": 0.94921875
+  },
+  {
+   "word": "plant",
+   "start": 17.64,
+   "end": 18.06,
+   "prob": 0.98974609375
+  },
+  {
+   "word": "was",
+   "start": 18.06,
+   "end": 18.28,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "helping",
+   "start": 18.28,
+   "end": 18.7,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "me",
+   "start": 18.7,
+   "end": 19.08,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "to",
+   "start": 19.08,
+   "end": 19.48,
+   "prob": 0.990234375
+  },
+  {
+   "word": "repair",
+   "start": 19.48,
+   "end": 20.3,
+   "prob": 0.8779296875
+  },
+  {
+   "word": "things",
+   "start": 20.3,
+   "end": 20.82,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "in",
+   "start": 20.82,
+   "end": 21.04,
+   "prob": 0.9951171875
+  },
+  {
+   "word": "myself.",
+   "start": 21.04,
+   "end": 21.5,
+   "prob": 0.52197265625
+  },
+  {
+   "word": "Especially",
+   "start": 21.88,
+   "end": 22.44,
+   "prob": 0.99267578125
+  },
+  {
+   "word": "in",
+   "start": 22.44,
+   "end": 23.14,
+   "prob": 0.99365234375
+  },
+  {
+   "word": "my",
+   "start": 23.14,
+   "end": 23.32,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "wound",
+   "start": 23.32,
+   "end": 23.74,
+   "prob": 0.74462890625
+  },
+  {
+   "word": "where",
+   "start": 23.74,
+   "end": 24.14,
+   "prob": 0.92333984375
+  },
+  {
+   "word": "I",
+   "start": 24.14,
+   "end": 24.32,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "was",
+   "start": 24.32,
+   "end": 24.54,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "hurt",
+   "start": 24.54,
+   "end": 24.84,
+   "prob": 0.998046875
+  },
+  {
+   "word": "a",
+   "start": 24.84,
+   "end": 25.02,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "lot.",
+   "start": 25.02,
+   "end": 25.24,
+   "prob": 1.0
+  },
+  {
+   "word": "And",
+   "start": 25.7,
+   "end": 26.36,
+   "prob": 0.89208984375
+  },
+  {
+   "word": "it",
+   "start": 26.36,
+   "end": 26.9,
+   "prob": 1.0
+  },
+  {
+   "word": "was",
+   "start": 26.9,
+   "end": 27.1,
+   "prob": 1.0
+  },
+  {
+   "word": "building",
+   "start": 27.1,
+   "end": 27.5,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "me",
+   "start": 27.5,
+   "end": 27.94,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "up",
+   "start": 27.94,
+   "end": 28.3,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "bit",
+   "start": 28.3,
+   "end": 28.88,
+   "prob": 0.6806640625
+  },
+  {
+   "word": "by",
+   "start": 28.88,
+   "end": 29.14,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "piece.",
+   "start": 29.14,
+   "end": 29.66,
+   "prob": 0.7822265625
+  },
+  {
+   "word": "Before",
+   "start": 30.0,
+   "end": 30.32,
+   "prob": 0.8466796875
+  },
+  {
+   "word": "the",
+   "start": 30.32,
+   "end": 30.5,
+   "prob": 0.99365234375
+  },
+  {
+   "word": "next",
+   "start": 30.5,
+   "end": 30.7,
+   "prob": 0.98779296875
+  },
+  {
+   "word": "ceremony,",
+   "start": 30.7,
+   "end": 31.08,
+   "prob": 0.80078125
+  },
+  {
+   "word": "I",
+   "start": 31.64,
+   "end": 31.7,
+   "prob": 0.99267578125
+  },
+  {
+   "word": "did",
+   "start": 31.7,
+   "end": 32.0,
+   "prob": 0.974609375
+  },
+  {
+   "word": "a",
+   "start": 32.0,
+   "end": 32.3,
+   "prob": 0.76220703125
+  },
+  {
+   "word": "kambal",
+   "start": 32.3,
+   "end": 32.92,
+   "prob": 0.560546875
+  },
+  {
+   "word": "to",
+   "start": 32.92,
+   "end": 33.3,
+   "prob": 0.90478515625
+  },
+  {
+   "word": "really",
+   "start": 33.3,
+   "end": 33.62,
+   "prob": 0.978515625
+  },
+  {
+   "word": "open",
+   "start": 33.62,
+   "end": 34.06,
+   "prob": 0.99560546875
+  },
+  {
+   "word": "up",
+   "start": 34.06,
+   "end": 34.38,
+   "prob": 0.96337890625
+  },
+  {
+   "word": "myself",
+   "start": 34.38,
+   "end": 34.9,
+   "prob": 0.77490234375
+  },
+  {
+   "word": "to",
+   "start": 34.9,
+   "end": 35.36,
+   "prob": 0.95947265625
+  },
+  {
+   "word": "all",
+   "start": 35.36,
+   "end": 35.64,
+   "prob": 0.95556640625
+  },
+  {
+   "word": "the",
+   "start": 35.64,
+   "end": 35.78,
+   "prob": 0.98291015625
+  },
+  {
+   "word": "plant",
+   "start": 35.78,
+   "end": 36.06,
+   "prob": 0.95166015625
+  },
+  {
+   "word": "medicine.",
+   "start": 36.06,
+   "end": 36.6,
+   "prob": 0.650390625
+  },
+  {
+   "word": "And",
+   "start": 37.16,
+   "end": 37.28,
+   "prob": 0.7783203125
+  },
+  {
+   "word": "in",
+   "start": 37.28,
+   "end": 37.66,
+   "prob": 0.9921875
+  },
+  {
+   "word": "the",
+   "start": 37.66,
+   "end": 37.8,
+   "prob": 1.0
+  },
+  {
+   "word": "evening",
+   "start": 37.8,
+   "end": 38.16,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "when",
+   "start": 38.16,
+   "end": 38.42,
+   "prob": 0.62890625
+  },
+  {
+   "word": "I",
+   "start": 38.42,
+   "end": 38.64,
+   "prob": 0.99609375
+  },
+  {
+   "word": "went",
+   "start": 38.64,
+   "end": 39.12,
+   "prob": 0.9970703125
+  },
+  {
+   "word": "again",
+   "start": 39.12,
+   "end": 39.72,
+   "prob": 0.98681640625
+  },
+  {
+   "word": "for",
+   "start": 39.72,
+   "end": 40.3,
+   "prob": 0.98876953125
+  },
+  {
+   "word": "the",
+   "start": 40.3,
+   "end": 40.44,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "teaching",
+   "start": 40.44,
+   "end": 40.8,
+   "prob": 0.998046875
+  },
+  {
+   "word": "of",
+   "start": 40.8,
+   "end": 41.04,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "the",
+   "start": 41.04,
+   "end": 41.16,
+   "prob": 0.97607421875
+  },
+  {
+   "word": "secret",
+   "start": 41.16,
+   "end": 41.48,
+   "prob": 0.966796875
+  },
+  {
+   "word": "plant,",
+   "start": 41.48,
+   "end": 41.94,
+   "prob": 0.90283203125
+  },
+  {
+   "word": "I",
+   "start": 42.18,
+   "end": 42.68,
+   "prob": 0.998046875
+  },
+  {
+   "word": "felt",
+   "start": 42.68,
+   "end": 43.16,
+   "prob": 1.0
+  },
+  {
+   "word": "it",
+   "start": 43.16,
+   "end": 43.68,
+   "prob": 0.99462890625
+  },
+  {
+   "word": "was",
+   "start": 43.68,
+   "end": 43.94,
+   "prob": 1.0
+  },
+  {
+   "word": "more",
+   "start": 43.94,
+   "end": 44.26,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "profound,",
+   "start": 44.26,
+   "end": 44.88,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "more",
+   "start": 45.22,
+   "end": 45.54,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "deep.",
+   "start": 45.54,
+   "end": 45.86,
+   "prob": 0.998046875
+  },
+  {
+   "word": "And",
+   "start": 46.1,
+   "end": 46.28,
+   "prob": 0.99560546875
+  },
+  {
+   "word": "I",
+   "start": 46.28,
+   "end": 46.42,
+   "prob": 1.0
+  },
+  {
+   "word": "also",
+   "start": 46.42,
+   "end": 46.88,
+   "prob": 1.0
+  },
+  {
+   "word": "had",
+   "start": 46.88,
+   "end": 47.2,
+   "prob": 1.0
+  },
+  {
+   "word": "a",
+   "start": 47.2,
+   "end": 47.4,
+   "prob": 1.0
+  },
+  {
+   "word": "very",
+   "start": 47.4,
+   "end": 47.76,
+   "prob": 1.0
+  },
+  {
+   "word": "large",
+   "start": 47.76,
+   "end": 48.14,
+   "prob": 1.0
+  },
+  {
+   "word": "connection",
+   "start": 48.14,
+   "end": 48.72,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "with",
+   "start": 48.72,
+   "end": 49.5,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "my",
+   "start": 49.5,
+   "end": 49.74,
+   "prob": 1.0
+  },
+  {
+   "word": "wound",
+   "start": 49.74,
+   "end": 50.2,
+   "prob": 0.73486328125
+  },
+  {
+   "word": "and",
+   "start": 50.2,
+   "end": 50.76,
+   "prob": 0.83056640625
+  },
+  {
+   "word": "from",
+   "start": 50.76,
+   "end": 51.02,
+   "prob": 1.0
+  },
+  {
+   "word": "my",
+   "start": 51.02,
+   "end": 51.2,
+   "prob": 1.0
+  },
+  {
+   "word": "wound",
+   "start": 51.2,
+   "end": 51.56,
+   "prob": 0.994140625
+  },
+  {
+   "word": "to",
+   "start": 51.56,
+   "end": 51.96,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "the",
+   "start": 51.96,
+   "end": 52.1,
+   "prob": 1.0
+  },
+  {
+   "word": "earth.",
+   "start": 52.1,
+   "end": 52.4,
+   "prob": 0.951171875
+  },
+  {
+   "word": "I",
+   "start": 52.8,
+   "end": 53.44,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "felt",
+   "start": 53.44,
+   "end": 53.8,
+   "prob": 1.0
+  },
+  {
+   "word": "that",
+   "start": 53.8,
+   "end": 54.12,
+   "prob": 1.0
+  },
+  {
+   "word": "I",
+   "start": 54.12,
+   "end": 54.26,
+   "prob": 1.0
+  },
+  {
+   "word": "belonged",
+   "start": 54.26,
+   "end": 54.7,
+   "prob": 0.99658203125
+  },
+  {
+   "word": "to",
+   "start": 54.7,
+   "end": 55.26,
+   "prob": 1.0
+  },
+  {
+   "word": "this",
+   "start": 55.26,
+   "end": 55.54,
+   "prob": 1.0
+  },
+  {
+   "word": "earth,",
+   "start": 55.54,
+   "end": 55.98,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "that",
+   "start": 56.26,
+   "end": 56.68,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "I",
+   "start": 56.68,
+   "end": 56.82,
+   "prob": 1.0
+  },
+  {
+   "word": "made",
+   "start": 56.82,
+   "end": 57.22,
+   "prob": 0.66748046875
+  },
+  {
+   "word": "from",
+   "start": 57.22,
+   "end": 57.54,
+   "prob": 0.998046875
+  },
+  {
+   "word": "this",
+   "start": 57.54,
+   "end": 58.04,
+   "prob": 1.0
+  },
+  {
+   "word": "earth,",
+   "start": 58.04,
+   "end": 58.44,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "that",
+   "start": 58.44,
+   "end": 58.72,
+   "prob": 0.96728515625
+  },
+  {
+   "word": "my",
+   "start": 58.72,
+   "end": 58.92,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "roots",
+   "start": 58.92,
+   "end": 59.4,
+   "prob": 0.994140625
+  },
+  {
+   "word": "are",
+   "start": 59.4,
+   "end": 60.3,
+   "prob": 0.99609375
+  },
+  {
+   "word": "in",
+   "start": 60.3,
+   "end": 60.8,
+   "prob": 0.970703125
+  },
+  {
+   "word": "this",
+   "start": 60.8,
+   "end": 61.08,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "earth",
+   "start": 61.08,
+   "end": 61.4,
+   "prob": 0.81884765625
+  },
+  {
+   "word": "and",
+   "start": 61.4,
+   "end": 62.12,
+   "prob": 0.76220703125
+  },
+  {
+   "word": "I",
+   "start": 62.12,
+   "end": 62.24,
+   "prob": 0.625
+  },
+  {
+   "word": "can",
+   "start": 62.24,
+   "end": 62.46,
+   "prob": 0.99560546875
+  },
+  {
+   "word": "trust",
+   "start": 62.46,
+   "end": 62.88,
+   "prob": 0.859375
+  },
+  {
+   "word": "that",
+   "start": 62.88,
+   "end": 64.0,
+   "prob": 0.99462890625
+  },
+  {
+   "word": "I'm",
+   "start": 64.0,
+   "end": 64.22,
+   "prob": 0.9248046875
+  },
+  {
+   "word": "being",
+   "start": 64.22,
+   "end": 64.4,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "carried",
+   "start": 64.4,
+   "end": 64.86,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "by",
+   "start": 64.86,
+   "end": 66.06,
+   "prob": 0.99072265625
+  },
+  {
+   "word": "the",
+   "start": 66.06,
+   "end": 66.22,
+   "prob": 0.998046875
+  },
+  {
+   "word": "earth,",
+   "start": 66.22,
+   "end": 66.6,
+   "prob": 0.93994140625
+  },
+  {
+   "word": "by",
+   "start": 67.16,
+   "end": 67.6,
+   "prob": 0.99462890625
+  },
+  {
+   "word": "my",
+   "start": 67.6,
+   "end": 67.82,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "ancestors",
+   "start": 67.82,
+   "end": 68.5,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "and",
+   "start": 68.5,
+   "end": 69.28,
+   "prob": 0.78369140625
+  },
+  {
+   "word": "by",
+   "start": 69.28,
+   "end": 69.44,
+   "prob": 0.9970703125
+  },
+  {
+   "word": "everybody",
+   "start": 69.44,
+   "end": 70.0,
+   "prob": 0.9970703125
+  },
+  {
+   "word": "who",
+   "start": 70.0,
+   "end": 70.32,
+   "prob": 0.99365234375
+  },
+  {
+   "word": "is",
+   "start": 70.32,
+   "end": 70.46,
+   "prob": 0.48193359375
+  },
+  {
+   "word": "supporting",
+   "start": 70.46,
+   "end": 71.1,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "me",
+   "start": 71.1,
+   "end": 71.5,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "and",
+   "start": 71.5,
+   "end": 71.8,
+   "prob": 0.9892578125
+  },
+  {
+   "word": "my",
+   "start": 71.8,
+   "end": 72.0,
+   "prob": 0.85986328125
+  },
+  {
+   "word": "soul.",
+   "start": 72.0,
+   "end": 72.38,
+   "prob": 0.9921875
+  },
+  {
+   "word": "I'm",
+   "start": 72.84,
+   "end": 73.58,
+   "prob": 0.9150390625
+  },
+  {
+   "word": "very",
+   "start": 73.58,
+   "end": 73.86,
+   "prob": 0.9990234375
+  },
+  {
+   "word": "grateful",
+   "start": 73.86,
+   "end": 74.58,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "for",
+   "start": 74.58,
+   "end": 75.2,
+   "prob": 0.998046875
+  },
+  {
+   "word": "that",
+   "start": 75.2,
+   "end": 75.42,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "experience",
+   "start": 75.42,
+   "end": 76.06,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "and",
+   "start": 76.06,
+   "end": 77.2,
+   "prob": 0.9033203125
+  },
+  {
+   "word": "I",
+   "start": 77.2,
+   "end": 77.32,
+   "prob": 0.98388671875
+  },
+  {
+   "word": "hope",
+   "start": 77.32,
+   "end": 77.74,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "to",
+   "start": 77.74,
+   "end": 78.48,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "inspire",
+   "start": 78.48,
+   "end": 79.04,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "a",
+   "start": 79.04,
+   "end": 79.34,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "lot",
+   "start": 79.34,
+   "end": 79.54,
+   "prob": 0.99267578125
+  },
+  {
+   "word": "more",
+   "start": 79.54,
+   "end": 79.9,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "people,",
+   "start": 79.9,
+   "end": 80.42,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "a",
+   "start": 80.82,
+   "end": 80.86,
+   "prob": 0.943359375
+  },
+  {
+   "word": "lot",
+   "start": 80.86,
+   "end": 81.02,
+   "prob": 0.99609375
+  },
+  {
+   "word": "of",
+   "start": 81.02,
+   "end": 81.22,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "women",
+   "start": 81.22,
+   "end": 81.6,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "to",
+   "start": 81.6,
+   "end": 82.38,
+   "prob": 0.61279296875
+  },
+  {
+   "word": "grow",
+   "start": 82.38,
+   "end": 82.7,
+   "prob": 0.99853515625
+  },
+  {
+   "word": "from",
+   "start": 82.7,
+   "end": 83.2,
+   "prob": 0.99755859375
+  },
+  {
+   "word": "their",
+   "start": 83.2,
+   "end": 83.46,
+   "prob": 0.998046875
+  },
+  {
+   "word": "wounds,",
+   "start": 83.46,
+   "end": 83.9,
+   "prob": 0.9580078125
+  },
+  {
+   "word": "from",
+   "start": 84.04,
+   "end": 84.3,
+   "prob": 0.998046875
+  },
+  {
+   "word": "their",
+   "start": 84.3,
+   "end": 84.52,
+   "prob": 0.99951171875
+  },
+  {
+   "word": "roots.",
+   "start": 84.52,
+   "end": 84.88,
+   "prob": 0.99853515625
+  }
+ ],
+ "text": "I always thought that I have to do it alone and I have to be fierce and I have to be strong. But really I can rely on my wound that is connected to the earth. During my first ceremony I really felt that the secret plant was helping me to repair things in myself. Especially in my wound where I was hurt a lot. And it was building me up bit by piece. Before the next ceremony, I did a kambal to really open up myself to all the plant medicine. And in the evening when I went again for the teaching of the secret plant, I felt it was more profound, more deep. And I also had a very large connection with my wound and from my wound to the earth. I felt that I belonged to this earth, that I made from this earth, that my roots are in this earth and I can trust that I'm being carried by the earth, by my ancestors and by everybody who is supporting me and my soul. I'm very grateful for that experience and I hope to inspire a lot more people, a lot of women to grow from their wounds, from their roots.",
+ "language": "en"
+}

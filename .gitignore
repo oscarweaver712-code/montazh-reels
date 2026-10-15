@@ -1,11 +1,15 @@
 # В git: код, правила, пресеты и решения режиссёра. Видео и всё, что пересобирается
 # из них, остаётся на машине — это гигабайты.
 
-# видео не хранятся в git — они большие
-input/*
-output/*
-!input/.gitkeep
-!output/.gitkeep
+# видео не хранятся в git — они большие. Проект (projects/<имя>/) хранится целиком, кроме
+# исходников и выпусков: правила, project.json и ссылки на референсы — в git
+projects/*/input/*
+projects/*/output/*
+!projects/*/input/.gitkeep
+!projects/*/output/.gitkeep
+projects/*/references/*
+!projects/*/references/.gitkeep
+!projects/*/references/*.md
 
 # work/ — промежуточное: дубли, маски, кадры, логи очереди. Пересобирается из исходника.
 # Но решения режиссёра и транскрипты — исходники ролика: по номерам слов из транскрипта
@@ -67,3 +71,8 @@ studio/*/hyperframes.json
 studio/*/package.json
 
 .DS_Store
+
+# видео в downloads/ (референсы, стоковые клипы) — тоже видео, в git не идут
+work/*/downloads/**/*.mp4
+work/*/downloads/**/*.mov
+work/*/downloads/**/*.webm

@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Проекты: у каждого свои исходники, выпуски, правила, референсы и стиль по умолчанию.
+
+Правило Валеры (14.10.2026): «мои ролики» для Инсты, Ютуба и ТикТока — один проект; заказ со
+своими требованиями, стилем, референсами и форматом — другой, и они не перемешиваются. Раньше
+правила автора лежали в общем скилле, а тестовое для заказчицы держалось на ручных правках
+брифа и заметке «без CTA и без нашей плашки» — на втором заказе чужое начало бы протекать.
+
+  projects/<имя>/
+    project.json    название, язык речи, умолчания брифа (стиль, форматы, цели), CTA, проверка лица
+    rules.md        правила этого проекта — агент читает их до монтажа, они важнее стиля
+    references/     референсы: ссылки, ролики, скриншоты (analyze_reference.py их меряет)
+    input/          исходники — ролик принадлежит тому проекту, в чьём input/ лежит
+    output/         готовые ролики проекта
+
+work/<имя>/ и studio/<имя>/ остаются общими: имя ролика (IMG_1803) — одно на все проекты.
+Одно имя в двух проектах — громкая ошибка, а не «какой-нибудь из двух».
+
+  .venv/bin/python scripts/projects.py                      # проекты и их ролики
+  .venv/bin/python scripts/projects.py new firuza --title "Фируза — тестовое"
+  .venv/bin/python scripts/projects.py where IMG_6668       # чей ролик
+  .venv/bin/python scripts/projects.py --check              # все project.json валидны, имена не повторяются
+"""
+import argparse
+import copy
+import json
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from common import ROOT  # noqa: E402  (заодно UTF-8 в консоли — common это делает)
+
+PROJECTS_DIR = ROOT / "projects"
+DEFAULT = "antishkola"          # проект по умолчанию — ролики Валеры
+VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9\-]*$")
+
+# Что проект задаёт сам. Поля брифа — те же, что в work/<имя>/brief.json (styles.DEFAULT_BRIEF):
+# бриф ролика берёт их отсюда и меняет только своё.
+CONFIG = {
+    "title": "",
+    "language": "ru",                         # язык речи: распознавание и субтитры
+    "brief": {},                              # умолчания брифа: style, formats, goals, boldness, overrides, notes
+    "cta": True,                              # финальная плашка «смотри у меня в профиле»
+    "face_max": 165,                          # лицо светлее — засвет (verify_render); null — не мерить
+    "long_matte": False,                      # владелец согласен на долгую маску BiRefNet (matte.py без --yes)
+}
+CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
+                "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
+                "long_matte": (bool, "true или false")}
+
+
+class ProjectError(Exception):
+    """Понятная ошибка о проекте — для вывода человеку."""
+
+
+class Project:
+    def __init__(self, name: str):
+        self.name = name
+        self.root = PROJECTS_DIR / name
+        self.input = self.root / "input"
+        self.output = self.root / "output"
+        self.references = self.root / "references"
+        self.rules = self.root / "rules.md"
+        self.config = load_config(self.root / "project.json", name)
+
+    def __repr__(self):
+        return f"Project({self.name})"
+
+    def __eq__(self, other):
+        return isinstance(other, Project) and other.name == self.name
+
+    def __hash__(self):
+        return hash(self.name)
+
+    @property
+    def title(self) -> str:
+        return self.config["title"] or self.name
+
+    def sources(self) -> list:
+        """Исходники проекта. Скрытые — недописанные загрузки и служебные «._имя» macOS."""
+        if not self.input.is_dir():
+            return []
+        return sorted(p for p in self.input.iterdir()
+                      if p.suffix.lower() in VIDEO_EXT and not p.name.startswith(".") and p.is_file())
+
+    def rules_text(self) -> str:
+        return self.rules.read_text(encoding="utf-8") if self.rules.exists() else ""
+
+
+def load_config(path: Path, name: str) -> dict:
+    """project.json поверх умолчаний. Битый файл — ошибка с именем файла и поля."""
+    config = copy.deepcopy(CONFIG)
+    if not path.exists():
+        return config
+    where = f"projects/{name}/project.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ProjectError(f"{where}: битый JSON ({e})")
+    if not isinstance(data, dict):
+        raise ProjectError(f"{where}: должен быть объектом JSON {{…}}")
+    for key, value in data.items():
+        if key.startswith("_"):
+            continue                                  # «_note» и т.п. — пояснения для людей
+        if key not in CONFIG_TYPES:
+            raise ProjectError(f"{where}: не знаю поля «{key}». Есть: {', '.join(CONFIG_TYPES)}")
+        kind, what = CONFIG_TYPES[key]
+        if not isinstance(value, kind) or (isinstance(value, bool) and kind is not bool):
+            raise ProjectError(f"{where}: поле {key} должно быть {what}, а не {value!r}")
+        config[key] = value
+    return config
+
+
+def names() -> list:
+    if not PROJECTS_DIR.is_dir():
+        return []
+    return sorted(p.name for p in PROJECTS_DIR.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
+
+
+def all_projects() -> list:
+    return [Project(n) for n in names()]
+
+
+def get(name: str) -> Project:
+    if not NAME_RE.match(name or ""):
+        raise ProjectError(f"Плохое имя проекта «{name}»: латиница в нижнем регистре, цифры и дефис")
+    if name not in names():
+        raise ProjectError(f"Проекта «{name}» нет. Есть: {', '.join(names()) or 'ни одного'}. "
+                           f"Новый — projects.py new {name}")
+    return Project(name)
+
+
+def default() -> Project:
+    return get(DEFAULT)
+
+
+def index() -> dict:
+    """Имя ролика → (проект, исходник) по всем проектам. Одно имя в двух — громкая ошибка.
+
+    У айфонов команды одинаковые имена IMG_XXXX, а work/<имя>/ у ролика общий: если бы
+    одно имя лежало в двух проектах, транскрипт, решения и бриф одного достались бы другому.
+    """
+    found, clash = {}, []
+    for project in all_projects():
+        for path in project.sources():
+            if path.stem in found:
+                clash.append(f"{path.stem}: projects/{found[path.stem][0].name}/input и projects/{project.name}/input")
+                continue
+            found[path.stem] = (project, path)
+    if clash:
+        raise ProjectError("Одно имя ролика в двух проектах — у них общий work/<имя>/, решения "
+                           "перемешаются. Переименуй один из файлов (IMG_1803 → IMG_1803_2):\n  " + "\n  ".join(clash))
+    return found
+
+
+def sources() -> list:
+    """Все исходники всех проектов: [(проект, путь)], новые сверху."""
+    return sorted(index().values(), key=lambda pair: -pair[1].stat().st_mtime)
+
+
+def source(stem: str) -> Path | None:
+    entry = index().get(stem)
+    return entry[1] if entry else None
+
+
+def of(stem: str) -> Project:
+    """Проект ролика: где лежит исходник; исходника нет — где лежат его выпуски."""
+    entry = index().get(stem)
+    if entry:
+        return entry[0]
+    owners = [p for p in all_projects() if p.output.is_dir() and any(
+        belongs(f.name, stem) for f in p.output.glob(f"{stem}*"))]
+    if len(owners) == 1:
+        return owners[0]
+    if owners:
+        raise ProjectError(f"Выпуски {stem} лежат в нескольких проектах: {', '.join(p.name for p in owners)}")
+    raise ProjectError(f"Ролика {stem} нет ни в одном проекте: положи исходник в projects/<проект>/input/")
+
+
+def of_or_default(stem: str) -> Project:
+    """Проект ролика, а для имени, которого нигде нет (проверки, черновики), — проект по умолчанию.
+
+    Только для того, что ничего не пишет в чужой проект: умолчания брифа, язык. Куда класть
+    выпуск, решает of() — там ошибка громкая.
+    """
+    try:
+        return of(stem)
+    except ProjectError as e:
+        if "ни в одном проекте" in str(e) and DEFAULT in names():
+            return default()
+        raise
+
+
+def belongs(name: str, stem: str) -> bool:
+    """Файл — этого ролика? IMG_32790 не принадлежит IMG_3279."""
+    base = Path(name).stem
+    if base.endswith(".sheet"):
+        base = base[:-6]
+    rest = base[len(stem):] if base.startswith(stem) else None
+    return rest is not None and (rest == "" or rest[0] in "_-")
+
+
+def rel(path: Path) -> str:
+    """Путь для шага очереди и для людей: от корня проекта, если он внутри, иначе целиком."""
+    path = Path(path)
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
+
+
+def output_dir(stem: str) -> Path:
+    out = of(stem).output
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def locate(folder: str, name: str) -> Path:
+    """Файл в input/ или output/ какого-то проекта по имени: имена роликов одни на все проекты."""
+    if folder not in ("input", "output"):
+        raise ProjectError(f"нет такой папки: {folder}")
+    name = Path(name).name
+    hits = [getattr(p, folder) / name for p in all_projects() if (getattr(p, folder) / name).exists()]
+    if len(hits) > 1:
+        raise ProjectError(f"{name} есть в нескольких проектах: {', '.join(h.parts[-3] for h in hits)}")
+    if not hits:
+        raise ProjectError(f"нет файла {name} в {folder}/ проектов")
+    return hits[0]
+
+
+RULES_TEMPLATE = """# Правила проекта «{title}»
+
+Правила этого проекта важнее стиля и умолчаний скилла. Пиши сюда то, что заказчик или автор
+сказал явно: что можно, чего нельзя, как должно выглядеть. С датой и словами человека — чтобы
+следующий агент понял, откуда правило.
+
+## Задача
+- Для кого ролики и где их публикуют:
+- Формат и длительность:
+- Язык:
+
+## Стиль
+- Референсы — в references/ (ссылки — в references/links.md):
+- Шрифт, цвета, субтитры:
+
+## Нельзя
+-
+"""
+
+
+def create(name: str, title: str = "") -> Project:
+    """Каркас нового проекта. Существующий не трогается."""
+    if not NAME_RE.match(name or ""):
+        raise ProjectError(f"Плохое имя проекта «{name}»: латиница в нижнем регистре, цифры и дефис "
+                           f"(например firuza или client-2)")
+    root = PROJECTS_DIR / name
+    if root.exists():
+        raise ProjectError(f"Проект {name} уже есть: projects/{name}/ — его не трогаю")
+    for sub in ("input", "output", "references"):
+        (root / sub).mkdir(parents=True)
+        (root / sub / ".gitkeep").write_text("", encoding="utf-8")
+    config = {"title": title or name, "language": "ru", "cta": False, "face_max": None,
+              "brief": {"style": "viral-behind", "formats": ["9:16"], "notes": ""},
+              "_note": "Умолчания для всех роликов проекта; бриф ролика в студии меняет только своё. "
+                       "cta — финальная плашка «смотри у меня в профиле» (она про профиль Валеры). "
+                       "face_max — порог засвета лица по серии роликов; null — не мерить."}
+    (root / "project.json").write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    (root / "rules.md").write_text(RULES_TEMPLATE.format(title=title or name), encoding="utf-8")
+    (root / "references" / "links.md").write_text("# Референсы\n\n<!-- ссылка — и что в ней взять -->\n",
+                                                  encoding="utf-8")
+    return Project(name)
+
+
+def check() -> list:
+    """Все проекты: конфиги читаются, стили брифа существуют, имена не повторяются. Список ошибок."""
+    import styles
+    problems = []
+    if DEFAULT not in names():
+        problems.append(f"нет проекта по умолчанию projects/{DEFAULT}/")
+    for name in names():
+        try:
+            project = Project(name)
+            styles.check_brief(project.config["brief"], f"projects/{name}/project.json → brief")
+            if "style" in project.config["brief"]:
+                styles.load_style(project.config["brief"]["style"])
+        except (ProjectError, styles.StyleError) as e:
+            problems.append(str(e))
+    try:
+        index()
+    except ProjectError as e:
+        problems.append(str(e))
+    return problems
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Проекты монтажа")
+    sub = ap.add_subparsers(dest="cmd")
+    new = sub.add_parser("new", help="создать каркас проекта")
+    new.add_argument("name")
+    new.add_argument("--title", default="")
+    where = sub.add_parser("where", help="чей ролик")
+    where.add_argument("stem")
+    ap.add_argument("--check", action="store_true")
+    args = ap.parse_args()
+    try:
+        if args.check:
+            problems = check()
+            for p in problems:
+                print(f"  ✗ {p}")
+            if problems:
+                sys.exit(1)
+            print(f"  ✓ проекты в порядке: {', '.join(names())}")
+        elif args.cmd == "new":
+            project = create(args.name, args.title)
+            print(f"  ✓ проект {project.name}: projects/{project.name}/\n"
+                  f"    исходники — в input/, референсы — в references/, правила — rules.md,\n"
+                  f"    стиль и форматы по умолчанию — project.json")
+        elif args.cmd == "where":
+            project = of(args.stem)
+            print(f"{args.stem} → {project.name} ({project.title})")
+        else:
+            found = index()
+            for project in all_projects():
+                stems = [s for s, (p, _) in found.items() if p == project]
+                mark = " · по умолчанию" if project.name == DEFAULT else ""
+                print(f"  {project.name} — {project.title}{mark}: {len(stems)} исх.")
+                for stem in sorted(stems):
+                    print(f"      {stem}")
+    except ProjectError as e:
+        sys.exit(f"✗ {e}")
+
+
+if __name__ == "__main__":
+    main()

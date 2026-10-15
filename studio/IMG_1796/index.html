@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Кто придумал процент</title>
+    <script src="assets/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/vendor/katex/katex.min.css" />
+    <script src="assets/vendor/katex/katex.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 104px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.15; color: #F2EBDD; text-transform: none; }
+      .cap.accent { color: #FF4A3D; }
+      .cap .w { display: inline-block; }
+      .panel { border-radius: 28px; background: rgba(12,12,14,0.88); border: 2px solid rgba(242,235,221,0.16);
+               box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .row { position: relative; display: flex; justify-content: space-between; align-items: center; min-height: 92px;
+             padding: 4px 6px; opacity: 0; border-bottom: 2px solid rgba(242,235,221,0.14); }
+      .row:last-child { border-bottom: none; }
+      .row-w { font-family: "Manrope"; font-weight: 800; font-size: 28px; letter-spacing: 0.06em; text-transform: uppercase;
+               color: rgba(242,235,221,0.8); }
+      .row-m { display: inline-flex; align-items: center; color: var(--cream); font-family: "Oswald"; font-size: 60px; white-space: nowrap; }
+      .row-m .katex-src { display: inline-block; font-size: 46px; }
+      .row-m .katex-display { margin: 0; }
+      .gold { color: #F5B82E; }
+      .strike { position: absolute; right: 0; top: 46%; width: 170px; height: 8px; border-radius: 4px; background: var(--red);
+                transform-origin: 0 50%; transform: scaleX(0); }
+      .tag { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase;
+             color: rgba(242,235,221,0.75); text-align: center; }
+      /* подменённый фон за спиной: сверху, низ переходит в родной кадр (там руки) */
+      .bg { left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden;
+            -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%);
+            mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%); }
+      .bg img { position: absolute; left: -54px; top: -96px; width: 1188px; height: 2112px; object-fit: cover; }
+      .bg .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%); }
+      /* сотня клеток: centesima — одна из ста */
+      .cell { position: absolute; width: 26px; height: 26px; border-radius: 5px; background: rgba(242,235,221,0.3); opacity: 0; }
+      .big-n { position: absolute; font-family: "Oswald"; font-weight: 700; color: var(--cream); text-align: center; opacity: 0; }
+      /* рукопись: как per cento становится знаком */
+      .ms { padding: 0; background: #F3EAD6; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); overflow: hidden; }
+      .ms-st { position: absolute; left: 0; top: 70px; width: 590px; text-align: center; font-family: "Cormorant"; font-style: italic;
+               font-weight: 700; font-size: 104px; line-height: 1; color: #2A2219; opacity: 0; white-space: nowrap; }
+      .ms-st span { display: inline-block; }
+      .ms-note { position: absolute; left: 0; top: 22px; width: 590px; text-align: center; font-family: "Manrope"; font-weight: 800;
+                 font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; color: #6A5A44; opacity: 0; }
+      /* литеры наборщика */
+      .sort { position: absolute; top: 60px; width: 120px; height: 150px; border-radius: 10px; background: linear-gradient(180deg, #5C5F66, #2E3036);
+              box-shadow: inset 0 -8px 0 rgba(0,0,0,0.35), 0 18px 40px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+              font-family: "Cormorant"; font-weight: 700; font-size: 110px; color: #E9E4D8; opacity: 0; }
+      .sort.hot { color: #F5B82E; }
+      /* линия времени */
+      .tdot { position: absolute; top: 104px; width: 34px; height: 34px; border-radius: 17px; background: var(--cream); opacity: 0; }
+      .tlab { position: absolute; width: 180px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 26px; line-height: 1.15;
+              color: var(--cream); opacity: 0; }
+      .tlab b { display: block; font-family: "Oswald"; font-size: 44px; color: #F5B82E; }
+      /* «экономическая задача» и ошибки */
+      .x-mark { position: absolute; font-family: "Oswald"; font-weight: 700; font-size: 44px; color: #C7271F; opacity: 0;
+                border: 4px solid #C7271F; border-radius: 8px; padding: 0 10px; transform: rotate(-8deg); }
+      /* Август — статуя целиком, в карточке нужен крупный план головы */
+      #c-aug { top: 268px; left: 716px; width: 236px; padding: 12px 12px 10px; }
+      #c-aug .ph { width: 212px; height: 220px; }
+      #c-aug img { width: 600px; height: 900px; max-width: none; object-fit: fill; margin-left: -284px; margin-top: -14px; }
+      #c-aug .card-name { font-size: 20px; margin-top: 8px; }
+      #c-aug .card-sub { font-size: 22px; }
+      .line-g { height: 14px; border-radius: 7px; background: rgba(42,34,25,0.18); margin-top: 18px; }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="67.467" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="67.467" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="b-proc-lead" class="g lead" style="top: 272px;">кто первым придумал брать</div>
+        <div id="b-proc" class="g big red" style="top: 318px; font-size: 190px;">процент?</div>
+        <div id="bg-rome" class="g bg"><img src="assets/img/bg_rome.jpg" alt="" /><div class="vig"></div></div>
+        <div id="bg-flor" class="g bg"><img src="assets/img/bg_flor.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-pct" class="g big" style="top: 300px; font-size: 290px; color: #F0352C;">%</div>
+        <div id="bg-press" class="g bg"><img src="assets/img/bg_press.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-1685-lead" class="g lead" style="top: 272px;">парижский наборщик</div>
+        <div id="b-1685" class="g big" style="top: 318px; font-size: 250px;"><span id="b-1685-n">1685</span></div>
+        <div id="b-ege-lead" class="g lead" style="top: 272px;">главное про проценты на</div>
+        <div id="b-ege" class="g big" style="top: 318px; font-size: 250px;">ЕГЭ</div>
+        <div id="b-x02" class="g big" style="top: 318px; font-size: 230px; color: #F5B82E; white-space: nowrap;">× 0,2</div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="67.467" data-track-index="1"></video>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="st-tax" class="g stamp" style="left: 330px; top: 290px; font-size: 96px; background: rgba(12,12,14,0.55); white-space: nowrap;">налоги ↑</div>
+        <div id="st-meme" class="g sticker" style="left: 170px; top: 300px; font-size: 56px; white-space: nowrap;">каждый день думает о Риме</div>
+        <div id="c-aug" class="g card card-right">
+          <div class="ph"><img src="assets/img/augustus.jpg" alt="" /></div>
+          <div class="card-name">Октавиан Август</div>
+          <div class="card-sub">налог на продажи — 1%</div>
+        </div>
+        <div id="p-grid" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 364px;">
+          <div class="cell" id="cl0" style="left: 32px; top: 32px;"></div><div class="cell" id="cl1" style="left: 62px; top: 32px;"></div><div class="cell" id="cl2" style="left: 92px; top: 32px;"></div><div class="cell" id="cl3" style="left: 122px; top: 32px;"></div><div class="cell" id="cl4" style="left: 152px; top: 32px;"></div><div class="cell" id="cl5" style="left: 182px; top: 32px;"></div><div class="cell" id="cl6" style="left: 212px; top: 32px;"></div><div class="cell" id="cl7" style="left: 242px; top: 32px;"></div><div class="cell" id="cl8" style="left: 272px; top: 32px;"></div><div class="cell" id="cl9" style="left: 302px; top: 32px;"></div><div class="cell" id="cl10" style="left: 32px; top: 62px;"></div><div class="cell" id="cl11" style="left: 62px; top: 62px;"></div><div class="cell" id="cl12" style="left: 92px; top: 62px;"></div><div class="cell" id="cl13" style="left: 122px; top: 62px;"></div><div class="cell" id="cl14" style="left: 152px; top: 62px;"></div><div class="cell" id="cl15" style="left: 182px; top: 62px;"></div><div class="cell" id="cl16" style="left: 212px; top: 62px;"></div><div class="cell" id="cl17" style="left: 242px; top: 62px;"></div><div class="cell" id="cl18" style="left: 272px; top: 62px;"></div><div class="cell" id="cl19" style="left: 302px; top: 62px;"></div><div class="cell" id="cl20" style="left: 32px; top: 92px;"></div><div class="cell" id="cl21" style="left: 62px; top: 92px;"></div><div class="cell" id="cl22" style="left: 92px; top: 92px;"></div><div class="cell" id="cl23" style="left: 122px; top: 92px;"></div><div class="cell" id="cl24" style="left: 152px; top: 92px;"></div><div class="cell" id="cl25" style="left: 182px; top: 92px;"></div><div class="cell" id="cl26" style="left: 212px; top: 92px;"></div><div class="cell" id="cl27" style="left: 242px; top: 92px;"></div><div class="cell" id="cl28" style="left: 272px; top: 92px;"></div><div class="cell" id="cl29" style="left: 302px; top: 92px;"></div><div class="cell" id="cl30" style="left: 32px; top: 122px;"></div><div class="cell" id="cl31" style="left: 62px; top: 122px;"></div><div class="cell" id="cl32" style="left: 92px; top: 122px;"></div><div class="cell" id="cl33" style="left: 122px; top: 122px;"></div><div class="cell" id="cl34" style="left: 152px; top: 122px;"></div><div class="cell" id="cl35" style="left: 182px; top: 122px;"></div><div class="cell" id="cl36" style="left: 212px; top: 122px;"></div><div class="cell" id="cl37" style="left: 242px; top: 122px;"></div><div class="cell" id="cl38" style="left: 272px; top: 122px;"></div><div class="cell" id="cl39" style="left: 302px; top: 122px;"></div><div class="cell" id="cl40" style="left: 32px; top: 152px;"></div><div class="cell" id="cl41" style="left: 62px; top: 152px;"></div><div class="cell" id="cl42" style="left: 92px; top: 152px;"></div><div class="cell" id="cl43" style="left: 122px; top: 152px;"></div><div class="cell" id="cl44" style="left: 152px; top: 152px;"></div><div class="cell" id="cl45" style="left: 182px; top: 152px;"></div><div class="cell" id="cl46" style="left: 212px; top: 152px;"></div><div class="cell" id="cl47" style="left: 242px; top: 152px;"></div><div class="cell" id="cl48" style="left: 272px; top: 152px;"></div><div class="cell" id="cl49" style="left: 302px; top: 152px;"></div><div class="cell" id="cl50" style="left: 32px; top: 182px;"></div><div class="cell" id="cl51" style="left: 62px; top: 182px;"></div><div class="cell" id="cl52" style="left: 92px; top: 182px;"></div><div class="cell" id="cl53" style="left: 122px; top: 182px;"></div><div class="cell" id="cl54" style="left: 152px; top: 182px;"></div><div class="cell" id="cl55" style="left: 182px; top: 182px;"></div><div class="cell" id="cl56" style="left: 212px; top: 182px;"></div><div class="cell" id="cl57" style="left: 242px; top: 182px;"></div><div class="cell" id="cl58" style="left: 272px; top: 182px;"></div><div class="cell" id="cl59" style="left: 302px; top: 182px;"></div><div class="cell" id="cl60" style="left: 32px; top: 212px;"></div><div class="cell" id="cl61" style="left: 62px; top: 212px;"></div><div class="cell" id="cl62" style="left: 92px; top: 212px;"></div><div class="cell" id="cl63" style="left: 122px; top: 212px;"></div><div class="cell" id="cl64" style="left: 152px; top: 212px;"></div><div class="cell" id="cl65" style="left: 182px; top: 212px;"></div><div class="cell" id="cl66" style="left: 212px; top: 212px;"></div><div class="cell" id="cl67" style="left: 242px; top: 212px;"></div><div class="cell" id="cl68" style="left: 272px; top: 212px;"></div><div class="cell" id="cl69" style="left: 302px; top: 212px;"></div><div class="cell" id="cl70" style="left: 32px; top: 242px;"></div><div class="cell" id="cl71" style="left: 62px; top: 242px;"></div><div class="cell" id="cl72" style="left: 92px; top: 242px;"></div><div class="cell" id="cl73" style="left: 122px; top: 242px;"></div><div class="cell" id="cl74" style="left: 152px; top: 242px;"></div><div class="cell" id="cl75" style="left: 182px; top: 242px;"></div><div class="cell" id="cl76" style="left: 212px; top: 242px;"></div><div class="cell" id="cl77" style="left: 242px; top: 242px;"></div><div class="cell" id="cl78" style="left: 272px; top: 242px;"></div><div class="cell" id="cl79" style="left: 302px; top: 242px;"></div><div class="cell" id="cl80" style="left: 32px; top: 272px;"></div><div class="cell" id="cl81" style="left: 62px; top: 272px;"></div><div class="cell" id="cl82" style="left: 92px; top: 272px;"></div><div class="cell" id="cl83" style="left: 122px; top: 272px;"></div><div class="cell" id="cl84" style="left: 152px; top: 272px;"></div><div class="cell" id="cl85" style="left: 182px; top: 272px;"></div><div class="cell" id="cl86" style="left: 212px; top: 272px;"></div><div class="cell" id="cl87" style="left: 242px; top: 272px;"></div><div class="cell" id="cl88" style="left: 272px; top: 272px;"></div><div class="cell" id="cl89" style="left: 302px; top: 272px;"></div><div class="cell" id="cl90" style="left: 32px; top: 302px;"></div><div class="cell" id="cl91" style="left: 62px; top: 302px;"></div><div class="cell" id="cl92" style="left: 92px; top: 302px;"></div><div class="cell" id="cl93" style="left: 122px; top: 302px;"></div><div class="cell" id="cl94" style="left: 152px; top: 302px;"></div><div class="cell" id="cl95" style="left: 182px; top: 302px;"></div><div class="cell" id="cl96" style="left: 212px; top: 302px;"></div><div class="cell" id="cl97" style="left: 242px; top: 302px;"></div><div class="cell" id="cl98" style="left: 272px; top: 302px;"></div><div class="cell" id="cl99" style="left: 302px; top: 302px;"></div>
+          <div id="gn1" class="tag" style="position: absolute; left: 350px; top: 52px; width: 220px; opacity: 0;">centesima</div>
+          <div id="gn2" class="big-n" style="left: 350px; top: 96px; width: 220px; font-size: 66px;">сотая</div>
+          <div id="gn3" class="big-n" style="left: 350px; top: 196px; width: 220px; font-size: 104px; color: #F0352C;">1%</div>
+        </div>
+        <div id="st-modest" class="g sticker" style="left: 300px; top: 300px; font-size: 56px; white-space: nowrap;">скромно, да?</div>
+        <div id="st-bank" class="g sticker" style="left: 230px; top: 300px; font-size: 56px; white-space: nowrap;">итальянские банкиры</div>
+        <div id="p-ms" class="g ms" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 240px;">
+          <div id="ms-note" class="ms-note">итальянцы · «на сотню»</div>
+          <div id="ms1" class="ms-st">per cento</div>
+          <div id="ms2" class="ms-st">p cento</div>
+          <div id="ms3" class="ms-st"><span id="ms3-p">p</span>&nbsp;c<sup style="font-size: 0.55em;">o</sup></div>
+          <div id="ms4" class="ms-st"><sup style="font-size: 0.55em;">o</sup>/<sub style="font-size: 0.55em;">o</sub></div>
+          <div id="ms5" class="ms-st" style="font-family: Oswald; font-style: normal; color: #C7271F;">%</div>
+        </div>
+        <div id="p-type" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 270px;">
+          <div class="tag" style="position: absolute; left: 0; top: 18px; width: 590px;">париж · 1685 · наборщик</div>
+          <div id="so1" class="sort" style="left: 95px;">c</div>
+          <div id="so2" class="sort" style="left: 235px;">t</div>
+          <div id="so3" class="sort" style="left: 375px;">o</div>
+          <div id="so4" class="sort hot" style="left: 235px; font-family: Oswald;">%</div>
+        </div>
+        <div id="st-bayka" class="g stamp" style="left: 380px; top: 290px; font-size: 110px; background: rgba(12,12,14,0.55);">байка</div>
+        <div id="p-line" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 250px;">
+          <svg viewBox="0 0 590 250" style="position: absolute; left: 0; top: 0; width: 590px; height: 250px;"><path id="tl-ax" d="M 40 121 L 550 121" fill="none" stroke="#F2EBDD" stroke-width="6" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg>
+          <div id="td1" class="tdot" style="left: 78px;"></div>
+          <div id="td2" class="tdot" style="left: 278px;"></div>
+          <div id="td3" class="tdot" style="left: 478px; background: #F0352C;"></div>
+          <div id="tl1" class="tlab" style="left: 5px; top: 150px;"><b>Рим</b>1% налог</div>
+          <div id="tl2" class="tlab" style="left: 205px; top: 150px;"><b>%</b>банкиры</div>
+          <div id="tl3" class="tlab" style="left: 405px; top: 150px;"><b style="color: #F0352C;">1685</b>байка</div>
+          <div id="tl-doc" class="big-n" style="left: 60px; top: 18px; width: 70px; font-size: 64px; color: #F5B82E;">%</div>
+        </div>
+        <div id="st-mil" class="g sticker" style="left: 330px; top: 300px; font-size: 56px; white-space: nowrap;">а ещё промилле</div>
+        <div id="p-mil" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 330px;">
+          <svg id="gp" viewBox="0 0 160 180" style="position: absolute; top: 28px; width: 160px; height: 180px; left: 70px;"><circle cx="34" cy="36" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" /><path d="M 112 14 L 40 166" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" /><circle cx="98" cy="150" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" /></svg>
+          <svg id="gm" viewBox="0 0 160 180" style="position: absolute; top: 28px; width: 160px; height: 180px; left: 360px;"><circle cx="34" cy="36" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" /><path d="M 112 14 L 40 166" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" /><circle cx="78" cy="150" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" /><circle id="gm-z2" cx="128" cy="150" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" style="opacity: 0;" /></svg>
+          <div id="mn1" class="tag" style="position: absolute; left: 30px; top: 216px; width: 240px; opacity: 0;">на сотню</div>
+          <div id="mn2" class="tag" style="position: absolute; left: 320px; top: 216px; width: 240px; opacity: 0;">на тысячу</div>
+          <div id="mb1" class="big-n" style="left: 30px; top: 258px; width: 240px; font-size: 44px; color: #F5B82E;">банк</div>
+          <div id="mb2" class="big-n" style="left: 320px; top: 258px; width: 240px; font-size: 44px; color: #F5B82E;">гаишник</div>
+        </div>
+        <div id="p-r1" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; padding: 10px 26px;">
+          <div id="r1" class="row"><span class="row-w">процент</span><span class="row-m">1% = <span class="katex-src" data-tex="\tfrac{1}{100}"></span></span></div>
+          <div id="r2" class="row"><span class="row-w">20%</span><span class="row-m gold">× 0,2</span></div>
+        </div>
+        <div id="p-r2" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; padding: 10px 26px;">
+          <div id="r3" class="row"><span class="row-w">не делить</span><span class="row-m">÷ 20</span><div id="r3-x" class="strike"></div></div>
+          <div id="r4" class="row"><span class="row-w">не умножать</span><span class="row-m">× 20</span><div id="r4-x" class="strike"></div></div>
+          <div id="r5" class="row"><span class="row-w">именно</span><span class="row-m gold">число × 0,2</span></div>
+        </div>
+        <div id="p-econ" class="g paper" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 200px; top: 1290px; width: 680px; padding: 24px 36px 30px;">
+          <div class="tag" style="color: #2B3A67; text-align: left;">ЕГЭ · экономическая задача</div>
+          <div class="line-g" style="width: 92%;"></div><div class="line-g" style="width: 78%;"></div><div class="line-g" style="width: 86%;"></div><div class="line-g" style="width: 60%;"></div>
+          <div id="ex1" class="x-mark" style="left: 420px; top: 66px;">× 20 ?</div>
+          <div id="ex2" class="x-mark" style="left: 120px; top: 120px;">÷ 20 ?</div>
+          <div id="ex3" class="x-mark" style="left: 470px; top: 150px;">ошибка</div>
+        </div>
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">больше интересной математики — у меня в профиле</div>
+        </div>
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-proc" src="assets/sfx/whoosh.mp3" data-start="2.99" data-volume="0.259"></audio>
+      <audio id="sfx-aug" src="assets/sfx/pop.mp3" data-start="8.05" data-volume="0.452"></audio>
+      <audio id="sfx-pct" src="assets/sfx/impact-bass-1.mp3" data-start="30.13" data-volume="0.080"></audio>
+      <audio id="sfx-y1685" src="assets/sfx/whoosh-cinematic.mp3" data-start="35.03" data-volume="0.118"></audio>
+      <audio id="sfx-strike" src="assets/sfx/click.mp3" data-start="58.05" data-volume="0.877"></audio>
+      <audio id="sfx-x02" src="assets/sfx/impact-bass-2.mp3" data-start="60.75" data-volume="0.055"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="65.22" data-volume="0.646"></audio>
+    </div>
+    <script>
+      document.querySelectorAll(".katex-src").forEach((el) => {
+        try { katex.render(el.dataset.tex, el, { throwOnError: true, displayMode: true }); }
+        catch (e) { throw new Error(`формула «${el.dataset.tex}»: ${e.message}`); }
+      });
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[1.42, 14.42], [15.37, 21.62], [30.07, 39.47], [49.22, 52.37], [60.67, 62.37]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры: words, blur ----------
+      const caps = document.getElementById("caps");
+      const CAP_BASE = "#F2EBDD", CAP_HL = "#FF4A3D";
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        let inner = el;
+        if (false) { inner = document.createElement("span"); inner.className = "box"; el.appendChild(inner); }
+        const spans = [];
+        if (c.words) {
+          c.words.forEach((w, k) => {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.textContent = w.text;
+            inner.appendChild(s);
+            if (k < c.words.length - 1) inner.appendChild(document.createTextNode(" "));
+            spans.push(s);
+          });
+        } else {
+          inner.textContent = c.text;
+        }
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
+        const d = Math.min(0.09, c.t1 - c.t0);
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: d, ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+        (c.words || []).forEach((w, k) => {
+          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
+          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
+          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+        });
+      });
+
+
+      // ---------- хук: налоги ↑ — кто первым придумал ПРОЦЕНТ? ----------
+      slam("#st-tax", 0.07, { fromScale: 2.0, rot: -5, blur: 10 });
+      leave("#st-tax", 1.32, { scale: 0.6, y: 0, rot: -14 });
+      enter("#b-proc-lead", 1.47, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-proc", 3.01, { fromScale: 1.5 });
+      leave(["#b-proc", "#b-proc-lead"], 3.61, { y: -60 });
+
+      // ---------- Рим за спиной: император, мем про Римскую империю, Август и centesima ----------
+      tl.fromTo("#bg-rome", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 3.63);
+      tl.fromTo("#bg-rome img", { scale: 1 }, { scale: 1.06, duration: 10.69, ease: "none" }, 3.63);
+      tl.to("#bg-rome", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 13.97);
+      enter("#st-meme", 5.43, { fromScale: 0.6, rot: -4 });
+      leave("#st-meme", 7.57, { y: -30, rot: -10 });
+      card("#c-aug", 8.07, 10.67, "right");
+      enter("#p-grid", 10.81, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#p-grid .cell", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.14, ease: "back.out(2)", stagger: 0.006 }, 10.97);
+      enter("#gn1", 11.17, { fromScale: 0.8, dur: 0.25 });
+      enter("#gn2", 12.19, { fromScale: 0.8, dur: 0.25 });
+      tl.to("#cl0", { backgroundColor: "#F0352C", scale: 1.5, duration: 0.18, ease: "power2.out" }, 13.15);
+      tl.to("#cl0", { scale: 1, duration: 0.25, ease: "power2.out" }, 13.37);
+      slam("#gn3", 13.39, { fromScale: 1.6 });
+      leave("#p-grid", 13.97, { y: 80 });
+      enter("#st-modest", 14.05, { fromScale: 0.6, rot: 4 });
+      leave("#st-modest", 15.22, { y: -30, rot: 10 });
+
+      // ---------- Флоренция за спиной: итальянские банкиры и рукопись ----------
+      tl.fromTo("#bg-flor", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 15.47);
+      tl.fromTo("#bg-flor img", { scale: 1 }, { scale: 1.06, duration: 6.05, ease: "none" }, 15.47);
+      tl.to("#bg-flor", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 21.17);
+      enter("#st-bank", 17.35, { fromScale: 0.6, rot: -3 });
+      leave("#st-bank", 18.62, { y: -30, rot: -10 });
+      doc("#p-ms", 19.07, 30.07, { fromRot: -5, rot: 1 });
+      tl.fromTo("#ms1", { opacity: 0, y: 30, filter: BLUR(10) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.25, ease: "power3.out" }, 19.55);
+      enter("#ms-note", 20.43, { fromScale: 0.9, dur: 0.25 });
+      leave("#ms-note", 23.47, { y: -20 });
+      tl.to("#ms1", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 23.67);
+      tl.fromTo("#ms2", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 23.79);
+      tl.to("#ms2", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 24.91);
+      tl.fromTo("#ms3", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 25.03);
+      tl.to("#ms3-p", { y: 200, rotation: -70, opacity: 0, duration: 0.45, ease: "power2.in" }, 27.45);
+      tl.to("#ms3", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 28.25);
+      tl.fromTo("#ms4", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 28.37);
+      tl.to("#ms4", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 29.77);
+      tl.fromTo("#ms5", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 29.89);
+
+      // ---------- знак процента — за спиной ----------
+      slam("#b-pct", 30.15, { fromScale: 1.6, rot: -4 });
+      flash(30.15);
+      leave("#b-pct", 31.07, { y: -60, rot: 8 });
+
+      // ---------- байка: типография за спиной, 1685, cto → % ----------
+      tl.fromTo("#bg-press", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 31.19);
+      tl.fromTo("#bg-press img", { scale: 1 }, { scale: 1.06, duration: 8.23, ease: "none" }, 31.19);
+      tl.to("#bg-press", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 39.07);
+      enter("#b-1685-lead", 33.99, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-1685", 35.05, { fromScale: 1.3 });
+      tl.fromTo("#b-1685-n", { textContent: 1500 }, { textContent: 1685, snap: { textContent: 1 }, duration: 0.8, ease: "power2.out",
+                immediateRender: false }, 35.05);
+      leave(["#b-1685", "#b-1685-lead"], 36.57, { y: -60 });
+      enter("#p-type", 36.69, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#so1, #so2, #so3", { opacity: 0, y: -160 }, { opacity: 1, y: 0, duration: 0.25, ease: "bounce.out", stagger: 0.12 }, 36.87);
+      tl.to("#so1", { x: 140, opacity: 0, scale: 0.6, duration: 0.22, ease: "power2.in" }, 38.35);
+      tl.to("#so3", { x: -140, opacity: 0, scale: 0.6, duration: 0.22, ease: "power2.in" }, 38.35);
+      tl.to("#so2", { opacity: 0, scale: 0.6, duration: 0.18, ease: "power2.in" }, 38.39);
+      slam("#so4", 38.57, { fromScale: 1.8, rot: -6 });
+      leave("#p-type", 39.17, { y: 80 });
+
+      // ---------- «байка», а знак давно гулял по бумагам: линия времени ----------
+      slam("#st-bayka", 39.27, { fromScale: 2.0, rot: -6, blur: 10 });
+      leave("#st-bayka", 40.07, { scale: 0.6, y: 0, rot: -16 });
+      enter("#p-line", 40.09, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      draw("#tl-ax", 40.19, 0.45);
+      tl.fromTo("#td1, #td2, #td3", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.2, ease: "back.out(2)", stagger: 0.18 }, 40.27);
+      tl.fromTo("#tl1, #tl2, #tl3", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.2, ease: "power2.out", stagger: 0.18 }, 40.37);
+      enter("#tl-doc", 40.97, { fromScale: 0.4, dur: 0.2 });
+      tl.to("#tl-doc", { keyframes: [{ x: 200, y: -6, rotation: 10, duration: 0.35, ease: "none" },
+                                     { x: 400, y: 0, rotation: -10, duration: 0.35, ease: "power2.out" }] }, 41.19);
+      leave("#p-line", 42.39, { y: 80 });
+
+      // ---------- промилле: нолик внизу второй; банк и гаишник ----------
+      enter("#st-mil", 42.49, { fromScale: 0.6, rot: -4 });
+      leave("#st-mil", 43.62, { y: -30, rot: -10 });
+      enter("#p-mil", 42.77, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      enter("#gp", 42.97, { fromScale: 0.5 });
+      enter("#gm", 43.65, { fromScale: 0.5, rot: 6 });
+      enter("#mn1", 43.97, { fromScale: 0.8, dur: 0.2 });
+      enter("#mn2", 44.69, { fromScale: 0.8, dur: 0.2 });
+      tl.fromTo("#gm-z2", { opacity: 0, scale: 2.2, svgOrigin: "128 150" }, { opacity: 1, scale: 1, duration: 0.25, ease: "back.out(2.5)",
+                immediateRender: false }, 46.05);
+      tl.fromTo("#gm", { scale: 1 }, { scale: 1.1, duration: 0.18, yoyo: true, repeat: 1, ease: "sine.inOut", immediateRender: false }, 46.37);
+      enter("#mb1", 47.61, { fromScale: 0.6, dur: 0.25 });
+      enter("#mb2", 48.21, { fromScale: 0.6, dur: 0.25 });
+      leave("#p-mil", 48.82, { y: 80 });
+
+      // ---------- главное на ЕГЭ ----------
+      enter("#b-ege-lead", 49.27, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-ege", 50.91, { fromScale: 1.5 });
+      leave(["#b-ege", "#b-ege-lead"], 52.07, { y: -60 });
+      enter("#p-r1", 51.33, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#r1", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 52.19);
+      tl.fromTo("#r2", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 54.83);
+      leave("#p-r1", 56.97, { y: 80 });
+      enter("#p-r2", 57.19, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#r3", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 57.57);
+      tl.to("#r3-x", { scaleX: 1, duration: 0.18, ease: "power2.out" }, 58.07);
+      tl.fromTo("#r4", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 58.39);
+      tl.to("#r4-x", { scaleX: 1, duration: 0.18, ease: "power2.out" }, 58.87);
+      tl.fromTo("#r5", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 59.43);
+      leave("#p-r2", 61.67, { y: 80 });
+      slam("#b-x02", 60.77, { fromScale: 1.5 });
+      leave("#b-x02", 62.07, { y: -60 });
+
+      // ---------- экономическая задача: ошибки отсюда ----------
+      doc("#p-econ", 62.19, 65.07, { fromRot: 5, rot: -1 });
+      tl.fromTo("#ex1, #ex2, #ex3", { opacity: 0, scale: 2, filter: BLUR(8) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.16,
+                ease: "power4.out", stagger: 0.3 }, 62.67);
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 65.22);
+      tl.set("#cta-arrow", { opacity: 1 }, 65.57);
+      draw("#arrow-path", 65.57, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 65.89);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 66.22);
+
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -6,7 +6,7 @@ HyperFrames сводит голос со звуковыми эффектами �
 (было −15.7 LUFS вместо −14). Здесь громкость возвращается на место, а редкие пики,
 где эффект наложился на голос, мягко срезает лимитер. Видео копируется без пережатия.
 
-  .venv/bin/python scripts/master.py studio/IMG_3279/renders/IMG_3279_v1.mp4 output/IMG_3279_v1.mp4
+  .venv/bin/python scripts/master.py studio/IMG_3279/renders/IMG_3279_v1.mp4 projects/antishkola/output/IMG_3279_v1.mp4
 """
 import argparse
 import json
@@ -20,7 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ffmpeg_bin
 
 TARGET_LUFS = -14.0
-CEILING = 10 ** (-1.5 / 20)          # −1.5 dBFS в разах: потолок лимитера
+# Потолок лимитера в разах. alimiter режет пики по отсчётам, а проверка меряет истинные (между
+# отсчётами), и AAC добавляет к ним ещё: с потолком −1.5 IMG_1810 (14.10.2026) вышел на −0.8 dBTP —
+# голос с ударами до 0.7 дБ выше потолка. −2.0 оставляет этот запас; цель −1.5 dBTP не меняется.
+CEILING = 10 ** (-2.0 / 20)
 TOLERANCE = 0.6                      # насколько итог может отойти от цели
 
 

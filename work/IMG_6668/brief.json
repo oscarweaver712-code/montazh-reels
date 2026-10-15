@@ -1,0 +1,11 @@
+{
+ "style": "viral-behind",
+ "formats": ["9:16"],
+ "variants": [],
+ "goals": {"reach": 3, "retention": 4, "trust": 5, "saves": 2, "sales": 3},
+ "boldness": 0.5,
+ "overrides": {"captions.mode": "none", "captions.case": "upper", "captions.font": "cormorant",
+               "captions.position": "top", "captions.size": 0.9, "captions.color": "#EBDDB8",
+               "captions.highlight": "#EBDDB8", "captions.animation": "blur"},
+ "notes": "Тестовое для заказчицы (Firuza): ~15 с на английском в эстетике её референса instagram.com/reel/DZhDnJ6BIlT — тонкие капсы с засечками цвета шампанского под изумрудно-золотым орнаментом, коллаж сюрреалистичных предметов вокруг героини, спокойный ритм. Без CTA и без нашей плашки."
+}

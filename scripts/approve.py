@@ -25,7 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import OUTPUT_DIR, ROOT, WORK_DIR, plural
+import projects
+from common import ROOT, WORK_DIR, plural
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
 GROUPS = {
@@ -44,8 +45,16 @@ def belongs(name: str, stem: str) -> bool:
     return rest is not None and (rest == "" or rest[0] in "_-")
 
 
+def output_dir(stem: str) -> Path:
+    """output/ проекта ролика. Ролика нет ни в одном проекте — ValueError с объяснением."""
+    try:
+        return projects.of(stem).output
+    except projects.ProjectError as e:
+        raise ValueError(str(e))
+
+
 def outputs(stem: str) -> list:
-    return sorted(p for p in OUTPUT_DIR.glob(f"{stem}*")
+    return sorted(p for p in output_dir(stem).glob(f"{stem}*")
                   if p.suffix.lower() in VIDEO_EXT and not p.name.startswith(".") and belongs(p.name, stem))
 
 
@@ -55,9 +64,9 @@ def item(path: Path) -> dict:
 
 def plan(stem: str, final: str) -> dict:
     """Что останется и что можно удалить. Ничего не трогает."""
-    approved = OUTPUT_DIR / Path(final).name
+    approved = output_dir(stem) / Path(final).name
     if not approved.exists() or not belongs(approved.name, stem):
-        raise ValueError(f"В output/ нет ролика {final} от {stem}")
+        raise ValueError(f"В {approved.parent.relative_to(ROOT)}/ нет ролика {final} от {stem}")
     drafts = []
     for path in outputs(stem):
         if path == approved:

@@ -11,7 +11,6 @@ The following `.mp3` files are bundled with this skill:
 - `chime.mp3`
 - `click.mp3`
 - `error.mp3`
-- `glitch-2.mp3` / `glitch-3.mp3`
 - `impact-bass-1.mp3` / `impact-bass-2.mp3`
 - `key-press.mp3`
 - `notification.mp3`

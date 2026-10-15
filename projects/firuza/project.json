@@ -1,0 +1,13 @@
+{
+ "title": "Фируза — тестовое",
+ "language": "en",
+ "cta": false,
+ "face_max": null,
+ "brief": {"style": "viral-behind", "formats": ["9:16"], "boldness": 0.5,
+           "goals": {"reach": 3, "retention": 4, "trust": 5, "saves": 2, "sales": 3},
+           "overrides": {"captions.mode": "none", "captions.case": "upper", "captions.font": "cormorant",
+                         "captions.position": "top", "captions.size": 0.9, "captions.color": "#EBDDB8",
+                         "captions.highlight": "#EBDDB8", "captions.animation": "blur"},
+           "notes": "Эстетика референса instagram.com/reel/DZhDnJ6BIlT: тонкие капсы с засечками цвета шампанского под изумрудно-золотым орнаментом, спокойный ритм. Без CTA и без плашки антишколы."},
+ "_note": "Сторонний заказ (13.10.2026). Серия антишколы сюда не протекает: свой язык, без CTA, порог лица антишколы не применяется."
+}

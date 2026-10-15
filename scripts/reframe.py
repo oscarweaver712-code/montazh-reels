@@ -9,7 +9,7 @@
 sendcmd — память постоянная, длина ролика на неё не влияет (CLAUDE.md, инвариант 1).
 Приближения и акценты — дальше, на этапе камеры в compose.py.
 
-  .venv/bin/python scripts/reframe.py input/urok.mov --format 9:16
+  .venv/bin/python scripts/reframe.py projects/antishkola/input/urok.mov --format 9:16
   → work/urok/urok.9x16.mov (звук скопирован без пережатия, тайминги те же)
 """
 import argparse

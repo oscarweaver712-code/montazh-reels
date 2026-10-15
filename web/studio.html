@@ -89,6 +89,10 @@ h2 .count { color: var(--ink); }
 /* ролики: каждый — плёнка из шести кадров-этапов */
 .drop { border: 1.5px dashed var(--rule); border-radius: var(--radius); padding: 12px; text-align: center; color: var(--mute); font-size: 12.5px; margin-bottom: 12px; cursor: pointer; background: var(--sheet); }
 .drop.over { border-color: var(--rec); color: var(--ink); }
+.project-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12.5px; color: var(--mute); }
+.project-pick select { flex: 1; min-width: 0; }
+.reels .hint.bad { color: var(--rec); }
+.reel-project { font-family: var(--mono); font-size: 11px; color: var(--mute); margin-left: 8px; }
 .reels { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .reel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 9px 11px; cursor: pointer; display: grid; gap: 6px; }
 .reel:hover { border-color: var(--mute); }
@@ -243,7 +247,8 @@ footer.queue .lbl { font: 700 11px var(--mono); letter-spacing: 0.16em; text-tra
 <main class="desk">
   <section aria-labelledby="h-reels">
     <h2 id="h-reels">Ролики <span class="count" id="reel-count"></span></h2>
-    <div class="drop" id="drop" tabindex="0" role="button">Перетащи видео сюда или нажми — оно ляжет в <b>input/</b></div>
+    <label class="project-pick">Проект <select id="project" aria-label="Проект"></select></label>
+    <div class="drop" id="drop" tabindex="0" role="button">Перетащи видео сюда или нажми — оно ляжет в <b id="drop-dest">input/</b></div>
     <input type="file" id="file" accept="video/*" multiple hidden>
     <ul class="reels" id="reels"></ul>
     <p class="hint" style="margin-top: 12px;">Кадры плёнки — этапы: <b>Т</b>екст, <b>Д</b>убль, <b>Л</b>ицо, <b>М</b>аска, <b>Г</b>рафика, <b>Р</b>олик.</p>
@@ -300,7 +305,7 @@ footer.queue .lbl { font: 700 11px var(--mono); letter-spacing: 0.16em; text-tra
       <select id="threads" aria-label="Разговор"></select>
       <button type="button" class="icon" id="new-thread">Новый разговор</button>
       <button type="button" class="icon" id="stop" hidden>Остановить</button>
-      <button type="button" class="icon" id="batch-go" title="Каждый новый ролик — в своей сессии мозга, по очереди">Пачкой: новые из input/</button>
+      <button type="button" class="icon" id="batch-go" title="Каждый новый ролик — в своей сессии мозга, по очереди">Пачкой: новые</button>
     </div>
     <div class="batch" id="batch" hidden></div>
     <div class="log" id="log" aria-live="polite"></div>
@@ -364,6 +369,7 @@ const store = {
 
 const S = {
   videos: [], stem: store.get("stem", null), brief: null, styles: [], showAll: false,
+  projects: [], project: store.get("project", ""), defaultProject: "antishkola", problem: null,
   engine: store.get("engine", "claude"), mode: store.get("mode", "safe"), engines: {},
   thread: store.get("thread", null), threads: [], es: null, live: null, playing: null,
 };
@@ -396,17 +402,33 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) requestAnimationFra
 
 /* ---------- ролики ---------- */
 const STEPS = [["transcribed", "Т"], ["prepped", "Д"], ["tracked", "Л"], ["cutout", "М"], ["page", "Г"]];
+/* проект: «все» — пустая строка; загрузка тогда идёт в проект по умолчанию */
+function uploadProject() { return S.project || S.defaultProject; }
+function shown() { return S.project ? S.videos.filter((v) => v.project === S.project) : S.videos; }
+function renderProjects() {
+  const sel = $("project");
+  if (S.project && !S.projects.some((p) => p.name === S.project)) S.project = "";
+  sel.innerHTML = `<option value="">все проекты</option>` + S.projects.map((p) =>
+    `<option value="${esc(p.name)}">${esc(p.title)}</option>`).join("");
+  sel.value = S.project;
+  $("drop-dest").textContent = `projects/${uploadProject()}/input/`;
+}
+$("project").addEventListener("change", (e) => {
+  S.project = e.target.value; store.set("project", S.project);
+  renderProjects(); renderReels();
+});
 function renderReels() {
-  const ul = $("reels");
-  $("reel-count").textContent = S.videos.length || "";
-  if (!S.videos.length) { ul.innerHTML = `<li class="hint">В input/ пусто. Перетащи сюда первое видео.</li>`; return; }
-  ul.innerHTML = S.videos.map((v) => {
+  const ul = $("reels"), list = shown();
+  $("reel-count").textContent = list.length || "";
+  if (S.problem) { ul.innerHTML = `<li class="hint bad">${esc(S.problem)}</li>`; return; }
+  if (!list.length) { ul.innerHTML = `<li class="hint">В projects/${esc(uploadProject())}/input/ пусто. Перетащи сюда первое видео.</li>`; return; }
+  ul.innerHTML = list.map((v) => {
     const frames = STEPS.map(([k, l]) => `<span class="${v.steps[k] ? "done" : ""}" title="${esc(k)}">${l}</span>`).join("")
       + `<span class="${v.outputs.length ? "out" : ""}" title="готовых: ${v.outputs.length}">Р</span>`;
     const brief = v.brief.error ? `<span class="bad" title="${esc(v.brief.error)}">бриф с ошибкой — открой ролик</span>`
       : v.brief.exists ? `${esc(styleName(v.brief.style))} · ${v.brief.formats.join(" ")}${v.brief.variants.length ? ` · A/B ×${v.brief.variants.length}` : ""}` : "брифа нет";
     return `<li class="reel" tabindex="0" data-stem="${esc(v.stem)}" aria-current="${v.stem === S.stem}">
-      <div class="reel-head"><span class="reel-name">${esc(v.stem)}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
+      <div class="reel-head"><span class="reel-name">${esc(v.stem)}</span>${S.project ? "" : `<span class="reel-project" title="${esc(v.project_title)}">${esc(v.project)}</span>`}<span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
       <div class="strip">${frames}</div>
       <div class="reel-brief">${brief}</div></li>`;
   }).join("");
@@ -422,7 +444,7 @@ async function selectVideo(stem) {
   renderReels();
   const v = current();
   $("subject-title").textContent = stem;
-  $("subject-meta").textContent = v ? `${v.width}×${v.height} · ${tc(v.duration)} · ${v.size_mb} МБ` : "";
+  $("subject-meta").textContent = v ? `${v.project_title} · ${v.width}×${v.height} · ${tc(v.duration)} · ${v.size_mb} МБ` : "";
   try {
     const { brief, error } = await api(`/api/studio/brief/${encodeURIComponent(stem)}`);
     S.brief = brief;
@@ -889,7 +911,7 @@ document.addEventListener("drop", async (e) => {
   if (files.length) return upload(files);
   const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
   if (uri) {
-    const fd = new FormData(); fd.append("path", uri.trim().split("\n")[0]);
+    const fd = new FormData(); fd.append("path", uri.trim().split("\n")[0]); fd.append("project", uploadProject());
     try { const r = await api("/api/import-path", { method: "POST", form: fd }); if (r.error) throw new Error(r.error); await poll(); selectVideo(r.name.replace(/\.[^.]+$/, "")); }
     catch (err) { say("say", err.message, true); }
   }
@@ -898,7 +920,7 @@ async function upload(files) {
   const names = [];
   for (const f of files) {
     say("say", `Загружаю ${f.name}…`);
-    const fd = new FormData(); fd.append("file", f);
+    const fd = new FormData(); fd.append("file", f); fd.append("project", uploadProject());
     try {
       const r = await api("/api/upload", { method: "POST", form: fd });
       if (r.error) throw new Error(r.error);
@@ -907,7 +929,7 @@ async function upload(files) {
   }
   // имя могло измениться: занятое не затирается, новое ложится рядом (IMG_3305_2.MOV)
   const renamed = names.filter((n, i) => n !== files[i].name);
-  say("say", renamed.length ? `Готово. Такое имя уже было — сохранил как ${renamed.join(", ")}` : "Готово: видео в input/");
+  say("say", renamed.length ? `Готово. Такое имя уже было — сохранил как ${renamed.join(", ")}` : `Готово: видео в projects/${uploadProject()}/input/`);
   await poll();
   selectVideo(names[0].replace(/\.[^.]+$/, ""));
 }
@@ -916,9 +938,11 @@ async function upload(files) {
 async function poll() {
   try {
     const st = await api("/api/studio/state");
-    const before = JSON.stringify(S.videos.map((v) => [v.stem, v.outputs.length, v.steps, v.brief]));
-    S.videos = st.videos;
-    if (JSON.stringify(S.videos.map((v) => [v.stem, v.outputs.length, v.steps, v.brief])) !== before) {
+    const before = JSON.stringify([S.problem, S.projects, S.videos.map((v) => [v.stem, v.project, v.outputs.length, v.steps, v.brief])]);
+    S.videos = st.videos; S.problem = st.problem || null;
+    S.projects = st.projects || []; S.defaultProject = st.default_project || S.defaultProject;
+    if (JSON.stringify([S.problem, S.projects, S.videos.map((v) => [v.stem, v.project, v.outputs.length, v.steps, v.brief])]) !== before) {
+      renderProjects();
       renderReels();
       if (S.stem && current()) renderCuts(false);
     }

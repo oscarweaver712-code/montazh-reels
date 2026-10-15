@@ -4,8 +4,10 @@
 Маска нужна для двух вещей: крупное слово ЗА спиной (текст между фоном и человеком)
 и замена фона. Движки — открытые и одинаково работают на Mac и Windows:
 
+  birefnet  — BiRefNet lite (MIT), по умолчанию на видеочипе (MPS на Mac, CUDA): человек вместе
+              с банкой и микрофоном в руке одной моделью. Замер 14.10 — в BiRefNetMatte.
   mediapipe — MediaPipe Selfie Multiclass (Apache-2.0) вместе с пустой комнатой из самого
-              дубля (ниже), по умолчанию.
+              дубля (ниже) — по умолчанию там, где видеочипа нет: BiRefNet на процессоре — 13 с на кадр.
   rvm       — Robust Video Matting (GPL-3.0), запасной: помнит прошлые кадры, но выкидывает
               предметы из рук. Нужен torch.
 
@@ -377,6 +379,10 @@ class MediaPipeMatte:
             region += zoom_feather(x0, y0, side, width, height) * np.maximum(zoom - region, 0.0)
         return person
 
+    def room(self, small: np.ndarray, conf: list) -> np.ndarray:
+        """Точки кадра выборки, где модель уверена, что это фон, — из них собирается пустая комната."""
+        return room_mask(conf[0], hands_mask(conf[2], conf[3]))
+
     def prepare(self, video: Path, info: dict) -> str:
         """Пустая комната по выборке из PLATE_SAMPLES кадров дубля; вернёт, что вышло, — для вывода."""
         width, height = self.half
@@ -396,8 +402,7 @@ class MediaPipeMatte:
                         break
                     small = np.frombuffer(raw, np.uint8).reshape(height, width, 3)
                     frames.append(small)
-                    conf = self.classes(small)
-                    sure.append(room_mask(conf[0], hands_mask(conf[2], conf[3])))
+                    sure.append(self.room(small, self.classes(small)))
             finally:
                 reader.stdout.close()
                 reader.wait()
@@ -484,7 +489,129 @@ class RvmMatte:
         return out
 
 
-BACKENDS = {"mediapipe": MediaPipeMatte, "rvm": RvmMatte}
+def accelerator():
+    """Видеочип для torch: MPS на Mac с Apple Silicon, CUDA на Windows с NVIDIA; нет — None."""
+    import torch
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return None
+
+
+class BiRefNet:
+    """BiRefNet lite (MIT) на видеочипе: уверенность «человек и его вещи» для кадра RGB."""
+
+    SIDE = 512                  # вход модели: квадрат, как при обучении; замер — в BiRefNetMatte
+
+    def __init__(self):
+        import torch
+        from birefnet import BiRefNet as Net
+
+        self.device = accelerator()
+        if self.device is None:
+            raise RuntimeError("BiRefNet без видеочипа считает ~13 с на кадр (минута ролика — 6 часов). "
+                               "Здесь нет ни MPS, ни CUDA: возьми --backend mediapipe")
+        torch.set_num_threads(host.encoder_threads())            # пара ядер машине
+        self.torch = torch
+        net = Net(bb_pretrained=False)
+        with open(models.ensure("birefnet_lite", download=False), "rb") as f:   # путь с кириллицей — питону
+            state = torch.load(f, map_location="cpu", weights_only=True)
+        net.load_state_dict(state, strict=True)                  # не те веса — громкая ошибка torch
+        self.net = net.to(self.device).eval().half()
+        self.mean = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
+        self.std = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1, 3, 1, 1)
+
+    def __call__(self, small: np.ndarray, cv2) -> np.ndarray:
+        torch = self.torch
+        height, width = small.shape[:2]
+        square = cv2.resize(small, (self.SIDE, self.SIDE), interpolation=cv2.INTER_AREA)
+        x = torch.from_numpy(np.ascontiguousarray(square)).to(self.device)
+        x = ((x.permute(2, 0, 1)[None].float() / 255.0 - self.mean) / self.std).half()
+        with torch.no_grad():
+            out = self.net(x)[-1].sigmoid()[0, 0].float().cpu().numpy()
+        return cv2.resize(out, (width, height), interpolation=cv2.INTER_LINEAR)
+
+
+class BiRefNetMatte(MediaPipeMatte):
+    """MediaPipe с пустой комнатой, а «где человек» — вместе с BiRefNet: бо́льшая уверенность из двух.
+
+    Замер 14.10.2026 на IMG_1803 (банка с микрофоном, на которую жаловался Валера), 9 кадров против
+    масок MediaPipe (с пустой комнатой и вторым взглядом у кистей) и Apple Vision (accurate):
+    MediaPipe на 4-й и 44-й секунде срезал ветрозащиту микрофона, Vision держал микрофон, но тянул
+    в человека лист растения и зелёную кайму у плеча, BiRefNet держал банку и микрофон целиком без
+    хвостов фона. Вход 1024, 768 и 512 на глаз не отличался (край всё равно ведёт upscale_alpha по
+    полному кадру); на M-чипе 1024 — 0,46 с на кадр, 768 — 0,25, 512 — 0,11 (fp16, MPS), на
+    процессоре — 13 с: без видеочипа её не берём.
+
+    Одна BiRefNet на видео — мало: она смотрит на каждый кадр с нуля и на 4,8–5,0 и 9,3 с IMG_1803
+    теряла банку с кистью у края кадра на 2–3 кадра (полупрозрачный призрак — то самое «то вырезан,
+    то не вырезан»), а MediaPipe с пустой комнатой их держал. Поэтому модели складываются: у MediaPipe —
+    кисть и устойчивость, у BiRefNet — микрофон и форма вещи; край и дальше режет пустая комната.
+    И комната собирается только из точек, которые обе модели считают фоном: иначе микрофон, который
+    MediaPipe считает фоном, «парковался» бы в пустую комнату и вырезался вместе с ней.
+    """
+
+    def __init__(self, width: int, height: int):
+        super().__init__(width, height)
+        self.birefnet = BiRefNet()
+
+    def room(self, small: np.ndarray, conf: list) -> np.ndarray:
+        return super().room(small, conf) & (self.birefnet(small, self.cv2) < 0.15)
+
+    def person(self, small: np.ndarray) -> np.ndarray:
+        return np.maximum(super().person(small), self.birefnet(small, self.cv2))
+
+
+BACKENDS = {"birefnet": BiRefNetMatte, "mediapipe": MediaPipeMatte, "rvm": RvmMatte}
+
+
+# Скорость маски, кадров в секунду: замер 14.10.2026 на 15 с IMG_1803 (Mac M, рядом шёл Zoom):
+# MediaPipe с комнатой — 4,7, BiRefNet вместе с ним — 2,0. Минута ролика — ~15 мин маски BiRefNet.
+BIREFNET_FPS = 2.0
+LIMIT_SEC = 300.0          # дольше пяти минут счёта — только с согласия (AGENTS.md, инвариант 6)
+
+
+def needs_consent(backend: str, frames: int) -> float | None:
+    """Оценка счёта в секундах, если она дольше пяти минут и нужно согласие; иначе None.
+
+    Сравнивается ОЦЕНКА СЧЁТА, а не длина записи. MediaPipe минуту ролика считает за 4–6 мин
+    и шёл без вопроса всегда (до 14.10 — единственный движок), BiRefNet втрое дольше.
+    """
+    if backend != "birefnet":
+        return None
+    seconds = frames / BIREFNET_FPS
+    return seconds if seconds > LIMIT_SEC else None
+
+
+def project_consent(video: Path) -> str | None:
+    """Имя проекта, чей владелец заранее согласился на долгую маску (long_matte в project.json), иначе None.
+
+    Валера 14.10.2026: «Я готов на долгую маску» — пачка его роликов не встаёт на этом шаге.
+    Ролик ищется строго по исходнику (projects.of), без проекта по умолчанию: согласие одного
+    проекта не должно молча доставаться чужому ролику или файлу вне проектов.
+    """
+    import projects
+    stem = video.parent.name if video.parent.parent.name == "work" else video.stem
+    try:
+        project = projects.of(stem)
+    except projects.ProjectError:
+        return None
+    return project.name if project.config["long_matte"] else None
+
+
+def pick_backend(wanted: str) -> tuple:
+    """(движок, пояснение для вывода). auto — BiRefNet на видеочипе, без него — MediaPipe, и это пишется."""
+    if wanted != "auto":
+        return wanted, ""
+    try:
+        if accelerator() is not None:
+            return "birefnet", ""
+        why = "видеочипа нет (ни MPS, ни CUDA)"
+    except ImportError:
+        why = "нет torch"
+    return "mediapipe", (f"BiRefNet не взят: {why} — маска MediaPipe с пустой комнатой; банку и микрофон "
+                         f"в руке она теряет чаще (замер 14.10 в docstring BiRefNetMatte)")
 
 
 def run_matte(video: Path, backend: str, out: Path) -> dict:
@@ -631,7 +758,11 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
     reader = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
                                "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"],
                               stdout=subprocess.PIPE, stderr=errs[0])
-    masks = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(matte),
+    # маска с обычного дубля под дубль для страницы покрупнее (prep.py --hq): растягивается плавно —
+    # от неё зависит только край, детали лица и волос идут из самого видео
+    fit = [] if (probe(matte)["width"], probe(matte)["height"]) == (width, height) else \
+        ["-vf", f"scale={width}:{height}:flags=bicubic"]
+    masks = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(matte), *fit,
                               "-pix_fmt", "gray", "-f", "rawvideo", "-"],
                              stdout=subprocess.PIPE, stderr=errs[1])
     writer = subprocess.Popen([
@@ -679,22 +810,41 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
 def main():
     ap = argparse.ArgumentParser(description="Маска человека по кадрам")
     ap.add_argument("video")
-    ap.add_argument("--backend", choices=sorted(BACKENDS), default="mediapipe")
+    ap.add_argument("--backend", choices=["auto", *sorted(BACKENDS)], default="auto",
+                    help="auto — BiRefNet на видеочипе, без него MediaPipe")
     ap.add_argument("--out", help="куда положить маску (по умолчанию рядом с видео)")
     ap.add_argument("--cutout", action="store_true",
                     help="ещё и собрать человека без фона (.cutout.webm) из готовой маски")
+    ap.add_argument("--yes", action="store_true",
+                    help="согласие на маску дольше пяти минут (BiRefNet на длинном дубле)")
     args = ap.parse_args()
 
     video = Path(args.video).resolve()
     if not video.exists():
         sys.exit(f"Нет файла: {video}")
+    backend, why = pick_backend(args.backend)
+    if why:
+        print(f"  ⚠ {why}", flush=True)
     out = Path(args.out).resolve() if args.out else video.with_name(
-        f"{video.stem}.matte_{args.backend}.mkv")
+        f"{video.stem}.matte_{backend}.mkv")
     if out.exists() and args.cutout:
         print(f"  → маска уже есть: {out.name}")
     else:
-        print(f"  → маска: {args.backend}", flush=True)
-        stats = run_matte(video, args.backend, out)
+        info = probe(video)
+        eta = needs_consent(backend, round(info["duration"] * info["fps"]))
+        agreed = project_consent(video) if eta and not args.yes else None
+        if agreed:
+            print(f"  → долгая маска: согласие проекта {agreed} (long_matte в project.json)", flush=True)
+        elif eta and not args.yes:
+            sys.exit(f"  ✗ Маска BiRefNet для {info['duration']:.0f} с видео — примерно {eta / 60:.0f} мин счёта "
+                     f"(видеочип и ~1,5 ядра, машина остаётся живой).\n"
+                     f"    Так и хотел — добавь --yes. Быстрее (~{eta / 60 * BIREFNET_FPS / 4.7:.0f} мин) — "
+                     f"--backend mediapipe: банку и микрофон в руке он теряет чаще.")
+        print(f"  → маска: {backend}" + (f", оценка ~{eta / 60:.0f} мин" if eta else ""), flush=True)
+        try:
+            stats = run_matte(video, backend, out)
+        except RuntimeError as e:
+            sys.exit(f"  ✗ {e}")
         print(f"  → {stats['frames']} кадров за {stats['seconds']:.0f} с "
               f"({stats['fps']:.1f} к/с) → {out.name}")
     if args.cutout:

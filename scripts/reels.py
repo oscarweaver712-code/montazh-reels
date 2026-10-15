@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Монтаж Reels одной командой: рез пауз → субтитры по словам → динамика → звук.
 
-  .venv/bin/python scripts/reels.py input/urok.mp4
-  .venv/bin/python scripts/reels.py input/urok.mp4 --hook "Так делают 90% учеников"
-  .venv/bin/python scripts/reels.py input/urok.mp4 --style hormozi             # стиль целиком
-  .venv/bin/python scripts/reels.py input/urok.mp4 --style video-essay --format 16:9
+  .venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4
+  .venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4 --hook "Так делают 90% учеников"
+  .venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4 --style hormozi             # стиль целиком
+  .venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4 --style video-essay --format 16:9
 
 Стиль (presets/styles/*.json) задаёт рез, крупность, субтитры и цвет; формат — размер
 кадра. Исходник других пропорций перекадрируется по лицу, а не режется по центру.
@@ -17,9 +17,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import formats
+import projects
 import styles
-from common import (INPUT_DIR, OUTPUT_DIR, WORK_DIR, detect_silence, has_libass,
-                    load_preset, measure_noise_floor, probe)
+from common import WORK_DIR, detect_silence, has_libass, load_preset, measure_noise_floor, probe
 from cut import plan_cut
 from reframe import reframe
 from render import render
@@ -49,7 +49,18 @@ def build_preset(args) -> dict:
     return preset
 
 
+def owner(video: Path) -> projects.Project:
+    """Проект файла: чей input/ его держит. Файл вне проектов — проект по умолчанию, и это пишется."""
+    for project in projects.all_projects():
+        if video.parent.resolve() == project.input.resolve():
+            return project
+    project = projects.default()
+    print(f"  · {video.name} лежит вне проектов — выпуск в проект по умолчанию «{project.name}»")
+    return project
+
+
 def process(video: Path, args) -> Path:
+    project = owner(video)
     try:
         preset = build_preset(args)
     except (ValueError, styles.StyleError) as e:
@@ -86,7 +97,7 @@ def process(video: Path, args) -> Path:
     # распознавание нужно только для реза и субтитров — иначе это минута впустую
     needs_speech = preset["cut"].get("enabled", True) or preset["subs"].get("enabled", True)
     if needs_speech:
-        data = run_transcribe(video, language=args.language, force=args.force)
+        data = run_transcribe(video, language=args.language or project.config["language"], force=args.force)
         if not data["words"]:
             sys.exit("  ✗ речь не распознана — проверь звук в исходнике")
     else:
@@ -144,19 +155,22 @@ def process(video: Path, args) -> Path:
     if fmt != formats.DEFAULT:
         suffix += "_" + fmt.replace(":", "x")
     out_name = args.out or f"{video.stem}{suffix}.mp4"
-    out_path = OUTPUT_DIR / out_name
+    project.output.mkdir(parents=True, exist_ok=True)
+    out_path = project.output / out_name
     render(picture, out_path, segments, preset, ass_path, noise_floor=noise_floor)
 
     size_mb = out_path.stat().st_size / 1_048_576
-    print(f"  ✓ готово за {time.time() - started:.0f} с → output/{out_path.name}  ({size_mb:.1f} МБ, {mmss(kept)})")
+    print(f"  ✓ готово за {time.time() - started:.0f} с → projects/{project.name}/output/{out_path.name}  "
+          f"({size_mb:.1f} МБ, {mmss(kept)})")
     return out_path
 
 
 def main():
     parser = argparse.ArgumentParser(description="Автомонтаж вертикальных Reels")
-    parser.add_argument("video", nargs="*", help="файлы; без аргументов — всё из input/")
+    parser.add_argument("video", nargs="*", help="файлы; без аргументов — всё из input/ проекта")
+    parser.add_argument("--project", help=f"проект, чей input/ монтировать без аргументов (по умолчанию {projects.DEFAULT})")
     parser.add_argument("--preset", default="viral")
-    parser.add_argument("--language", default="ru")
+    parser.add_argument("--language", help="язык речи; по умолчанию — из project.json проекта")
     parser.add_argument("--hook", help="текст-хук поверх первых секунд")
     parser.add_argument("--out", help="имя выходного файла (только для одного входного)")
     parser.add_argument("--force", action="store_true", help="пересчитать транскрипт заново")
@@ -169,19 +183,20 @@ def main():
     parser.add_argument("--format", help="формат кадра: 9:16 (по умолчанию), 16:9, 1:1, 4:5")
     args = parser.parse_args()
 
-    if args.video:
-        videos = [Path(v).resolve() for v in args.video]
-    else:
-        exts = {".mp4", ".mov", ".m4v", ".mkv"}
-        videos = sorted(p for p in INPUT_DIR.glob("*") if p.suffix.lower() in exts)
-
-    if not videos:
-        sys.exit(f"Нет входных файлов. Положи видео в {INPUT_DIR}/")
+    try:
+        if args.video:
+            videos = [Path(v).resolve() for v in args.video]
+        else:
+            project = projects.get(args.project or projects.DEFAULT)
+            videos = project.sources()
+            if not videos:
+                sys.exit(f"Нет входных файлов. Положи видео в projects/{project.name}/input/")
+    except projects.ProjectError as e:
+        sys.exit(f"  ✗ {e}")
 
     if args.out and len(videos) > 1:
         sys.exit("--out работает только с одним входным файлом")
 
-    OUTPUT_DIR.mkdir(exist_ok=True)
     WORK_DIR.mkdir(exist_ok=True)
 
     for video in videos:

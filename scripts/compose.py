@@ -44,7 +44,8 @@ HYPERFRAMES = "hyperframes@0.8.141"     # версия прибита: роли�
 # Шрифты, которые графика ролика подключает через @font-face (все OFL, с кириллицей)
 FONTS = ["Oswald-Bold.ttf", "Manrope-ExtraBold.ttf", "Montserrat-ExtraBold.ttf",
          "AlumniSans-Black.ttf", "CormorantGaramond.ttf", "CormorantGaramond-Italic.ttf",
-         "JetBrainsMono.ttf", "Unbounded-ExtraBold.ttf", "Rubik-Black.ttf", "GolosText-Black.ttf"]
+         "JetBrainsMono.ttf", "Unbounded-ExtraBold.ttf", "Rubik-Black.ttf", "GolosText-Black.ttf",
+         "InterDisplay-Light.ttf", "InterDisplay-ExtraBold.ttf"]
 
 # Слова, которые в субтитрах не стоят отдельно: цепляются к следующему
 CLINGY = {"в", "во", "на", "по", "до", "из", "из-за", "и", "а", "не", "ни", "у", "с", "со",
@@ -287,8 +288,11 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
     for s0, s1 in meta.get("segments", [])[:-1]:
         acc += s1 - s0
         cuts.append(int(round(acc * fps)))
-    camera = solve_camera(faces, cfg=styles.camera_cfg(style) if style else None,
-                          punches=director.get("punches"), cuts=cuts)
+    try:
+        camera = solve_camera(faces, cfg=styles.camera_cfg(style) if style else None,
+                              punches=director.get("punches"), cuts=cuts)
+    except ValueError as e:
+        sys.exit(f"✗ director.json: {e}")
     if coverage_violations(camera, width, height):
         sys.exit("Камера вылезла за край кадра — сборка остановлена (так быть не должно)")
     frames = camera[:int(round(duration * fps)) + 1]
@@ -297,9 +301,18 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
     assets = project / "assets"
     for sub in ("img", "fonts", "sfx"):
         (assets / sub).mkdir(parents=True, exist_ok=True)
-    copy_if_newer(aroll, assets / "aroll.mp4")
-    if (work / "aroll.cutout.webm").exists():
-        copy_if_newer(work / "aroll.cutout.webm", assets / "cutout.webm")
+    # "hq" в edit.json (15.10, IMG_1799): страница берёт дубль и вырезку с запасом под зум камеры —
+    # prep.py --hq и matte.make_cutout по нему. Флаг есть, а файлов нет — громкий отказ, не тихая мыльность
+    picture, cutout = aroll, work / "aroll.cutout.webm"
+    if (load_json(work / "edit.json", {}) or {}).get("hq"):
+        picture, cutout = work / "aroll.hq.mp4", work / "aroll.hq.cutout.webm"
+        for need, hint in ((picture, f"prep.py --hq по исходнику {stem}"),
+                           (cutout, f"matte.py work/{stem}/aroll.hq.mp4 --cutout --out <готовая маска>")):
+            if not need.exists():
+                sys.exit(f"✗ в edit.json стоит hq, а {need.relative_to(ROOT)} нет — {hint}")
+    copy_if_newer(picture, assets / "aroll.mp4")
+    if cutout.exists():
+        copy_if_newer(cutout, assets / "cutout.webm")
     copy_if_newer(VENDOR / "gsap.min.js", assets / "gsap.min.js")
     for name in FONTS:
         src = FONT_DIR / name

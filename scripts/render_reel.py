@@ -12,7 +12,7 @@
   .venv/bin/python scripts/render_reel.py IMG_3317                # следующая версия: v2, v3…
   .venv/bin/python scripts/render_reel.py IMG_3317 --version v2
   .venv/bin/python scripts/render_reel.py IMG_3317 --variant hormozi   # вариант для A/B →
-                                                     output/IMG_3317--hormozi_v1.mp4
+                                                     projects/antishkola/output/IMG_3317--hormozi_v1.mp4
 """
 import argparse
 import re
@@ -24,7 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host
-from common import OUTPUT_DIR, ROOT, WORK_DIR
+import projects
+from common import ROOT, WORK_DIR
 from compose import HYPERFRAMES, STUDIO, compose, project_name
 from master import master
 from plan import check as plan_problems
@@ -40,7 +41,7 @@ class Failed(Exception):
 
 
 def next_version(stem: str) -> str:
-    taken = [int(m.group(1)) for p in OUTPUT_DIR.glob(f"{stem}_v*.mp4")
+    taken = [int(m.group(1)) for p in projects.output_dir(stem.split("--")[0]).glob(f"{stem}_v*.mp4")
              if (m := re.fullmatch(rf"{re.escape(stem)}_v(\d+)\.mp4", p.name))]
     return f"v{max(taken, default=0) + 1}"
 
@@ -64,7 +65,10 @@ def render_reel(stem: str, version: str, variant: str | None = None, need_plan: 
     page_py = f"work/{stem}/page.{variant}.py" if variant else f"work/{stem}/page.py"
     if not (project / "index.html").exists():
         raise Failed(f"Нет страницы {project.relative_to(ROOT)}/index.html — сначала {page_py}")
-    out = OUTPUT_DIR / f"{name}_{version}.mp4"
+    try:
+        out = projects.output_dir(stem) / f"{name}_{version}.mp4"
+    except projects.ProjectError as e:
+        raise Failed(str(e))
     if out.exists():
         raise Failed(f"{out.relative_to(ROOT)} уже есть — отданный ролик не перезаписываю, "
                      f"возьми другую версию (--version {next_version(name)})")
@@ -112,7 +116,8 @@ def render_reel(stem: str, version: str, variant: str | None = None, need_plan: 
     if check.returncode != 0:
         rejected = raw.with_name(f"{raw.stem}.rejected.mp4")
         out.replace(rejected)
-        raise Failed(f"готовый ролик не прошёл проверку — убран из output/ в {rejected.relative_to(ROOT)}")
+        raise Failed(f"готовый ролик не прошёл проверку — убран из {out.parent.relative_to(ROOT)}/ "
+                     f"в {rejected.relative_to(ROOT)}")
 
     spent = time.time() - started
     print(f"✓ {out.name} за {spent // 60:.0f} мин {spent % 60:.0f} с → {out.relative_to(ROOT)}", flush=True)
@@ -122,12 +127,15 @@ def render_reel(stem: str, version: str, variant: str | None = None, need_plan: 
 def main():
     ap = argparse.ArgumentParser(description="Готовый ролик из проекта HyperFrames, с проверками")
     ap.add_argument("stem", help="имя ролика, например IMG_3317")
-    ap.add_argument("--version", help="v1, v2… (по умолчанию — следующая свободная в output/)")
+    ap.add_argument("--version", help="v1, v2… (по умолчанию — следующая свободная в output/ проекта)")
     ap.add_argument("--variant", help="стиль варианта для A/B (проект studio/<имя>--<стиль>/)")
     ap.add_argument("--no-plan", action="store_true",
                     help="пересобрать ролик, смонтированный до 13.10, без плана (осознанно)")
     args = ap.parse_args()
-    version = args.version or next_version(project_name(args.stem, args.variant))
+    try:
+        version = args.version or next_version(project_name(args.stem, args.variant))
+    except projects.ProjectError as e:
+        sys.exit(f"✗ {e}")
     if not re.fullmatch(r"v\d+", version):
         ap.error("версия пишется как v2")
     try:

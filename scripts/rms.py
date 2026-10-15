@@ -3,7 +3,7 @@
 
 Точки реза и «пипа» ставятся по звуку, а не по таймингам whisper (инвариант 3):
 
-  .venv/bin/python scripts/rms.py input/IMG_3320.MOV 81.9 83.2
+  .venv/bin/python scripts/rms.py projects/antishkola/input/IMG_3320.MOV 81.9 83.2
 """
 import subprocess
 import sys

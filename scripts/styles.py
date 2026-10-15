@@ -115,6 +115,10 @@ def validate(style: dict, source: str = "") -> dict:
     zoom = float(p["camera"]["base_zoom"])
     if not 1.0 <= zoom <= 1.3:
         raise StyleError(f"{where}: camera.base_zoom {zoom} вне 1.0–1.3 (дальше картинка мылится)")
+    # 15.10.2026: база проекта поднялась до 1.2, а наезды стиля остались 1.22 — их не было видно
+    if p["camera"].get("punch") != "none" and float(p["camera"]["punch_level"]) < zoom + 0.04:
+        raise StyleError(f"{where}: camera.punch_level {p['camera']['punch_level']} почти равен базе {zoom} — "
+                         f"наезда не будет видно; нужен не ниже {zoom + 0.04:.2f}")
     return style
 
 
@@ -206,10 +210,25 @@ def check_brief(brief, where: str) -> dict:
     return brief
 
 
+def project_brief(stem: str) -> dict:
+    """Умолчания брифа из проекта ролика (projects/<проект>/project.json → brief).
+
+    Без этого ролик заказчицы без своего brief.json собирался бы в стиле антишколы: проект —
+    граница, через которую чужие умолчания не протекают (14.10.2026).
+    """
+    import projects
+    try:
+        project = projects.of_or_default(stem)
+    except projects.ProjectError:
+        return {}                   # проектов нет (чистая проверка) — умолчания скилла
+    return check_brief(copy.deepcopy(project.config["brief"]), f"projects/{project.name}/project.json → brief")
+
+
 def load_brief(stem: str) -> dict:
-    """Бриф поверх умолчаний. Сломанный файл — StyleError с именем файла и поля."""
+    """Бриф поверх умолчаний проекта и скилла. Сломанный файл — StyleError с именем файла и поля."""
     path = brief_path(stem)
     brief = copy.deepcopy(DEFAULT_BRIEF)
+    brief.update(project_brief(stem))
     if path.exists():
         where = f"work/{stem}/brief.json"
         try:
@@ -336,6 +355,8 @@ def camera_cfg(style: dict) -> dict:
     """Настройки камеры-оператора (track.solve_camera) из стиля."""
     cam = style["params"]["camera"]
     cfg = {"base_zoom": float(cam["base_zoom"])}
+    if cam.get("push_in"):
+        cfg["push"] = 0.006        # +0.06 за 10 с мысли, сброс на пике следующего акцента (track.zoom_plan)
     if cam.get("punch") == "none" and cfg["base_zoom"] <= 1.0:
         # камера стоит: ни слежения, ни автоприближения — как поставили штатив
         cfg.update({"dead_zone_x": 1.0, "dead_zone_y": 1.0, "max_zoom": cfg["base_zoom"]})

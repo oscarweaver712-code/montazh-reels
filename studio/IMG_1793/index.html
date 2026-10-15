@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Закон о числе пи</title>
+    <script src="assets/gsap.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 104px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.15; color: #F2EBDD; text-transform: none; }
+      .cap.accent { color: #FF4A3D; }
+      .cap .w { display: inline-block; }
+      .panel { border-radius: 28px; background: rgba(12,12,14,0.88); border: 2px solid rgba(242,235,221,0.16);
+               box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .tag { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase;
+             color: rgba(242,235,221,0.75); text-align: center; }
+      .gold { color: #F5B82E; }
+      /* подменённый фон за спиной: сверху, низ переходит в родной кадр (там руки и банка) */
+      .bg { left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden;
+            -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%);
+            mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%); }
+      .bg img { position: absolute; left: -54px; top: -96px; width: 1188px; height: 2112px; object-fit: cover; }
+      .bg .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%); }
+      #bg-ind img { object-position: 38% 50%; }
+      #bg-space img { object-position: 56% 50%; }
+      /* бланк законопроекта */
+      .bill { padding: 22px 30px 26px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .bill-head { font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.14em; text-transform: uppercase;
+                   color: #6A5A44; text-align: center; }
+      .bill-title { margin-top: 6px; font-family: "Cormorant"; font-weight: 700; font-size: 64px; line-height: 1.05; color: #2A2219;
+                    text-align: center; font-variant-numeric: lining-nums; }
+      .bill-line { height: 12px; border-radius: 6px; background: rgba(42,34,25,0.16); margin: 14px auto 0; }
+      .brow { position: relative; display: flex; justify-content: space-between; align-items: center; min-height: 72px;
+              border-top: 2px solid rgba(42,34,25,0.14); opacity: 0; }
+      .brow-w { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.06em; text-transform: uppercase; color: #6A5A44; }
+      .brow-m { font-family: "Cormorant"; font-weight: 700; font-size: 54px; color: #2A2219; font-variant-numeric: lining-nums; white-space: nowrap; }
+      .brow-m.bad { color: #C7271F; }
+      .brow-m.good { color: #1E7A3A; }
+      .stamp-in { position: absolute; font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: #C7271F; opacity: 0;
+                  border: 6px solid #C7271F; border-radius: 10px; padding: 0 16px; letter-spacing: 0.04em; white-space: nowrap; }
+      /* голосование */
+      .vrow { position: absolute; left: 30px; width: 530px; height: 90px; }
+      .vlab { position: absolute; left: 0; top: 26px; width: 150px; font-family: "Manrope"; font-weight: 800; font-size: 28px;
+              letter-spacing: 0.08em; text-transform: uppercase; color: var(--cream); }
+      .vbar { position: absolute; left: 150px; top: 18px; height: 54px; border-radius: 10px; transform-origin: 0 50%; transform: scaleX(0); }
+      .vnum { position: absolute; right: 0; top: 4px; width: 110px; text-align: right; font-family: "Oswald"; font-weight: 700;
+              font-size: 72px; line-height: 1; color: var(--cream); opacity: 0; }
+      /* монограмма вместо портрета (свободного фото Гудвина нет) */
+      .mono-ph { display: flex; align-items: center; justify-content: center; background: #2B2620; font-family: "Cormorant";
+                 font-weight: 700; font-size: 130px; color: #F3EAD6; }
+      /* карточки уже и правее стандартной: при базе 1.2 лицо крупное (как #c-aug в IMG_1796) */
+      .card.slim { top: 268px; left: 716px; width: 236px; padding: 12px 12px 10px; }
+      .card.slim .ph { width: 212px; height: 220px; }
+      .card.slim img { width: 212px; height: 220px; }
+      .card.slim .card-name { font-size: 20px; margin-top: 8px; }
+      .card.slim .card-sub { font-size: 22px; }
+      .card.slim .mono-ph { font-size: 100px; }
+      #c-waldo img { width: 400px; height: 787px; max-width: none; object-fit: fill; margin-left: -134px; margin-top: -17px; }
+      #c-jones img { width: 480px; height: 608px; max-width: none; object-fit: fill; margin-left: -144px; margin-top: -20px; }
+      #c-euler img { object-position: 45% 30%; }
+      /* окружность и три диаметра */
+      .lbl { position: absolute; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 44px; color: var(--cream);
+             text-align: center; opacity: 0; font-variant-numeric: lining-nums; }
+      /* περιφέρεια */
+      .greek { position: absolute; left: 0; top: 40px; width: 590px; text-align: center; font-family: "Cormorant"; font-weight: 700;
+               font-size: 96px; color: var(--cream); line-height: 1; opacity: 0; white-space: nowrap; }
+      .greek span { display: inline-block; }
+      /* бегущая строка цифр π и 15 знаков */
+      .ticker { left: 0; top: 330px; font-family: "Oswald"; font-weight: 700; font-size: 150px; line-height: 1; color: var(--cream);
+                white-space: nowrap; text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .digits { position: absolute; left: 0; top: 40px; width: 590px; text-align: center; font-family: "JBMono"; font-weight: 700;
+                font-size: 38px; color: var(--cream); white-space: nowrap; }
+      .digits span { display: inline-block; opacity: 0; }
+      .digits span.on { color: #F5B82E; }
+      .cnt { position: absolute; left: 0; top: 116px; width: 590px; text-align: center; font-family: "Oswald"; font-weight: 700;
+             font-size: 92px; line-height: 1; color: #F5B82E; opacity: 0; }
+      /* строчная π сидит на строке ниже заглавных: поднимаем саму букву, рамка блока остаётся ниже шапки */
+      .lift { display: inline-block; transform: translateY(var(--lift)); }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="71.500" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="71.500" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="b-pi3" class="g big" style="top: 290px; font-size: 270px; white-space: nowrap; text-transform: none;"><span class="lift" style="--lift: -40px;">π</span> = 3</div>
+        <div id="bg-ind" class="g bg"><img src="assets/img/bg_indiana.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-almost" class="g lead" style="top: 300px;">почти приняли</div>
+        <div id="b-1897" class="g big" style="top: 300px; font-size: 250px;"><span id="b-1897-n">1897</span></div>
+        <div id="b-ind" class="g lead" style="top: 300px;">штат индиана</div>
+        <div id="b-bred" class="g big red" style="top: 320px; font-size: 230px;">бред</div>
+        <div id="b-pi" class="g big" style="top: 290px; font-size: 360px; text-transform: none;"><span class="lift" style="--lift: -110px;">π</span></div>
+        <div id="b-greek-lead" class="g lead" style="top: 264px;">греческая буква</div>
+        <div id="b-pi-serif" class="g big serif" style="top: 330px; font-size: 480px; text-transform: none;"><span class="lift" style="--lift: -200px;">π</span></div>
+        <div id="b-1706" class="g big" style="left: 40px; width: 700px; top: 330px; font-size: 230px;"><span id="b-1706-n">1706</span></div>
+        <div id="bg-greece" class="g bg"><img src="assets/img/bg_greece.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-tick" class="g ticker" data-safe="бегущая строка цифр уходит за края — так задумано">3,14159265358979323846264338327950288…</div>
+        <div id="bg-space" class="g bg"><img src="assets/img/bg_space.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-nasa" class="g lead" style="top: 300px;">полёты nasa</div>
+        <div id="b-ege-lead" class="g lead" style="top: 290px;">а тебе на егэ</div>
+        <div id="b-314" class="g big red" style="top: 320px; font-size: 220px;"><span class="lift" style="--lift: -36px;">3,14</span></div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="71.500" data-track-index="1"></video>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="p-law" class="g bill" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 230px;">
+          <div class="bill-head">госдума · законопроект</div>
+          <div class="bill-title">О числе π</div>
+          <div class="bill-line" style="width: 86%;"></div><div class="bill-line" style="width: 70%;"></div><div class="bill-line" style="width: 78%;"></div>
+        </div>
+        <div id="st-easy" class="g sticker" style="left: 190px; top: 300px; font-size: 56px; white-space: nowrap;">чтобы школьникам было проще</div>
+        <div id="st-bred" class="g stamp" style="left: 360px; top: 290px; font-size: 110px; background: rgba(12,12,14,0.55);">бред?</div>
+        <div id="c-good" class="g card card-right slim">
+          <div class="ph mono-ph">Э.Г.</div>
+          <div class="card-name">Эдвин Гудвин</div>
+          <div class="card-sub">местный врач</div>
+        </div>
+        <div id="st-secret" class="g sticker" style="left: 170px; top: 300px; font-size: 56px; white-space: nowrap;">разгадал тайну математики</div>
+        <div id="p-bill" class="g bill" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 470px;">
+          <div class="bill-head">indiana · 1897</div>
+          <div class="bill-title" style="font-size: 56px;">House Bill № 246</div>
+          <div style="height: 18px;"></div>
+          <div id="br1" class="brow"><span class="brow-w">выходит</span><span class="brow-m bad">π = 3,2</span></div>
+          <div id="br1-t" class="brow"><span class="brow-w">на деле</span><span class="brow-m good">π = 3,14159…</span></div>
+          <div id="br2" class="brow"><span class="brow-w">штату</span><span class="brow-m">бесплатно</span></div>
+          <div id="br3" class="brow"><span class="brow-w">остальным</span><span class="brow-m">платно $</span></div>
+        </div>
+        <div id="p-vote" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 300px;">
+          <div class="tag" style="position: absolute; left: 0; top: 24px; width: 590px;">палата представителей</div>
+          <div class="vrow" style="top: 80px;"><div class="vlab">за</div><div id="v-yes" class="vbar" style="width: 260px; background: #3DBE6A;"></div><div id="v-yes-n" class="vnum">67</div></div>
+          <div class="vrow" style="top: 186px;"><div class="vlab">против</div><div id="v-no" class="vbar" style="width: 8px; background: #F0352C;"></div><div id="v-no-n" class="vnum">0</div></div>
+        </div>
+        <div id="p-stop" class="g bill" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 250px;">
+          <div class="bill-head">сенат индианы · 1897</div>
+          <div class="bill-title" style="font-size: 56px;">House Bill № 246</div>
+          <div class="bill-line" style="width: 84%;"></div><div class="bill-line" style="width: 66%;"></div>
+          <div id="st-stop" class="stamp-in" style="left: 100px; top: 116px; font-size: 62px;">остановлен</div>
+        </div>
+        <div id="st-luck" class="g sticker" style="left: 330px; top: 300px; font-size: 56px; white-space: nowrap;">и то случайно</div>
+        <div id="c-waldo" class="g card card-right slim">
+          <div class="ph"><img src="assets/img/waldo.jpg" alt="" /></div>
+          <div class="card-name">Кларенс Уолдо</div>
+          <div class="card-sub">профессор</div>
+        </div>
+        <div id="p-circ" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 330px;">
+          <svg viewBox="0 0 590 330" style="position: absolute; left: 0; top: 0; width: 590px; height: 330px;"><circle id="cc" cx="295" cy="110" r="75" stroke="#F2EBDD" stroke-width="8" fill="none" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" transform="rotate(90 295 110)" /><path id="cd" d="M 220 110 L 370 110" stroke="#F5B82E" stroke-width="8" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="cl" d="M 60 250 L 531 250" stroke="#F2EBDD" stroke-width="10" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="sg0" d="M 60 250 L 210 250" stroke="#F5B82E" stroke-width="10" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="sg1" d="M 210 250 L 360 250" stroke="#F5B82E" stroke-width="10" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="sg2" d="M 360 250 L 510 250" stroke="#F5B82E" stroke-width="10" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="sg3" d="M 510 250 L 531 250" stroke="#F0352C" stroke-width="10" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="tk0" d="M 60 238 L 60 262" stroke="#F2EBDD" stroke-width="5" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="tk1" d="M 210 238 L 210 262" stroke="#F2EBDD" stroke-width="5" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="tk2" d="M 360 238 L 360 262" stroke="#F2EBDD" stroke-width="5" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="tk3" d="M 510 238 L 510 262" stroke="#F2EBDD" stroke-width="5" fill="none" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg>
+          <div id="l-d" class="lbl" style="left: 270px; top: 118px; width: 50px;">d</div>
+          <div id="l-c" class="lbl" style="left: 380px; top: 22px; width: 200px; font-size: 34px;">окружность</div>
+          <div id="l-d0" class="lbl" style="left: 110px; top: 262px; width: 50px;">d</div>
+          <div id="l-d1" class="lbl" style="left: 260px; top: 262px; width: 50px;">d</div>
+          <div id="l-d2" class="lbl" style="left: 410px; top: 262px; width: 50px;">d</div>
+          <div id="l-tail" class="lbl" style="left: 480px; top: 262px; width: 120px; color: #F0352C; font-size: 36px;">0,14…</div>
+        </div>
+        <div id="c-jones" class="g card card-right slim">
+          <div class="ph"><img src="assets/img/jones.jpg" alt="" /></div>
+          <div class="card-name">Уильям Джонс</div>
+          <div class="card-sub">англичанин</div>
+        </div>
+        <div id="p-greek" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 250px;">
+          <div id="gw" class="greek"><span id="gp" class="gold">π</span>εριφέρεια</div>
+          <div id="gt" class="tag" style="position: absolute; left: 0; top: 168px; width: 590px; font-size: 34px; opacity: 0;">= окружность</div>
+        </div>
+        <div id="c-euler" class="g card card-right slim">
+          <div class="ph"><img src="assets/img/euler.jpg" alt="" /></div>
+          <div class="card-name">Леонард Эйлер</div>
+          <div class="card-sub">сделал знак модным</div>
+        </div>
+        <div id="p-nasa" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 250px;">
+          <div class="digits"><span id="dg0">3</span><span id="dg1">,</span><span id="dg2" class="on">1</span><span id="dg3" class="on">4</span><span id="dg4" class="on">1</span><span id="dg5" class="on">5</span><span id="dg6" class="on">9</span><span id="dg7" class="on">2</span><span id="dg8" class="on">6</span><span id="dg9" class="on">5</span><span id="dg10" class="on">3</span><span id="dg11" class="on">5</span><span id="dg12" class="on">8</span><span id="dg13" class="on">9</span><span id="dg14" class="on">7</span><span id="dg15" class="on">9</span><span id="dg16" class="on">3</span></div>
+          <div id="nc" class="cnt"><span id="nc-n">15</span> знаков</div>
+        </div>
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">больше интересной математики — у меня в профиле</div>
+        </div>
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-pi3" src="assets/sfx/whoosh.mp3" data-start="3.24" data-volume="0.259"></audio>
+      <audio id="sfx-good" src="assets/sfx/pop.mp3" data-start="11.74" data-volume="0.452"></audio>
+      <audio id="sfx-vote" src="assets/sfx/impact-bass-1.mp3" data-start="27.00" data-volume="0.080"></audio>
+      <audio id="sfx-pi" src="assets/sfx/whoosh-cinematic.mp3" data-start="38.60" data-volume="0.118"></audio>
+      <audio id="sfx-n15" src="assets/sfx/click.mp3" data-start="64.68" data-volume="0.877"></audio>
+      <audio id="sfx-314" src="assets/sfx/impact-bass-2.mp3" data-start="67.82" data-volume="0.055"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="69.20" data-volume="0.646"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[3.20, 5.20], [6.35, 11.60], [37.05, 40.50], [45.75, 55.10], [57.50, 65.00], [66.45, 69.35]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры: words, blur ----------
+      const caps = document.getElementById("caps");
+      const CAP_BASE = "#F2EBDD", CAP_HL = "#FF4A3D";
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        let inner = el;
+        if (false) { inner = document.createElement("span"); inner.className = "box"; el.appendChild(inner); }
+        const spans = [];
+        if (c.words) {
+          c.words.forEach((w, k) => {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.textContent = w.text;
+            inner.appendChild(s);
+            if (k < c.words.length - 1) inner.appendChild(document.createTextNode(" "));
+            spans.push(s);
+          });
+        } else {
+          inner.textContent = c.text;
+        }
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
+        const d = Math.min(0.09, c.t1 - c.t0);
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: d, ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+        (c.words || []).forEach((w, k) => {
+          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
+          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
+          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+        });
+      });
+
+
+      // ---------- хук: бланк «О числе π» — и за головой «π = 3» ----------
+      doc("#p-law", 0.8, 3.2, { fromRot: -5, rot: 1 });
+      slam("#b-pi3", 3.26, { fromScale: 1.6, rot: -3 });
+      leave("#b-pi3", 4.2, { y: -60, rot: 6 });
+      enter("#st-easy", 4.4, { fromScale: 0.6, rot: -4 });
+      leave("#st-easy", 5.32, { y: -30, rot: -10 });
+      slam("#st-bred", 5.8, { fromScale: 2.0, rot: -6, blur: 10 });
+      leave("#st-bred", 6.35, { scale: 0.6, y: 0, rot: -16 });
+
+      // ---------- Индиана: Капитолий за спиной, «почти приняли», 1800 → 1897 ----------
+      tl.fromTo("#bg-ind", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 6.4);
+      tl.fromTo("#bg-ind img", { scale: 1 }, { scale: 1.06, duration: 5.15, ease: "none" }, 6.4);
+      tl.to("#bg-ind", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 11.2);
+      enter("#b-almost", 7.32, { fromScale: 0.9, dur: 0.25 });
+      leave("#b-almost", 8.4, { y: -30 });
+      slam("#b-1897", 8.66, { fromScale: 1.3 });
+      tl.fromTo("#b-1897-n", { textContent: 1800 }, { textContent: 1897, snap: { textContent: 1 }, duration: 0.9, ease: "power2.out", immediateRender: false }, 8.66);
+      leave("#b-1897", 10.3, { y: -60 });
+      enter("#b-ind", 10.52, { fromScale: 0.9, dur: 0.25 });
+      leave("#b-ind", 11.15, { y: -30 });
+
+      // ---------- врач Гудвин, «разгадал тайну» ----------
+      enter("#c-good", 11.76, { fromX: 460, rot: 4, fromRot: 16, dur: 0.45, ease: "power3.out" });
+      leave("#c-good", 13.1, { x: 460, y: 0, rot: 18, dur: 0.32 });
+      enter("#st-secret", 13.3, { fromScale: 0.6, rot: -3 });
+      leave("#st-secret", 15.1, { y: -30, rot: -10 });
+
+      // ---------- законопроект: π = 3,2 против настоящего; бесплатно штату, платно остальным ----------
+      doc("#p-bill", 15.5, 24.6, { fromRot: 5, rot: -1 });
+      tl.fromTo("#br1", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 18.34);
+      tl.fromTo("#br1 .brow-m", { scale: 1.6, filter: BLUR(8) }, { scale: 1, filter: BLUR(0), duration: 0.18, ease: "power4.out",
+                immediateRender: false }, 18.62);
+      tl.fromTo("#br1-t", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 19.2);
+      tl.fromTo("#br2", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 20.88);
+      tl.fromTo("#br3", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out" }, 23.14);
+      tl.fromTo("#br3 .brow-m", { scale: 1 }, { scale: 1.12, duration: 0.18, yoyo: true, repeat: 1, ease: "sine.inOut",
+                immediateRender: false }, 23.94);
+
+      // ---------- голосование: 67 за, ноль против ----------
+      enter("#p-vote", 24.8, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#v-yes", { scaleX: 0 }, { scaleX: 1, duration: 0.9, ease: "power2.out" }, 27.02);
+      enter("#v-yes-n", 27.02, { fromScale: 0.6, dur: 0.2 });
+      tl.fromTo("#v-yes-n", { textContent: 0 }, { textContent: 67, snap: { textContent: 1 }, duration: 0.9, ease: "power2.out", immediateRender: false }, 27.02);
+      tl.fromTo("#v-no", { scaleX: 0 }, { scaleX: 1, duration: 0.2, ease: "power2.out" }, 28.18);
+      slam("#v-no-n", 28.18, { fromScale: 1.8 });
+      leave("#p-vote", 29.0, { y: 80 });
+
+      // ---------- Сенат: остановлен, и то случайно ----------
+      doc("#p-stop", 29.12, 31.4, { fromRot: -6, rot: 1 });
+      slam("#st-stop", 30.16, { fromScale: 2.0, rot: -8, blur: 10 });
+      enter("#st-luck", 30.6, { fromScale: 0.6, rot: 4 });
+      leave("#st-luck", 31.7, { y: -30, rot: 10 });
+
+      // ---------- профессор Уолдо ----------
+      card("#c-waldo", 32.62, 36.2, "right");
+
+      // ---------- «узаконить бред» ----------
+      slam("#b-bred", 37.1, { fromScale: 1.5, rot: -4 });
+      leave("#b-bred", 37.8, { y: -60, rot: 8 });
+
+      // ---------- что такое π на самом деле? ----------
+      slam("#b-pi", 38.62, { fromScale: 1.6 });
+      leave("#b-pi", 40.2, { y: -60 });
+      enter("#p-circ", 39.8, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      draw("#cc", 40.26, 0.6);
+      draw("#cd", 41.1, 0.35);
+      enter("#l-d", 41.4, { fromScale: 0.6, dur: 0.2 });
+      enter("#l-c", 42.78, { fromScale: 0.8, dur: 0.25 });
+      tl.to("#cc", { strokeDashoffset: 1, duration: 0.7, ease: "power1.inOut" }, 43.5);
+      leave(["#l-d", "#l-c"], 43.5, { y: -20 });
+      tl.to("#cd", { opacity: 0, y: 60, duration: 0.3, ease: "power2.in" }, 43.5);
+      draw("#cl", 43.5, 0.7);
+      tl.fromTo("#tk0, #tk1, #tk2, #tk3", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.12, stagger: 0.2 }, 43.8);
+      tl.fromTo("#sg0, #sg1, #sg2", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.18, ease: "power2.out", stagger: 0.22 }, 43.9);
+      tl.fromTo("#l-d0, #l-d1, #l-d2", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.15, stagger: 0.22 }, 43.95);
+      draw("#sg3", 44.56, 0.15);
+      slam("#l-tail", 44.6, { fromScale: 1.6 });
+      leave("#p-circ", 45.2, { y: 80 });
+
+      // ---------- греческая буква, Уильям Джонс, 1706 ----------
+      enter("#b-greek-lead", 45.8, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-pi-serif", 46.26, { fromScale: 1.5, rot: -4 });
+      leave(["#b-pi-serif", "#b-greek-lead"], 48.3, { y: -60 });
+      card("#c-jones", 48.5, 51.3, "right");
+      slam("#b-1706", 49.24, { fromScale: 1.3 });
+      tl.fromTo("#b-1706-n", { textContent: 1600 }, { textContent: 1706, snap: { textContent: 1 }, duration: 0.8, ease: "power2.out", immediateRender: false }, 49.24);
+      leave("#b-1706", 50.6, { y: -60 });
+
+      // ---------- Парфенон за спиной: περιφέρεια = окружность ----------
+      tl.fromTo("#bg-greece", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 50.7);
+      tl.fromTo("#bg-greece img", { scale: 1 }, { scale: 1.06, duration: 4.35, ease: "none" }, 50.7);
+      tl.to("#bg-greece", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 54.7);
+      enter("#p-greek", 51.0, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      slam("#gw", 52.12, { fromScale: 1.3 });
+      tl.fromTo("#gp", { scale: 1 }, { scale: 1.35, duration: 0.2, yoyo: true, repeat: 1, ease: "sine.inOut",
+                immediateRender: false }, 53.1);
+      enter("#gt", 54.0, { fromScale: 0.8, dur: 0.25 });
+      leave("#p-greek", 54.75, { y: 80 });
+
+      // ---------- Эйлер ----------
+      card("#c-euler", 54.98, 57.3, "right");
+
+      // ---------- бесконечные знаки — бегущей строкой за головой ----------
+      tl.fromTo("#b-tick", { opacity: 0, x: 1100, filter: BLUR(10) }, { opacity: 1, x: 300, filter: BLUR(0), duration: 0.4, ease: "power2.out" }, 57.58);
+      tl.fromTo("#b-tick", { x: 300 }, { x: -2600, duration: 2.0, ease: "none", immediateRender: false }, 57.98);
+      leave("#b-tick", 59.8, { y: -40, scale: 0.9 });
+
+      // ---------- космос за спиной: NASA, 15 знаков ----------
+      tl.fromTo("#bg-space", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 59.9);
+      tl.fromTo("#bg-space img", { scale: 1 }, { scale: 1.06, duration: 5.05, ease: "none" }, 59.9);
+      tl.to("#bg-space", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 64.6);
+      enter("#b-nasa", 60.88, { fromScale: 0.9, dur: 0.25 });
+      leave("#b-nasa", 63.8, { y: -30 });
+      enter("#p-nasa", 63.9, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.to("#p-nasa .digits span", { opacity: 1, duration: 0.03, stagger: 0.06 }, 64.2);
+      enter("#nc", 64.7, { fromScale: 0.6, dur: 0.2 });
+      tl.fromTo("#nc-n", { textContent: 0 }, { textContent: 15, snap: { textContent: 1 }, duration: 0.7, ease: "power2.out", immediateRender: false }, 64.7);
+      leave("#p-nasa", 66.3, { y: 80 });
+
+      // ---------- панчлайн: а тебе на ЕГЭ не хватит 3,14 ----------
+      enter("#b-ege-lead", 66.5, { fromScale: 0.9, dur: 0.25 });
+      leave("#b-ege-lead", 67.6, { y: -30 });
+      slam("#b-314", 67.84, { fromScale: 1.6, rot: -3 });
+      tl.to("#b-314", { keyframes: [{ x: -18, duration: 0.05 }, { x: 16, duration: 0.07 }, { x: -10, duration: 0.06 },
+                                    { x: 0, duration: 0.06 }] }, 68.3);
+      leave("#b-314", 69.05, { y: -60 });
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 69.20);
+      tl.set("#cta-arrow", { opacity: 1 }, 69.55);
+      draw("#arrow-path", 69.55, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 69.87);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 70.20);
+
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -28,10 +28,11 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (FONT_DIR, INPUT_DIR, OUTPUT_DIR, PRESET_DIR, ROOT,
+from common import (FONT_DIR, PRESET_DIR, ROOT,
                     ffmpeg_bin, ffprobe_bin, load_preset, probe)
 import host
 import jobqueue
+import projects
 import studio_api
 from look import hdr_to_sdr
 
@@ -90,25 +91,39 @@ def probe_or_none(path: Path) -> dict | None:
 @app.get("/api/state")
 def state():
     """Исходники, готовые ролики и текущие настройки — всё, что нужно странице при загрузке."""
-    def describe(path: Path, folder: str):
+    def describe(path: Path, folder: str, project: str):
         item = {"name": path.name, "size_mb": round(path.stat().st_size / 1_048_576, 1),
-                "folder": folder, "mtime": path.stat().st_mtime}
+                "folder": folder, "mtime": path.stat().st_mtime, "project": project}
         info = probe_or_none(path)
         item["duration"] = round(info["duration"], 1) if info else None
         item["vertical"] = info["vertical"] if info else True
         return item
 
     # скрытые — недописанные файлы (.имя.part.mp4 идущей сборки, .имя.part загрузки)
-    def videos(folder: Path) -> list:
-        return sorted((p for p in folder.glob("*") if p.suffix.lower() in VIDEO_EXT
-                       and not p.name.startswith(".")), key=lambda p: -p.stat().st_mtime)
-    inputs, outputs = videos(INPUT_DIR), videos(OUTPUT_DIR)
+    def videos(folder: str) -> list:
+        found = [(p, project.name) for project in projects.all_projects()
+                 for p in getattr(project, folder).glob("*")
+                 if p.suffix.lower() in VIDEO_EXT and not p.name.startswith(".")]
+        return [describe(p, folder, name) for p, name in sorted(found, key=lambda pair: -pair[0].stat().st_mtime)]
 
-    return {
-        "inputs": [describe(p, "input") for p in inputs],
-        "outputs": [describe(p, "output") for p in outputs],
-        "preset": load_preset("viral"),
-    }
+    return {"inputs": videos("input"), "outputs": videos("output"),
+            "projects": [{"name": p.name, "title": p.title} for p in projects.all_projects()],
+            "default_project": projects.DEFAULT, "preset": load_preset("viral")}
+
+
+def inbox(project: str | None) -> Path:
+    """input/ проекта, куда кладётся новый исходник; без проекта — проект по умолчанию."""
+    folder = projects.get(project or projects.DEFAULT).input
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def locate(folder: str, name: str) -> Path | None:
+    """Файл в input/ или output/ какого-то проекта; нет или неоднозначно — None."""
+    try:
+        return projects.locate(folder, name)
+    except projects.ProjectError:
+        return None
 
 
 def forget_frames(stem: str):
@@ -118,8 +133,8 @@ def forget_frames(stem: str):
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
-    """Видео в input/. Имя занято — новое ложится рядом с номером (IMG_3305_2.MOV), а не поверх.
+async def upload(file: UploadFile = File(...), project: str = Form("")):
+    """Видео в input/ проекта (по умолчанию — антишкола). Имя занято — новое ложится рядом с номером (IMG_3305_2.MOV), а не поверх.
 
     У айфонов команды одинаковые имена IMG_XXXX, а у лежащего файла уже есть транскрипт и
     решения монтажа: подмена исходника молча дала бы чужие субтитры и чужой рез. Пока файл
@@ -128,8 +143,10 @@ async def upload(file: UploadFile = File(...)):
     name = Path(file.filename or "").name
     if not name:
         return {"error": "у файла нет имени"}
-    INPUT_DIR.mkdir(exist_ok=True)
-    target = free_name(name)
+    try:
+        target = free_name(name, inbox(project))
+    except projects.ProjectError as e:
+        return {"error": str(e)}
     forget_frames(target.stem)
     part = target.with_name(f".{target.name}.part")
     try:
@@ -139,7 +156,7 @@ async def upload(file: UploadFile = File(...)):
         part.replace(target)
     finally:
         part.unlink(missing_ok=True)
-    return {"name": target.name}
+    return {"name": target.name, "project": target.parent.parent.name}
 
 
 def video_seconds(path: Path) -> float | None:
@@ -166,17 +183,22 @@ def video_seconds(path: Path) -> float | None:
     return None
 
 
-def free_name(name: str) -> Path:
-    """Имя в input/, которое ничего не затрёт: video.mp4 → video_2.mp4."""
-    target = INPUT_DIR / name
+def free_name(name: str, folder: Path) -> Path:
+    """Имя в input/, которое ничего не затрёт: video.mp4 → video_2.mp4.
+
+    Имя ролика одно на все проекты (у них общий work/<имя>/), поэтому занятым считается имя
+    в input/ любого проекта, а не только этого.
+    """
+    taken = {p.stem for project in projects.all_projects() for p in project.sources()}
+    target = folder / name
     stem, suffix, n = target.stem, target.suffix, 2
-    while target.exists():
-        target = INPUT_DIR / f"{stem}_{n}{suffix}"
+    while target.exists() or target.stem in taken:
+        target = folder / f"{stem}_{n}{suffix}"
         n += 1
     return target
 
 
-def import_local_file(raw: str) -> dict:
+def import_local_file(raw: str, project: str = "") -> dict:
     """Кладёт в input/ файл, который перетащили ссылкой, а не содержимым.
 
     Telegram и Почта отдают браузеру путь к файлу, а не сам файл: страница по такому
@@ -196,23 +218,26 @@ def import_local_file(raw: str) -> dict:
 
     if not source.is_file():
         return {"error": f"по этому пути файла нет: {source}"}
-    if source.parent == INPUT_DIR:
-        return {"name": source.name}          # уже лежит где надо, копировать нечего
+    try:
+        folder = inbox(project)
+    except projects.ProjectError as e:
+        return {"error": str(e)}
+    if source.parent.resolve() == folder.resolve():
+        return {"name": source.name, "project": folder.parent.name}   # уже лежит где надо
 
     if video_seconds(source) is None:
         return {"error": f"это не видео: {source.name}"}
 
-    INPUT_DIR.mkdir(exist_ok=True)
     # файл из кэша мессенджера бывает без расширения — иначе пайплайн его не увидит
     name = source.name if source.suffix.lower() in VIDEO_EXT else source.stem + ".mp4"
-    target = free_name(name)
+    target = free_name(name, folder)
     shutil.copy2(source, target)
-    return {"name": target.name}
+    return {"name": target.name, "project": folder.parent.name}
 
 
 @app.post("/api/import-path")
-def import_path(path: str = Form(...)):
-    return import_local_file(path)
+def import_path(path: str = Form(...), project: str = Form("")):
+    return import_local_file(path, project)
 
 
 @app.post("/api/render")
@@ -240,8 +265,8 @@ def start_render(
     тяжёлых процесса (инвариант 2), а на одном ролике они ещё и делили папку кусков
     work/<имя>_segments — один стирал куски другого и склеивал чужие, молча.
     """
-    source = INPUT_DIR / Path(video).name
-    if not source.exists():
+    source = locate("input", video)
+    if source is None:
         return {"error": f"файл не найден: {video}"}
 
     preset = load_preset("viral")
@@ -270,12 +295,12 @@ def start_render(
     job_preset.parent.mkdir(parents=True, exist_ok=True)
     job_preset.write_text(text, encoding="utf-8")
     rel = job_preset.relative_to(ROOT).as_posix() if job_preset.is_relative_to(ROOT) else str(job_preset)
-    step = ["python", "-u", "scripts/reels.py", f"input/{source.name}", "--preset", rel]
+    step = ["python", "-u", "scripts/reels.py", projects.rel(source), "--preset", rel]
     if hook.strip():
         step += ["--hook", hook.strip()]
     # файл настроек задачи убирает сама очередь, когда задача кончится (cleanup)
     studio_api.enqueue(job, [step], cleanup=[rel], title=f"Быстрая панель: {source.name}")
-    jobs[job] = {"video": source.name}
+    jobs[job] = {"video": source.name, "output": source.parent.parent / "output"}
     return {"job_id": job}
 
 
@@ -329,7 +354,7 @@ async def stream(job_id: str):
                 produced = None
                 video = (jobs.get(job_id) or {}).get("video")
                 if place == "done" and video:
-                    candidate = OUTPUT_DIR / f"{Path(video).stem}_reels.mp4"
+                    candidate = jobs[job_id]["output"] / f"{Path(video).stem}_reels.mp4"
                     produced = candidate.name if candidate.exists() else None
                 payload = {"finished": True, "code": 0 if place == "done" else 1, "output": produced}
                 if place is None:
@@ -345,9 +370,8 @@ async def stream(job_id: str):
 
 @app.get("/api/video/{folder}/{name}")
 def serve_video(folder: str, name: str):
-    base = OUTPUT_DIR if folder == "output" else INPUT_DIR
-    path = base / Path(name).name
-    if not path.exists():
+    path = locate("output" if folder == "output" else "input", name)
+    if path is None:
         return {"error": "нет файла"}
     return FileResponse(path, media_type="video/mp4")
 
@@ -413,9 +437,8 @@ async def upload_font(file: UploadFile = File(...)):
 @app.get("/api/frame/{name}")
 def frame(name: str, at: float = 0.35, folder: str = "input"):
     """Кадр из видео для превью: субтитры видно на реальной картинке, а не на заглушке."""
-    base = OUTPUT_DIR if folder == "output" else INPUT_DIR
-    video = base / Path(name).name
-    if not video.exists():
+    video = locate("output" if folder == "output" else "input", name)
+    if video is None:
         return {"error": "нет файла"}
 
     at = min(max(at, 0.0), 0.99)
@@ -461,19 +484,17 @@ def plan(stem: str):
 
 @app.post("/api/reveal")
 def reveal(name: str = Form(...), folder: str = Form("output")):
-    base = OUTPUT_DIR if folder == "output" else INPUT_DIR
-    path = base / Path(name).name
-    if path.exists():
+    path = locate("output" if folder == "output" else "input", name)
+    if path is not None:
         host.reveal(path)                 # Finder на Mac, Проводник на Windows
     return {"ok": True}
 
 
 @app.post("/api/delete")
 def delete(name: str = Form(...), folder: str = Form("output")):
-    base = OUTPUT_DIR if folder == "output" else INPUT_DIR
-    path = base / Path(name).name
-    if not path.exists() or path.suffix.lower() not in VIDEO_EXT:
-        return {"ok": False, "error": f"нечего удалять: {path.name}"}
+    path = locate("output" if folder == "output" else "input", name)
+    if path is None or path.suffix.lower() not in VIDEO_EXT:
+        return {"ok": False, "error": f"нечего удалять: {Path(name).name}"}
 
     path.unlink()
     forget_frames(path.stem)

@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Почему процент — два нолика и палочка</title>
+    <script src="assets/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/vendor/katex/katex.min.css" />
+    <script src="assets/vendor/katex/katex.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 104px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.15; color: #F2EBDD; text-transform: none; }
+      .cap.accent { color: #FF4A3D; }
+      .cap .w { display: inline-block; }
+      .panel { border-radius: 28px; background: rgba(12,12,14,0.88); border: 2px solid rgba(242,235,221,0.16);
+               box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .tag { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase;
+             color: rgba(242,235,221,0.75); text-align: center; }
+      .gold { color: #F5B82E; }
+      /* подменённый фон за спиной: сверху, низ переходит в родной кадр (там руки и банка) */
+      .bg { left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden;
+            -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%);
+            mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%); }
+      .bg img { position: absolute; left: -54px; top: -96px; width: 1188px; height: 2112px; object-fit: cover; }
+      .bg .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%); }
+      #bg-merch img { object-position: 50% 30%; }
+      /* Тарантино — слева и уже: справа карточка закрывала лицо (verify_page) */
+      #c-tar { left: 100px; top: 280px; width: 236px; padding: 12px 12px 10px; }
+      #c-tar .ph { width: 212px; height: 240px; }
+      #c-tar img { width: 212px; height: 240px; }
+      #c-tar .card-name { font-size: 20px; margin-top: 8px; }
+      #c-tar .card-sub { font-size: 22px; }
+      /* пластырь крест-накрест на знаке */
+      .plaster { left: 340px; top: 410px; width: 400px; height: 74px; border-radius: 14px; background: #E9C9A2;
+                 box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+                 background-image: radial-gradient(circle, rgba(120,80,40,0.35) 3px, transparent 4px); background-size: 22px 22px; }
+      /* знак на детали */
+      .part { position: absolute; left: 195px; top: 40px; width: 200px; height: 225px; opacity: 0; }
+      .plab { position: absolute; top: 272px; width: 170px; text-align: center; font-family: "Manrope"; font-weight: 800;
+              font-size: 26px; letter-spacing: 0.08em; text-transform: uppercase; color: #F5B82E; opacity: 0; }
+      /* одна сотая */
+      .frm { position: absolute; color: var(--cream); font-family: "Oswald"; font-size: 60px; opacity: 0; }
+      .frm .katex-src { display: inline-block; font-size: 54px; }
+      .frm .katex-display { margin: 0; }
+      /* лист счёта купца */
+      .ledger { padding: 22px 34px 26px; background: #F3EAD6; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .lg-h { font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase;
+              color: #6A5A44; text-align: center; margin-bottom: 6px; }
+      .lg-r { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid rgba(42,34,25,0.15);
+              font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 44px; line-height: 1.25; color: #2A2219;
+              font-variant-numeric: lining-nums; opacity: 0; }
+      .lg-r b { color: #A3241C; }
+      .lg-stamp { position: absolute; left: 300px; top: 120px; font-family: "Oswald"; font-weight: 700; font-size: 70px;
+                  text-transform: uppercase; color: #C7271F; border: 6px solid #C7271F; border-radius: 10px; padding: 0 16px;
+                  transform: rotate(-10deg); opacity: 0; }
+      /* слово укорачивается */
+      .st { position: absolute; left: 0; top: 64px; width: 590px; text-align: center; font-family: "Cormorant"; font-style: italic;
+            font-weight: 700; font-size: 104px; line-height: 1.1; color: var(--cream); opacity: 0; white-space: nowrap; }
+      .st sup, .st sub { font-size: 0.55em; }
+      .pp { position: relative; display: inline-block; }
+      .pstrike { position: absolute; left: -6px; right: -6px; top: 52%; height: 9px; border-radius: 5px; background: var(--red);
+                 transform-origin: 0 50%; transform: scaleX(0); }
+      .pcens { position: absolute; left: -16px; right: -16px; top: 12%; height: 86%; border-radius: 10px; background: #0C0C0D;
+               border: 2px solid rgba(242,235,221,0.35); display: flex; align-items: center; justify-content: center;
+               font-family: "Oswald"; font-style: normal; font-size: 26px; letter-spacing: 0.08em; color: var(--cream); opacity: 0; }
+      .ltrack { position: absolute; left: 40px; top: 236px; width: 510px; height: 26px; border-radius: 13px; background: rgba(242,235,221,0.14); }
+      .lfill { position: absolute; left: 40px; top: 236px; width: 510px; height: 26px; border-radius: 13px; background: #F5B82E;
+               transform-origin: 0 50%; opacity: 0; }
+      /* до / после */
+      .ba-l { position: absolute; left: 10px; top: 76px; width: 250px; text-align: center; font-family: "Cormorant"; font-style: italic;
+              font-weight: 700; font-size: 66px; color: var(--cream); opacity: 0; white-space: nowrap; }
+      .ba-r { position: absolute; left: 390px; top: 30px; width: 180px; text-align: center; font-family: "Oswald"; font-weight: 700;
+              font-size: 150px; line-height: 1; color: #F0352C; opacity: 0; }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="65.867" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="65.867" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="b-pct-lead" class="g lead" style="top: 272px;">знак процента</div>
+        <div id="b-pct" class="g big" style="top: 318px; font-size: 290px; color: #F0352C;">%</div>
+        <div id="pl-a" class="g plaster" style="transform: rotate(32deg);"></div>
+        <div id="pl-b" class="g plaster" style="transform: rotate(-32deg);"></div>
+        <div id="bg-fence" class="g bg"><img src="assets/img/bg_fence.jpg" alt="" /><div class="vig"></div></div>
+        <div id="fence-cens" class="g censor" style="top: 330px;"><span>ЦЕНЗУРА</span></div>
+        <div id="bg-latin" class="g bg"><img src="assets/img/bg_latin.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-lat-lead" class="g lead" style="top: 272px;">по-латыни</div>
+        <div id="b-lat-lead2" class="g lead" style="top: 272px;">«на сотню»</div>
+        <div id="b-lat" class="g big" style="top: 326px; font-size: 170px;">per centum</div>
+        <div id="bg-merch" class="g bg"><img src="assets/img/bg_merch.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-asm" class="g" style="left: 425px; top: 236px; width: 230px; height: 258px;"><svg id="bc1" viewBox="0 0 160 180" style="position: absolute; left: 0; top: 0; width: 230px; height: 258px;"><circle cx="34" cy="36" r="20" fill="none" stroke="#F0352C" stroke-width="16" stroke-linecap="round" /></svg><svg id="bsl" viewBox="0 0 160 180" style="position: absolute; left: 0; top: 0; width: 230px; height: 258px;"><path d="M 112 14 L 40 166" fill="none" stroke="#F0352C" stroke-width="16" stroke-linecap="round" /></svg><svg id="bc2" viewBox="0 0 160 180" style="position: absolute; left: 0; top: 0; width: 230px; height: 258px;"><circle cx="98" cy="150" r="20" fill="none" stroke="#F0352C" stroke-width="16" stroke-linecap="round" /></svg></div>
+        <div id="b-300-lead" class="g lead" style="top: 272px;">вся эта лабуда длилась</div>
+        <div id="b-300" class="g big" style="top: 318px; font-size: 250px;"><span id="b-300-n">0</span> лет</div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="65.867" data-track-index="1"></video>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="st-news" class="g stamp" style="left: 200px; top: 290px; background: rgba(12,12,14,0.55); white-space: nowrap; font-size: 62px;">неприятная новость</div>
+        <div id="st-joke" class="g stamp" style="left: 330px; top: 290px; background: rgba(12,12,14,0.55); white-space: nowrap; font-size: 100px;">не шутка</div>
+        <div id="p-parts" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 330px;">
+          <svg id="pc1" class="part" viewBox="0 0 160 180"><circle cx="34" cy="36" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" /></svg><svg id="psl" class="part" viewBox="0 0 160 180"><path d="M 112 14 L 40 166" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" /></svg><svg id="pc2" class="part" viewBox="0 0 160 180"><circle cx="98" cy="150" r="20" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" /></svg>
+          <div id="pl1" class="plab" style="left: 40px;">нолик</div>
+          <div id="pl2" class="plab" style="left: 210px;">палочка</div>
+          <div id="pl3" class="plab" style="left: 380px;">нолик</div>
+        </div>
+        <div id="st-int" class="g sticker" style="left: 300px; top: 300px; font-size: 56px; white-space: nowrap;">интересные вещи</div>
+        <div id="st-why" class="g sticker" style="left: 380px; top: 300px; font-size: 56px; white-space: nowrap;">в чём дело?</div>
+        <div id="p-share" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 260px;">
+          <svg viewBox="0 0 220 220" style="position: absolute; left: 24px; top: 20px; width: 220px; height: 220px;"><circle id="ring" cx="110" cy="110" r="78" fill="none" stroke-width="34" stroke="rgba(242,235,221,0.35)" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" transform="rotate(-90 110 110)" /><circle id="ring1" cx="110" cy="110" r="78" fill="none" stroke-width="34" stroke="#F0352C" pathLength="100" stroke-dasharray="2.2 97.8" transform="rotate(-90 110 110)" style="opacity: 0;" /></svg>
+          <div id="sh-t" class="tag" style="position: absolute; left: 260px; top: 40px; width: 300px; opacity: 0;">одна сотая</div>
+          <div id="sh-f" class="frm" style="left: 270px; top: 92px; width: 290px; text-align: center;"><span class="katex-src" data-tex="1\% = \tfrac{1}{100}"></span></div>
+        </div>
+        <div id="c-tar" class="g card card-left">
+          <div class="ph"><img src="assets/img/tarantino.jpg" alt="" /></div>
+          <div class="card-name">Тарантино</div>
+          <div class="card-sub">«Антонио Маргерити»</div>
+        </div>
+        <div id="p-ledger" class="g ledger" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; top: 1250px; width: 590px;">
+          <div class="lg-h">libro dei conti · счёт купца</div><div id="lr0" class="lg-r"><span>lana</span><span>5 <b>per cento</b></span></div><div id="lr1" class="lg-r"><span>seta</span><span>8 <b>per cento</b></span></div><div id="lr2" class="lg-r"><span>spezie</span><span>12 <b>per cento</b></span></div><div id="lr3" class="lg-r"><span>vino</span><span>6 <b>per cento</b></span></div><div id="lr4" class="lg-r"><span>sale</span><span>10 <b>per cento</b></span></div>
+          <div id="lg-st" class="lg-stamp">надоело</div>
+        </div>
+        <div id="p-shrink" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 300px;">
+          <div class="tag" style="position: absolute; left: 34px; top: 20px; width: 320px; text-align: left;">сокращение</div>
+          <div id="sh-17" class="tag gold" style="position: absolute; left: 400px; top: 20px; width: 170px; opacity: 0; font-size: 30px;">XVII век</div>
+          <div id="s1" class="st">per cento</div>
+          <div id="s2" class="st">per c<sup>o</sup></div>
+          <div id="s3" class="st"><span class="pp">per<span id="s3-x" class="pstrike"></span><span id="s3-c" class="pcens">ЦЕНЗУРА</span></span>&nbsp;<sup>o</sup>/<sub>o</sub></div>
+          <div id="s4" class="st"><sup>o</sup>/<sub>o</sub></div>
+          <div class="ltrack"></div><div id="lfill" class="lfill"></div>
+        </div>
+        <div id="st-two" class="g sticker" style="left: 220px; top: 300px; font-size: 56px; white-space: nowrap;">два нолика и чёрточка</div>
+        <div id="st-300" class="g sticker" style="left: 330px; top: 300px; font-size: 56px; white-space: nowrap;">затрёхсотили?</div>
+        <div id="p-ba" class="g panel" data-safe="лицо важнее серой зоны: плашка ниже подбородка (Валера, 12.10)" style="left: 245px; width: 590px; top: 1290px; height: 220px;">
+          <div id="ba-l" class="ba-l">per cento</div>
+          <svg viewBox="0 0 120 60" style="position: absolute; left: 262px; top: 100px; width: 120px; height: 60px;"><path id="ba-ar" d="M 6 30 L 110 30 M 88 12 L 110 30 L 88 48" fill="none" stroke="#F2EBDD" stroke-width="8" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg>
+          <div id="ba-y" class="tag gold" style="position: absolute; left: 252px; top: 58px; width: 140px; opacity: 0;">300 лет</div>
+          <div id="ba-r" class="ba-r">%</div>
+        </div>
+        <div id="st-ege" class="g stamp" style="left: 340px; top: 290px; background: rgba(12,12,14,0.55); white-space: nowrap; font-size: 110px;">ЕГЭ 80+</div>
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">больше интересной математики — у меня в профиле</div>
+        </div>
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-pct" src="assets/sfx/whoosh.mp3" data-start="2.20" data-volume="0.259"></audio>
+      <audio id="sfx-tar" src="assets/sfx/pop.mp3" data-start="25.88" data-volume="0.452"></audio>
+      <audio id="sfx-cens" src="assets/sfx/click.mp3" data-start="45.36" data-volume="0.877"></audio>
+      <audio id="sfx-asm" src="assets/sfx/impact-bass-1.mp3" data-start="51.60" data-volume="0.080"></audio>
+      <audio id="sfx-y300" src="assets/sfx/whoosh-cinematic.mp3" data-start="55.38" data-volume="0.118"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="60.15" data-volume="0.646"></audio>
+    </div>
+    <script>
+      document.querySelectorAll(".katex-src").forEach((el) => {
+        try { katex.render(el.dataset.tex, el, { throwOnError: true, displayMode: true }); }
+        catch (e) { throw new Error(`формула «${el.dataset.tex}»: ${e.message}`); }
+      });
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[1.85, 6.35], [16.50, 19.05], [19.95, 24.05], [28.03, 34.80], [50.95, 52.85], [54.65, 56.90]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры: words, blur ----------
+      const caps = document.getElementById("caps");
+      const CAP_BASE = "#F2EBDD", CAP_HL = "#FF4A3D";
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        let inner = el;
+        if (false) { inner = document.createElement("span"); inner.className = "box"; el.appendChild(inner); }
+        const spans = [];
+        if (c.words) {
+          c.words.forEach((w, k) => {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.textContent = w.text;
+            inner.appendChild(s);
+            if (k < c.words.length - 1) inner.appendChild(document.createTextNode(" "));
+            spans.push(s);
+          });
+        } else {
+          inner.textContent = c.text;
+        }
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
+        const d = Math.min(0.09, c.t1 - c.t0);
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: d, ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+        (c.words || []).forEach((w, k) => {
+          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
+          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
+          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+        });
+      });
+
+
+      // ---------- хук: неприятная новость — знак процента — затрёхсотили ----------
+      slam("#st-news", 0.3, { fromScale: 2.0, rot: -4, blur: 10 });
+      leave("#st-news", 1.8, { scale: 0.6, y: 0, rot: -12 });
+      enter("#b-pct-lead", 1.9, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-pct", 2.22, { fromScale: 1.6, rot: -4 });
+      slam("#pl-a", 4.8, { fromScale: 1.8, rot: 32, blur: 8 });
+      slam("#pl-b", 5.02, { fromScale: 1.8, rot: -32, blur: 8 });
+      leave(["#b-pct", "#b-pct-lead", "#pl-a", "#pl-b"], 5.9, { y: -80 });
+      slam("#st-joke", 6.16, { fromScale: 2.0, rot: -6, blur: 10 });
+      leave("#st-joke", 7.0, { scale: 0.6, y: 0, rot: -16 });
+
+      // ---------- почему процент — два нолика и палочка: знак на детали ----------
+      enter("#p-parts", 7.22, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#pc1, #psl, #pc2", { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", stagger: 0.08 }, 8.8);
+      tl.to("#pc1", { x: -170, duration: 0.35, ease: "back.out(1.6)" }, 9.76);
+      tl.to("#pc2", { x: 170, duration: 0.35, ease: "back.out(1.6)" }, 9.76);
+      enter("#pl1, #pl3", 9.9, { fromScale: 0.7, dur: 0.22 });
+      enter("#pl2", 10.4, { fromScale: 0.7, dur: 0.22 });
+      leave("#pl1, #pl2, #pl3", 11.3, { y: 20 });
+      tl.to("#pc1", { y: 71, duration: 0.35, ease: "back.out(1.6)" }, 11.5);
+      tl.to("#pc2", { y: -71, duration: 0.35, ease: "back.out(1.6)" }, 11.5);
+      tl.to("#psl", { rotation: -26, transformOrigin: "50% 50%", duration: 0.35, ease: "back.out(1.6)" }, 11.5);
+      leave("#p-parts", 12.7, { y: 80 });
+      enter("#st-int", 13.6, { fromScale: 0.6, rot: -4 });
+      leave("#st-int", 16.2, { y: -30, rot: -10 });
+
+      // ---------- пишут на заборе: забор за спиной, цензура ----------
+      tl.fromTo("#bg-fence", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 16.55);
+      tl.fromTo("#bg-fence img", { scale: 1 }, { scale: 1.06, duration: 2.45, ease: "none" }, 16.55);
+      tl.to("#bg-fence", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 18.65);
+      slam("#fence-cens", 17.78, { fromScale: 1.6, rot: -3 });
+      leave("#fence-cens", 18.6, { y: -60 });
+      enter("#st-why", 19.0, { fromScale: 0.6, rot: 4 });
+      leave("#st-why", 19.9, { y: -30, rot: 10 });
+
+      // ---------- латынь за спиной: PER CENTUM, «на сотню» ----------
+      tl.fromTo("#bg-latin", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 20.0);
+      tl.fromTo("#bg-latin img", { scale: 1 }, { scale: 1.06, duration: 4.00, ease: "none" }, 20.0);
+      tl.to("#bg-latin", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 23.65);
+      enter("#b-lat-lead", 21.12, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-lat", 21.82, { fromScale: 1.5 });
+      tl.to("#b-lat-lead", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 22.86);
+      tl.fromTo("#b-lat-lead2", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 22.98);
+      leave(["#b-lat", "#b-lat-lead2"], 23.55, { y: -60 });
+
+      // ---------- одна сотая доля: круг и формула ----------
+      enter("#p-share", 23.84, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      draw("#ring", 23.94, 0.35);
+      enter("#sh-t", 24.14, { fromScale: 0.8, dur: 0.22 });
+      tl.fromTo("#ring1", { opacity: 0, scale: 1.25, svgOrigin: "110 110" }, { opacity: 1, scale: 1, duration: 0.25, ease: "back.out(2.5)",
+                immediateRender: false }, 24.44);
+      enter("#sh-f", 24.7, { fromScale: 0.7, dur: 0.25 });
+      leave("#p-share", 25.65, { y: 80 });
+
+      // ---------- как у Тарантино ----------
+      card("#c-tar", 25.9, 27.95, "left");
+
+      // ---------- купцы за спиной и их счёт ----------
+      tl.fromTo("#bg-merch", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 28.08);
+      tl.fromTo("#bg-merch img", { scale: 1 }, { scale: 1.06, duration: 6.67, ease: "none" }, 28.08);
+      tl.to("#bg-merch", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 34.4);
+      doc("#p-ledger", 29.9, 34.65, { fromRot: -6, rot: 1 });
+      tl.fromTo("#p-ledger .lg-r", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.2, ease: "power2.out", stagger: 0.55 }, 30.44);
+      slam("#lg-st", 33.74, { fromScale: 2.2, rot: -10, blur: 8 });
+
+      // ---------- слово укорачивается: per cento → per c° → per °/₀ → °/₀ ----------
+      enter("#p-shrink", 35.0, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      tl.fromTo("#s1", { opacity: 0, y: 30, filter: BLUR(10) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.25, ease: "power3.out" }, 36.14);
+      tl.fromTo("#lfill", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 0.45, ease: "expo.out" }, 36.2);
+      tl.to("#s1", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 37.8);
+      tl.fromTo("#s2", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 37.92);
+      tl.to("#lfill", { scaleX: 0.62, duration: 0.4, ease: "power3.out" }, 37.92);
+      enter("#sh-17", 39.12, { fromScale: 0.6, dur: 0.25 });
+      tl.to("#s2", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 40.5);
+      tl.fromTo("#s3", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 40.62);
+      tl.to("#lfill", { scaleX: 0.5, duration: 0.4, ease: "power3.out" }, 40.7);
+      tl.to("#s3-x", { scaleX: 1, duration: 0.2, ease: "power2.out" }, 44.06);
+      slam("#s3-c", 45.38, { fromScale: 1.8, rot: -4, blur: 8 });
+      tl.to("#s3", { opacity: 0, y: -40, filter: BLUR(10), duration: 0.18, ease: "power2.in" }, 47.8);
+      tl.fromTo("#s4", { opacity: 0, y: 40, scale: 0.9, filter: BLUR(10) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: 0.24, ease: "power3.out" }, 47.92);
+      tl.to("#lfill", { scaleX: 0.24, duration: 0.4, ease: "power3.out" }, 47.92);
+      leave("#p-shrink", 49.2, { y: 80 });
+      enter("#st-two", 49.3, { fromScale: 0.6, rot: -4 });
+      leave("#st-two", 50.5, { y: -30, rot: -10 });
+
+      // ---------- чистый знак процента: собирается из деталей за головой ----------
+      tl.set("#b-asm", { opacity: 1 }, 51.0);
+      tl.fromTo("#bc1", { opacity: 0, x: -520, rotation: -90, filter: BLUR(14) }, { opacity: 1, x: 0, rotation: 0, filter: BLUR(0),
+                duration: 0.5, ease: "power3.out" }, 51.06);
+      tl.fromTo("#bc2", { opacity: 0, x: 520, rotation: 90, filter: BLUR(14) }, { opacity: 1, x: 0, rotation: 0, filter: BLUR(0),
+                duration: 0.5, ease: "power3.out" }, 51.22);
+      tl.fromTo("#bsl", { opacity: 0, y: -360, filter: BLUR(14) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.16,
+                ease: "power4.out" }, 51.6);
+      tl.fromTo("#b-asm", { scale: 1 }, { scale: 1.12, duration: 0.14, yoyo: true, repeat: 1, ease: "sine.inOut", immediateRender: false }, 51.76);
+      leave("#b-asm", 52.45, { y: -60 });
+
+      // ---------- что значит «затрёхсотили»: 300 лет ----------
+      enter("#st-300", 52.6, { fromScale: 0.6, rot: 4 });
+      leave("#st-300", 54.5, { y: -30, rot: 10 });
+      enter("#b-300-lead", 54.7, { fromScale: 0.9, dur: 0.25 });
+      slam("#b-300", 55.4, { fromScale: 1.3 });
+      tl.fromTo("#b-300-n", { textContent: 0 }, { textContent: 300, snap: { textContent: 1 }, duration: 0.5, ease: "power2.out",
+                immediateRender: false }, 55.4);
+      leave(["#b-300", "#b-300-lead"], 56.5, { y: -60 });
+      enter("#p-ba", 56.6, { fromY: 140, fromScale: 0.92, dur: 0.4, ease: "power3.out" });
+      enter("#ba-l", 56.8, { fromScale: 0.8, dur: 0.25 });
+      draw("#ba-ar", 57.05, 0.4);
+      enter("#ba-y", 57.15, { fromScale: 0.7, dur: 0.22 });
+      slam("#ba-r", 58.54, { fromScale: 1.7, rot: -6 });
+      leave("#p-ba", 59.9, { y: 80 });
+
+      // ---------- ЕГЭ на 80+ ----------
+      slam("#st-ege", 63.72, { fromScale: 2.0, rot: -5, blur: 10 });
+      leave("#st-ege", 65.4, { scale: 0.6, y: 0, rot: -14 });
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 60.15);
+      tl.set("#cta-arrow", { opacity: 1 }, 60.50);
+      draw("#arrow-path", 60.50, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 60.82);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 61.15);
+
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

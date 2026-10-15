@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Знак бесконечности — знак британской разведки</title>
+    <script src="assets/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/vendor/katex/katex.min.css" />
+    <script src="assets/vendor/katex/katex.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 94px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.15; color: #F2EBDD; text-transform: none; }
+      .cap.accent { color: #FF4A3D; }
+      .cap .w { display: inline-block; }
+      .tx { left: 0; width: 1080px; text-align: center; white-space: nowrap; }
+      .tx-lead { font-family: "Manrope"; font-weight: 800; font-size: 36px; letter-spacing: 0.24em; text-transform: uppercase;
+                 color: var(--cream); text-shadow: 0 3px 8px rgba(0,0,0,0.65), 0 14px 46px rgba(0,0,0,0.55); }
+      .tx-big { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; line-height: 0.9; letter-spacing: -0.01em;
+                color: var(--cream); text-shadow: 0 3px 8px rgba(0,0,0,0.65), 0 14px 46px rgba(0,0,0,0.55); }
+      .tx-mono { font-family: "JBMono"; font-weight: 700; color: var(--cream); text-shadow: 0 3px 8px rgba(0,0,0,0.65), 0 14px 46px rgba(0,0,0,0.55); }
+      .tx-tex { color: var(--cream); text-shadow: 0 3px 8px rgba(0,0,0,0.65), 0 14px 46px rgba(0,0,0,0.55); }
+      .tx span { display: inline-block; }
+      .katex-src, .katex-display { margin: 0 !important; display: inline-block; }
+      .cx { display: inline-block; width: 150px; text-align: center; }
+      .mirror { display: inline-block; transform: scaleX(-1); }
+      .gk-win { left: 110px; width: 860px; height: 230px; overflow: hidden;   /* бока — под обрезкой Instagram */
+                -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
+                mask-image: linear-gradient(90deg, transparent 0%, #000 14%, #000 86%, transparent 100%); }
+      .gk { position: absolute; left: 0; top: 0; white-space: nowrap; }
+      .wide-svg { position: absolute; left: 0; top: 0; overflow: visible; filter: drop-shadow(0 10px 26px rgba(0,0,0,0.55)); }
+      .bg { left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden;
+             -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%);
+             mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 70%); }
+      .bg img { position: absolute; left: -54px; top: -96px; width: 1188px; height: 2112px; object-fit: cover; }
+      .bg .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%); }
+      #bg-war img { object-position: 57% 50%; }
+      /* король справа — компактнее: голова в этом месте правее и выше, полная карточка заходила на лицо */
+      #c-king { top: 262px; }
+      #c-king .ph, #c-king img { height: 220px; }
+      #bg-night img { object-position: 49% 50%; }
+      #bg-ox img { object-position: 50% 30%; }
+      /* финальная плашка тоже без рамки — как весь текст ролика */
+      .cta { background: none; border: none; box-shadow: none; padding: 0; }
+      .cta-big { font-size: 112px; text-shadow: 0 3px 8px rgba(0,0,0,0.65), 0 14px 46px rgba(0,0,0,0.55); }
+      .cta-small { text-shadow: 0 3px 8px rgba(0,0,0,0.65), 0 14px 46px rgba(0,0,0,0.55); }
+
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="65.900" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="65.900" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="b-inf" class="g" style="left: 0; top: 285px; width: 1080px; height: 250px;"><svg viewBox="0 0 1080 250" style="position: absolute; left: 0; top: 0; width: 1080px; height: 250px; overflow: visible;"><path class="lem" d="M 870.0 125.0 L 869.4 136.5 L 867.6 147.9 L 864.6 158.9 L 860.6 169.6 L 855.5 179.8 L 849.4 189.3 L 842.5 198.2 L 834.8 206.3 L 826.5 213.5 L 817.6 220.0 L 808.3 225.5 L 798.7 230.2 L 788.8 234.1 L 778.8 237.1 L 768.6 239.3 L 758.5 240.8 L 748.4 241.5 L 738.4 241.6 L 728.6 241.1 L 718.9 240.0 L 709.4 238.3 L 700.1 236.2 L 691.1 233.7 L 682.3 230.7 L 673.7 227.4 L 665.3 223.8 L 657.2 219.8 L 649.4 215.7 L 641.7 211.3 L 634.3 206.7 L 627.1 201.9 L 620.0 196.9 L 613.2 191.8 L 606.5 186.6 L 599.9 181.3 L 593.5 175.9 L 587.3 170.4 L 581.1 164.9 L 575.1 159.3 L 569.1 153.6 L 563.2 148.0 L 557.3 142.2 L 551.5 136.5 L 545.8 130.8 L 540.0 125.0 L 534.2 119.2 L 528.5 113.5 L 522.7 107.8 L 516.8 102.0 L 510.9 96.4 L 504.9 90.7 L 498.9 85.1 L 492.7 79.6 L 486.5 74.1 L 480.1 68.7 L 473.5 63.4 L 466.8 58.2 L 460.0 53.1 L 452.9 48.1 L 445.7 43.3 L 438.3 38.7 L 430.6 34.3 L 422.8 30.2 L 414.7 26.2 L 406.3 22.6 L 397.7 19.3 L 388.9 16.3 L 379.9 13.8 L 370.6 11.7 L 361.1 10.0 L 351.4 8.9 L 341.6 8.4 L 331.6 8.5 L 321.5 9.2 L 311.4 10.7 L 301.2 12.9 L 291.2 15.9 L 281.3 19.8 L 271.7 24.5 L 262.4 30.0 L 253.5 36.5 L 245.2 43.7 L 237.5 51.8 L 230.6 60.7 L 224.5 70.2 L 219.4 80.4 L 215.4 91.1 L 212.4 102.1 L 210.6 113.5 L 210.0 125.0 L 210.6 136.5 L 212.4 147.9 L 215.4 158.9 L 219.4 169.6 L 224.5 179.8 L 230.6 189.3 L 237.5 198.2 L 245.2 206.3 L 253.5 213.5 L 262.4 220.0 L 271.7 225.5 L 281.3 230.2 L 291.2 234.1 L 301.2 237.1 L 311.4 239.3 L 321.5 240.8 L 331.6 241.5 L 341.6 241.6 L 351.4 241.1 L 361.1 240.0 L 370.6 238.3 L 379.9 236.2 L 388.9 233.7 L 397.7 230.7 L 406.3 227.4 L 414.7 223.8 L 422.8 219.8 L 430.6 215.7 L 438.3 211.3 L 445.7 206.7 L 452.9 201.9 L 460.0 196.9 L 466.8 191.8 L 473.5 186.6 L 480.1 181.3 L 486.5 175.9 L 492.7 170.4 L 498.9 164.9 L 504.9 159.3 L 510.9 153.6 L 516.8 148.0 L 522.7 142.2 L 528.5 136.5 L 534.2 130.8 L 540.0 125.0 L 545.8 119.2 L 551.5 113.5 L 557.3 107.8 L 563.2 102.0 L 569.1 96.4 L 575.1 90.7 L 581.1 85.1 L 587.3 79.6 L 593.5 74.1 L 599.9 68.7 L 606.5 63.4 L 613.2 58.2 L 620.0 53.1 L 627.1 48.1 L 634.3 43.3 L 641.7 38.7 L 649.4 34.3 L 657.2 30.2 L 665.3 26.2 L 673.7 22.6 L 682.3 19.3 L 691.1 16.3 L 700.1 13.8 L 709.4 11.7 L 718.9 10.0 L 728.6 8.9 L 738.4 8.4 L 748.4 8.5 L 758.5 9.2 L 768.6 10.7 L 778.8 12.9 L 788.8 15.9 L 798.7 19.8 L 808.3 24.5 L 817.6 30.0 L 826.5 36.5 L 834.8 43.7 L 842.5 51.8 L 849.4 60.7 L 855.5 70.2 L 860.6 80.4 L 864.6 91.1 L 867.6 102.1 L 869.4 113.5 L 870.0 125.0 Z" fill="none" stroke="#F2EBDD" stroke-width="44" stroke-linejoin="round" stroke-linecap="round" style="filter: drop-shadow(0 12px 30px rgba(0,0,0,0.4));" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+        <div id="cx-lead" class="g tx tx-lead"  style="top: 290px; color: #F2EBDD;">британский шифровальщик</div>
+        <div id="cx-row" class="g tx tx-mono"  style="top: 360px; font-size: 200px; color: #F2EBDD;"><span id="cx0" class="cx">З</span><span id="cx1" class="cx">Н</span><span id="cx2" class="cx">А</span><span id="cx3" class="cx">К</span></div>
+        <div id="bg-ox" class="g bg"><img src="assets/img/bg_oxford.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-hack" class="g big red" style="top: 300px; font-size: 170px;">взломщик</div>
+        <div id="bg-war" class="g bg"><img src="assets/img/bg_war.jpg" alt="" /><div class="vig"></div></div>
+        <div id="b-007" class="g big" style="top: 280px; font-size: 260px;">007</div>
+        <div id="b-1655" class="g big" style="top: 290px; font-size: 230px; color: #F0352C;"><span id="yr">1600</span></div>
+        <div id="cn-lead" class="g tx tx-lead"  style="top: 290px; color: #F2EBDD;">конические сечения</div>
+        <div id="cn-svg" class="g" style="left: 0; top: 350px; width: 1080px; height: 210px;"><svg class="wide-svg" viewBox="0 0 1080 210" style="width: 1080px; height: 210px;"><ellipse id="cn-el" cx="250" cy="105" rx="130" ry="80" fill="none" stroke="#F0352C" stroke-width="18" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="cn-pa" d="M 440 200 Q 540 -90 640 200" fill="none" stroke="#F2EBDD" stroke-width="18" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="cn-hy" d="M 700 200 Q 760 60 880 20" fill="none" stroke="#F0352C" stroke-width="18" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+        <div id="e8" class="g tx tx-big"  style="top: 260px; font-size: 470px; color: #F0352C;">8</div>
+        <div id="e8-lead" class="g tx tx-lead"  style="top: 290px; color: #F2EBDD;">лежачая восьмёрка</div>
+        <div id="v1-lead" class="g tx tx-lead"  style="top: 290px; color: #F2EBDD;">версия 1 · Рим</div>
+        <div id="v1-roman" class="g tx tx-big serif"  style="top: 350px; font-size: 230px; color: #F2EBDD;">CI<span class="mirror">C</span></div>
+        <div id="v1-eq" class="g tx tx-big"  style="top: 385px; font-size: 170px; color: #F0352C;">= 1000</div>
+        <div id="v1-inf" class="g" style="left: 0; top: 360px; width: 1080px; height: 250px;"><svg viewBox="0 0 1080 250" style="position: absolute; left: 0; top: 0; width: 1080px; height: 250px; overflow: visible;"><path class="lem" d="M 870.0 125.0 L 869.4 136.5 L 867.6 147.9 L 864.6 158.9 L 860.6 169.6 L 855.5 179.8 L 849.4 189.3 L 842.5 198.2 L 834.8 206.3 L 826.5 213.5 L 817.6 220.0 L 808.3 225.5 L 798.7 230.2 L 788.8 234.1 L 778.8 237.1 L 768.6 239.3 L 758.5 240.8 L 748.4 241.5 L 738.4 241.6 L 728.6 241.1 L 718.9 240.0 L 709.4 238.3 L 700.1 236.2 L 691.1 233.7 L 682.3 230.7 L 673.7 227.4 L 665.3 223.8 L 657.2 219.8 L 649.4 215.7 L 641.7 211.3 L 634.3 206.7 L 627.1 201.9 L 620.0 196.9 L 613.2 191.8 L 606.5 186.6 L 599.9 181.3 L 593.5 175.9 L 587.3 170.4 L 581.1 164.9 L 575.1 159.3 L 569.1 153.6 L 563.2 148.0 L 557.3 142.2 L 551.5 136.5 L 545.8 130.8 L 540.0 125.0 L 534.2 119.2 L 528.5 113.5 L 522.7 107.8 L 516.8 102.0 L 510.9 96.4 L 504.9 90.7 L 498.9 85.1 L 492.7 79.6 L 486.5 74.1 L 480.1 68.7 L 473.5 63.4 L 466.8 58.2 L 460.0 53.1 L 452.9 48.1 L 445.7 43.3 L 438.3 38.7 L 430.6 34.3 L 422.8 30.2 L 414.7 26.2 L 406.3 22.6 L 397.7 19.3 L 388.9 16.3 L 379.9 13.8 L 370.6 11.7 L 361.1 10.0 L 351.4 8.9 L 341.6 8.4 L 331.6 8.5 L 321.5 9.2 L 311.4 10.7 L 301.2 12.9 L 291.2 15.9 L 281.3 19.8 L 271.7 24.5 L 262.4 30.0 L 253.5 36.5 L 245.2 43.7 L 237.5 51.8 L 230.6 60.7 L 224.5 70.2 L 219.4 80.4 L 215.4 91.1 L 212.4 102.1 L 210.6 113.5 L 210.0 125.0 L 210.6 136.5 L 212.4 147.9 L 215.4 158.9 L 219.4 169.6 L 224.5 179.8 L 230.6 189.3 L 237.5 198.2 L 245.2 206.3 L 253.5 213.5 L 262.4 220.0 L 271.7 225.5 L 281.3 230.2 L 291.2 234.1 L 301.2 237.1 L 311.4 239.3 L 321.5 240.8 L 331.6 241.5 L 341.6 241.6 L 351.4 241.1 L 361.1 240.0 L 370.6 238.3 L 379.9 236.2 L 388.9 233.7 L 397.7 230.7 L 406.3 227.4 L 414.7 223.8 L 422.8 219.8 L 430.6 215.7 L 438.3 211.3 L 445.7 206.7 L 452.9 201.9 L 460.0 196.9 L 466.8 191.8 L 473.5 186.6 L 480.1 181.3 L 486.5 175.9 L 492.7 170.4 L 498.9 164.9 L 504.9 159.3 L 510.9 153.6 L 516.8 148.0 L 522.7 142.2 L 528.5 136.5 L 534.2 130.8 L 540.0 125.0 L 545.8 119.2 L 551.5 113.5 L 557.3 107.8 L 563.2 102.0 L 569.1 96.4 L 575.1 90.7 L 581.1 85.1 L 587.3 79.6 L 593.5 74.1 L 599.9 68.7 L 606.5 63.4 L 613.2 58.2 L 620.0 53.1 L 627.1 48.1 L 634.3 43.3 L 641.7 38.7 L 649.4 34.3 L 657.2 30.2 L 665.3 26.2 L 673.7 22.6 L 682.3 19.3 L 691.1 16.3 L 700.1 13.8 L 709.4 11.7 L 718.9 10.0 L 728.6 8.9 L 738.4 8.4 L 748.4 8.5 L 758.5 9.2 L 768.6 10.7 L 778.8 12.9 L 788.8 15.9 L 798.7 19.8 L 808.3 24.5 L 817.6 30.0 L 826.5 36.5 L 834.8 43.7 L 842.5 51.8 L 849.4 60.7 L 855.5 70.2 L 860.6 80.4 L 864.6 91.1 L 867.6 102.1 L 869.4 113.5 L 870.0 125.0 Z" fill="none" stroke="#F0352C" stroke-width="44" stroke-linejoin="round" stroke-linecap="round" style="filter: drop-shadow(0 12px 30px rgba(0,0,0,0.4));" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+        <div id="v1-many" class="g tx tx-lead"  style="top: 290px; color: #F0352C;">≈ «очень много»</div>
+        <div id="v2-lead" class="g tx tx-lead"  style="top: 290px; color: #F2EBDD;">версия 2 · Греция</div>
+        <div id="gk-win" class="g gk-win" style="top: 350px;"><div id="gk-strip" class="gk tx-tex" style="font-size: 160px; top: 10px;"><span class="katex-src" data-tex="\mathrm{A\;B\;\Gamma\;\Delta\;E\;Z\;H\;\Theta\;I\;K\;\Lambda\;M\;N\;\Xi\;O\;\Pi\;P\;\Sigma\;T\;\Upsilon\;\Phi\;X\;\Psi\;}"></span><span id="gk-om" style="display: inline-block;"><span class="katex-src" data-tex="\Omega"></span></span></div></div>
+        <div id="gk-w" class="g tx tx-tex"  style="top: 320px; font-size: 300px; color: #F0352C;"><span class="katex-src" data-tex="\omega"></span></div>
+        <div id="gk-inf" class="g" style="left: 0; top: 330px; width: 1080px; height: 250px;"><svg viewBox="0 0 1080 250" style="position: absolute; left: 0; top: 0; width: 1080px; height: 250px; overflow: visible;"><path class="lem" d="M 870.0 125.0 L 869.4 136.5 L 867.6 147.9 L 864.6 158.9 L 860.6 169.6 L 855.5 179.8 L 849.4 189.3 L 842.5 198.2 L 834.8 206.3 L 826.5 213.5 L 817.6 220.0 L 808.3 225.5 L 798.7 230.2 L 788.8 234.1 L 778.8 237.1 L 768.6 239.3 L 758.5 240.8 L 748.4 241.5 L 738.4 241.6 L 728.6 241.1 L 718.9 240.0 L 709.4 238.3 L 700.1 236.2 L 691.1 233.7 L 682.3 230.7 L 673.7 227.4 L 665.3 223.8 L 657.2 219.8 L 649.4 215.7 L 641.7 211.3 L 634.3 206.7 L 627.1 201.9 L 620.0 196.9 L 613.2 191.8 L 606.5 186.6 L 599.9 181.3 L 593.5 175.9 L 587.3 170.4 L 581.1 164.9 L 575.1 159.3 L 569.1 153.6 L 563.2 148.0 L 557.3 142.2 L 551.5 136.5 L 545.8 130.8 L 540.0 125.0 L 534.2 119.2 L 528.5 113.5 L 522.7 107.8 L 516.8 102.0 L 510.9 96.4 L 504.9 90.7 L 498.9 85.1 L 492.7 79.6 L 486.5 74.1 L 480.1 68.7 L 473.5 63.4 L 466.8 58.2 L 460.0 53.1 L 452.9 48.1 L 445.7 43.3 L 438.3 38.7 L 430.6 34.3 L 422.8 30.2 L 414.7 26.2 L 406.3 22.6 L 397.7 19.3 L 388.9 16.3 L 379.9 13.8 L 370.6 11.7 L 361.1 10.0 L 351.4 8.9 L 341.6 8.4 L 331.6 8.5 L 321.5 9.2 L 311.4 10.7 L 301.2 12.9 L 291.2 15.9 L 281.3 19.8 L 271.7 24.5 L 262.4 30.0 L 253.5 36.5 L 245.2 43.7 L 237.5 51.8 L 230.6 60.7 L 224.5 70.2 L 219.4 80.4 L 215.4 91.1 L 212.4 102.1 L 210.6 113.5 L 210.0 125.0 L 210.6 136.5 L 212.4 147.9 L 215.4 158.9 L 219.4 169.6 L 224.5 179.8 L 230.6 189.3 L 237.5 198.2 L 245.2 206.3 L 253.5 213.5 L 262.4 220.0 L 271.7 225.5 L 281.3 230.2 L 291.2 234.1 L 301.2 237.1 L 311.4 239.3 L 321.5 240.8 L 331.6 241.5 L 341.6 241.6 L 351.4 241.1 L 361.1 240.0 L 370.6 238.3 L 379.9 236.2 L 388.9 233.7 L 397.7 230.7 L 406.3 227.4 L 414.7 223.8 L 422.8 219.8 L 430.6 215.7 L 438.3 211.3 L 445.7 206.7 L 452.9 201.9 L 460.0 196.9 L 466.8 191.8 L 473.5 186.6 L 480.1 181.3 L 486.5 175.9 L 492.7 170.4 L 498.9 164.9 L 504.9 159.3 L 510.9 153.6 L 516.8 148.0 L 522.7 142.2 L 528.5 136.5 L 534.2 130.8 L 540.0 125.0 L 545.8 119.2 L 551.5 113.5 L 557.3 107.8 L 563.2 102.0 L 569.1 96.4 L 575.1 90.7 L 581.1 85.1 L 587.3 79.6 L 593.5 74.1 L 599.9 68.7 L 606.5 63.4 L 613.2 58.2 L 620.0 53.1 L 627.1 48.1 L 634.3 43.3 L 641.7 38.7 L 649.4 34.3 L 657.2 30.2 L 665.3 26.2 L 673.7 22.6 L 682.3 19.3 L 691.1 16.3 L 700.1 13.8 L 709.4 11.7 L 718.9 10.0 L 728.6 8.9 L 738.4 8.4 L 748.4 8.5 L 758.5 9.2 L 768.6 10.7 L 778.8 12.9 L 788.8 15.9 L 798.7 19.8 L 808.3 24.5 L 817.6 30.0 L 826.5 36.5 L 834.8 43.7 L 842.5 51.8 L 849.4 60.7 L 855.5 70.2 L 860.6 80.4 L 864.6 91.1 L 867.6 102.1 L 869.4 113.5 L 870.0 125.0 Z" fill="none" stroke="#F0352C" stroke-width="44" stroke-linejoin="round" stroke-linecap="round" style="filter: drop-shadow(0 12px 30px rgba(0,0,0,0.4));" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+        <div id="bg-night" class="g bg"><img src="assets/img/bg_night.jpg" alt="" /><div class="vig"></div></div>
+        <div id="rt-lead" class="g tx tx-lead"  style="top: 290px; color: #F2EBDD;">в уме, ночью</div>
+        <div id="rt-svg" class="g" style="left: 0; top: 340px; width: 1080px; height: 300px;"><svg class="wide-svg" viewBox="0 0 1080 300" style="width: 1080px; height: 300px;"><path id="rt-sign" d="M 150 150 L 210 115 L 290 250 L 350 20 L 950 20" fill="none" stroke="#F0352C" stroke-width="18" stroke-linejoin="round" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+        <div id="rt-num" class="g tx tx-big" style="top: 365px; left: 360px; width: 570px; font-size: 170px;"><span id="rt-n">0</span><span style="font-size: 56px; letter-spacing: 0;">-значное</span></div>
+        <div id="rt-dawn" class="g tx tx-lead"  style="top: 620px; color: #F0352C;">☀ утром — ответ</div>
+        <div id="b-inf2" class="g" style="left: 0; top: 285px; width: 1080px; height: 250px;"><svg viewBox="0 0 1080 250" style="position: absolute; left: 0; top: 0; width: 1080px; height: 250px; overflow: visible;"><path class="lem" d="M 870.0 125.0 L 869.4 136.5 L 867.6 147.9 L 864.6 158.9 L 860.6 169.6 L 855.5 179.8 L 849.4 189.3 L 842.5 198.2 L 834.8 206.3 L 826.5 213.5 L 817.6 220.0 L 808.3 225.5 L 798.7 230.2 L 788.8 234.1 L 778.8 237.1 L 768.6 239.3 L 758.5 240.8 L 748.4 241.5 L 738.4 241.6 L 728.6 241.1 L 718.9 240.0 L 709.4 238.3 L 700.1 236.2 L 691.1 233.7 L 682.3 230.7 L 673.7 227.4 L 665.3 223.8 L 657.2 219.8 L 649.4 215.7 L 641.7 211.3 L 634.3 206.7 L 627.1 201.9 L 620.0 196.9 L 613.2 191.8 L 606.5 186.6 L 599.9 181.3 L 593.5 175.9 L 587.3 170.4 L 581.1 164.9 L 575.1 159.3 L 569.1 153.6 L 563.2 148.0 L 557.3 142.2 L 551.5 136.5 L 545.8 130.8 L 540.0 125.0 L 534.2 119.2 L 528.5 113.5 L 522.7 107.8 L 516.8 102.0 L 510.9 96.4 L 504.9 90.7 L 498.9 85.1 L 492.7 79.6 L 486.5 74.1 L 480.1 68.7 L 473.5 63.4 L 466.8 58.2 L 460.0 53.1 L 452.9 48.1 L 445.7 43.3 L 438.3 38.7 L 430.6 34.3 L 422.8 30.2 L 414.7 26.2 L 406.3 22.6 L 397.7 19.3 L 388.9 16.3 L 379.9 13.8 L 370.6 11.7 L 361.1 10.0 L 351.4 8.9 L 341.6 8.4 L 331.6 8.5 L 321.5 9.2 L 311.4 10.7 L 301.2 12.9 L 291.2 15.9 L 281.3 19.8 L 271.7 24.5 L 262.4 30.0 L 253.5 36.5 L 245.2 43.7 L 237.5 51.8 L 230.6 60.7 L 224.5 70.2 L 219.4 80.4 L 215.4 91.1 L 212.4 102.1 L 210.6 113.5 L 210.0 125.0 L 210.6 136.5 L 212.4 147.9 L 215.4 158.9 L 219.4 169.6 L 224.5 179.8 L 230.6 189.3 L 237.5 198.2 L 245.2 206.3 L 253.5 213.5 L 262.4 220.0 L 271.7 225.5 L 281.3 230.2 L 291.2 234.1 L 301.2 237.1 L 311.4 239.3 L 321.5 240.8 L 331.6 241.5 L 341.6 241.6 L 351.4 241.1 L 361.1 240.0 L 370.6 238.3 L 379.9 236.2 L 388.9 233.7 L 397.7 230.7 L 406.3 227.4 L 414.7 223.8 L 422.8 219.8 L 430.6 215.7 L 438.3 211.3 L 445.7 206.7 L 452.9 201.9 L 460.0 196.9 L 466.8 191.8 L 473.5 186.6 L 480.1 181.3 L 486.5 175.9 L 492.7 170.4 L 498.9 164.9 L 504.9 159.3 L 510.9 153.6 L 516.8 148.0 L 522.7 142.2 L 528.5 136.5 L 534.2 130.8 L 540.0 125.0 L 545.8 119.2 L 551.5 113.5 L 557.3 107.8 L 563.2 102.0 L 569.1 96.4 L 575.1 90.7 L 581.1 85.1 L 587.3 79.6 L 593.5 74.1 L 599.9 68.7 L 606.5 63.4 L 613.2 58.2 L 620.0 53.1 L 627.1 48.1 L 634.3 43.3 L 641.7 38.7 L 649.4 34.3 L 657.2 30.2 L 665.3 26.2 L 673.7 22.6 L 682.3 19.3 L 691.1 16.3 L 700.1 13.8 L 709.4 11.7 L 718.9 10.0 L 728.6 8.9 L 738.4 8.4 L 748.4 8.5 L 758.5 9.2 L 768.6 10.7 L 778.8 12.9 L 788.8 15.9 L 798.7 19.8 L 808.3 24.5 L 817.6 30.0 L 826.5 36.5 L 834.8 43.7 L 842.5 51.8 L 849.4 60.7 L 855.5 70.2 L 860.6 80.4 L 864.6 91.1 L 867.6 102.1 L 869.4 113.5 L 870.0 125.0 Z" fill="none" stroke="#F0352C" stroke-width="44" stroke-linejoin="round" stroke-linecap="round" style="filter: drop-shadow(0 12px 30px rgba(0,0,0,0.4));" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="65.900" data-track-index="1"></video>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="st-secret" class="g tx" style="top: 290px;"><span class="stamp" style="font-size: 120px; display: inline-block; transform: rotate(-4deg);">секретно</span></div>
+        <div id="c-wallis" class="g card card-left">
+          <div class="ph"><img src="assets/img/wallis.jpg" alt="" /></div>
+          <div class="card-name">Джон Уоллис</div>
+          <div class="card-sub">1616–1703, Оксфорд</div>
+        </div>
+        <div id="d-lead" class="g tx tx-lead" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1290px; color: #F0352C;">днём</div>
+        <div id="d-big" class="g tx tx-big" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1350px; font-size: 120px; color: #F2EBDD;">профессор<br>геометрии</div>
+        <div id="st-parl" class="g tx tx-big"  style="top: 290px; font-size: 96px; color: #F2EBDD;">на службе<br>парламента</div>
+        <div id="w-lead" class="g tx tx-lead" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1290px; color: #F2EBDD;">гражданская война в Англии</div>
+        <div id="w-big" class="g tx tx-big" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1354px; font-size: 150px; color: #F2EBDD;"><span>1642</span> <span id="w-arrow" style="color: rgba(242,235,221,0.6);">→</span> <span id="w-y2" style="color: #F0352C;">1651</span></div>
+        <div id="w-line" class="g" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="left: 0; top: 1520px; width: 1080px; height: 30px;"><svg class="wide-svg" viewBox="0 0 1080 30" style="width: 1080px; height: 30px;"><line id="war-line" x1="190" y1="15" x2="890" y2="15" stroke="#F0352C" stroke-width="12" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /></svg></div>
+        <div id="lt-lead" class="g tx tx-lead" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1290px; color: #F2EBDD;">перехваченное письмо</div>
+        <div id="lt-code" class="g tx tx-mono" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1354px; font-size: 96px; color: rgba(242,235,221,0.7);">Ж7Ψ Ф·Q9 Ъ4</div>
+        <div id="lt-plain" class="g tx tx-big" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1354px; font-size: 140px; color: #F0352C;">письмо короля</div>
+        <div id="c-king" class="g card card-right">
+          <div class="ph"><img src="assets/img/charles.jpg" alt="" /></div>
+          <div class="card-name">Карл I</div>
+          <div class="card-sub">король Англии</div>
+        </div>
+        <div id="st-it" class="g tx tx-big"  style="top: 290px; font-size: 92px; color: #F2EBDD;">первый британский<br>айтишник</div>
+        <div id="st-why" class="g tx tx-big"  style="top: 300px; font-size: 92px; color: #F2EBDD;">почему именно она?</div>
+        <div id="cn-bleep" class="g censor" style="top: 290px;"><span>***</span><b>18+</b></div>
+        <div id="st-hist" class="g tx tx-big"  style="top: 290px; font-size: 92px; color: #F2EBDD;">историки спорят<br>до сих пор</div>
+        <div id="st-end" class="g tx" style="top: 290px;"><span class="stamp" style="font-size: 120px; display: inline-block; transform: rotate(-4deg);">конец всего</span></div>
+        <div id="st-insom" class="g tx tx-big"  style="top: 300px; font-size: 120px; color: #F2EBDD;">бессонница</div>
+        <div id="st-head" class="g tx tx-big"  style="top: 290px; font-size: 100px; color: #F2EBDD;">чтобы занять<br>голову</div>
+        <div id="eg-lead" class="g tx tx-lead" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1290px; color: #F2EBDD;">ответ в ЕГЭ</div>
+        <div id="eg-big" class="g tx tx-big" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1350px; font-size: 150px; color: #F2EBDD;">в ЕГЭ</div>
+        <div id="eg-ans" class="g tx tx-tex" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="top: 1350px; font-size: 110px; color: #F2EBDD;"><span class="katex-src" data-tex="\boldsymbol{(-\infty;\,+\infty)}"></span></div>
+        <div id="eg-line" class="g" data-safe="лицо важнее серой зоны: текст ниже подбородка (Валера, 12.10)" style="left: 0; top: 1540px; width: 1080px; height: 60px;"><svg class="wide-svg" viewBox="0 0 1080 60" style="width: 1080px; height: 60px;"><line id="eg-l" x1="540" y1="30" x2="150" y2="30" stroke="#F2EBDD" stroke-width="10" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><line id="eg-r" x1="540" y1="30" x2="930" y2="30" stroke="#F2EBDD" stroke-width="10" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" /><path id="eg-al" d="M 180 8 L 146 30 L 180 52" fill="none" stroke="#F2EBDD" stroke-width="10" stroke-linecap="round" opacity="0" /><path id="eg-ar" d="M 900 8 L 934 30 L 900 52" fill="none" stroke="#F2EBDD" stroke-width="10" stroke-linecap="round" opacity="0" /><line x1="540" y1="12" x2="540" y2="48" stroke="#F0352C" stroke-width="8" /></svg></div>
+        <div id="st-secret2" class="g tx" style="top: 290px;"><span class="stamp" style="font-size: 120px; display: inline-block; transform: rotate(-4deg);">секретно</span></div>
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">смотри у меня в профиле</div>
+        </div>
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-secret" src="assets/sfx/impact-bass-1.mp3" data-start="2.93" data-volume="0.080"></audio>
+      <audio id="sfx-hack" src="assets/sfx/whoosh-cinematic.mp3" data-start="12.00" data-volume="0.118"></audio>
+      <audio id="sfx-secret2" src="assets/sfx/impact-bass-1.mp3" data-start="62.95" data-volume="0.080"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="63.99" data-volume="0.646"></audio>
+    </div>
+    <script>
+      document.querySelectorAll(".katex-src").forEach((el) => {
+        try { katex.render(el.dataset.tex, el, { throwOnError: true, displayMode: true }); }
+        catch (e) { throw new Error(`формула «${el.dataset.tex}»: ${e.message}`); }
+      });
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[0.87, 3.17], [4.10, 7.20], [8.40, 10.85], [11.95, 13.40], [14.35, 20.70], [23.35, 29.92], [33.27, 56.77], [61.67, 64.22]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      // склейка (Валера 15.10: «склейки не спрятаны за переходами вспышками»): кадр приходит смазанным
+      // и наводится за 5 кадров, поверх — вспышка в 3 кадра; крупность бьёт наезд Take.splice_punches.
+      // Надписи через склейку не висят — уходят до неё, новая влетает на ней (verify_page).
+      function splice(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: flashes++ === 0 }, t - 0.033);
+        tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, t);
+        tl.fromTo(".cam", { filter: BLUR(16) }, { filter: BLUR(0), duration: 0.17, ease: "power2.out", immediateRender: false }, t);
+      }
+      // смена плана как у риелтора (15.10): кадр перескакивает крупнее с коротким смазом, без вспышки
+      function whip(t) {
+        tl.fromTo(".cam", { filter: BLUR(9) }, { filter: BLUR(0), duration: 0.12, ease: "power2.out", immediateRender: false }, t);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры: words, blur ----------
+      const caps = document.getElementById("caps");
+      const CAP_BASE = "#F2EBDD", CAP_HL = "#FF4A3D";
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        let inner = el;
+        if (false) { inner = document.createElement("span"); inner.className = "box"; el.appendChild(inner); }
+        const spans = [];
+        if (c.words) {
+          c.words.forEach((w, k) => {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.textContent = w.text;
+            inner.appendChild(s);
+            if (k < c.words.length - 1) inner.appendChild(document.createTextNode(" "));
+            spans.push(s);
+          });
+        } else {
+          inner.textContent = c.text;
+        }
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
+        const d = Math.min(0.09, c.t1 - c.t0);
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: d, ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+        (c.words || []).forEach((w, k) => {
+          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
+          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
+          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+        });
+      });
+
+
+      // ---------- хук: ∞ за спиной — СЕКРЕТНО ----------
+      slam("#b-inf", 0.97, { fromScale: 1.3 });
+      draw("#b-inf .lem", 0.97, 0.55);
+      leave("#b-inf", 2.87, { y: -60 });
+      slam("#st-secret", 2.95, { fromScale: 2.2, blur: 10 });
+      leave("#st-secret", 3.63, { scale: 0.8, y: -30, dur: 0.18 });
+      splice(3.83);
+
+      // ---------- (склейка) придумал британский шифровальщик: ЗНАК → шифр за головой ----------
+      enter("#cx-lead", 3.85, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      slam("#cx-row", 3.93, { fromScale: 1.3, blur: 10 });
+      tl.set("#cx0", { textContent: "Ж", color: "#F2EBDD" }, 5.8);
+      tl.set("#cx1", { textContent: "Q", color: "#F2EBDD" }, 5.8);
+      tl.set("#cx2", { textContent: "7", color: "#F2EBDD" }, 5.8);
+      tl.set("#cx3", { textContent: "Ф", color: "#F2EBDD" }, 5.8);
+      tl.set("#cx0", { textContent: "Ъ", color: "#F2EBDD" }, 5.92);
+      tl.set("#cx1", { textContent: "9", color: "#F2EBDD" }, 5.92);
+      tl.set("#cx2", { textContent: "Ю", color: "#F2EBDD" }, 5.92);
+      tl.set("#cx3", { textContent: "R", color: "#F2EBDD" }, 5.92);
+      tl.set("#cx0", { textContent: "Ψ", color: "#F2EBDD" }, 6.04);
+      tl.set("#cx1", { textContent: "4", color: "#F2EBDD" }, 6.04);
+      tl.set("#cx2", { textContent: "Щ", color: "#F2EBDD" }, 6.04);
+      tl.set("#cx3", { textContent: "Я", color: "#F2EBDD" }, 6.04);
+      tl.set("#cx0", { textContent: "Ѣ", color: "#F0352C" }, 6.16);
+      tl.set("#cx1", { textContent: "2", color: "#F0352C" }, 6.16);
+      tl.set("#cx2", { textContent: "Ξ", color: "#F0352C" }, 6.16);
+      tl.set("#cx3", { textContent: "Д", color: "#F0352C" }, 6.16);
+      leave("#cx-lead", 7.05, { y: -20 });
+      leave("#cx-row", 7.05, { y: -20 });
+
+      // ---------- Джон Уоллис; днём — Оксфорд; на груди «профессор геометрии» ----------
+      card("#c-wallis", 7.6, 10.4, "left");
+      tl.fromTo("#bg-ox", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 8.5);
+      tl.fromTo("#bg-ox img", { scale: 1 }, { scale: 1.06, duration: 2.31, ease: "none" }, 8.5);
+      tl.to("#bg-ox", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 10.46);
+      enter("#d-lead", 8.55, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      slam("#d-big", 8.7, { fromScale: 1.3, blur: 8 });
+      leave("#d-lead", 10.4, { y: -20 });
+      leave("#d-big", 10.4, { y: -20 });
+
+      // ---------- взломщик шифров парламента ----------
+      slam("#b-hack", 12.02, { fromScale: 1.5 });
+      leave("#b-hack", 13.1, { y: -60 });
+      slam("#st-parl", 13.15, { fromScale: 1.35, blur: 8 });
+      leave("#st-parl", 14.35, { y: -20 });
+
+      // ---------- гражданская война: битва за спиной, 1642 → 1651; письма короля ----------
+      tl.fromTo("#bg-war", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 14.4);
+      tl.fromTo("#bg-war img", { scale: 1 }, { scale: 1.06, duration: 6.25, ease: "none" }, 14.4);
+      tl.to("#bg-war", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 20.3);
+      enter("#w-lead", 14.45, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      tl.set("#w-y2", { opacity: 0 }, 14.45);
+      slam("#w-big", 14.55, { fromScale: 1.3, blur: 8 });
+      tl.set("#w-line", { opacity: 1 }, 14.9);
+      draw("#war-line", 14.9, 1.1);
+      tl.fromTo("#w-y2", { opacity: 0, scale: 1.5, filter: BLUR(10) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.2, ease: "power4.out" }, 16.02);
+      leave("#w-lead", 16.55, { y: -20 });
+      leave("#w-big", 16.55, { y: -20 });
+      leave("#w-line", 16.55, { y: -20 });
+      enter("#lt-lead", 16.9, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      enter("#lt-code", 16.95, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      tl.to("#lt-code", { opacity: 0, scaleX: 0.6, filter: BLUR(10), duration: 0.3, ease: "power2.in" }, 18.45);
+      tl.fromTo("#lt-plain", { opacity: 0, scale: 1.5, filter: BLUR(10) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.2, ease: "power4.out" }, 18.7);
+      leave("#lt-lead", 20.2, { y: -20 });
+      leave("#lt-plain", 20.2, { y: -20 });
+      card("#c-king", 18.65, 20.95, "right");
+
+      // ---------- первый айтишник; 007 ----------
+      slam("#st-it", 21.05, { fromScale: 1.35, blur: 8 });
+      leave("#st-it", 22.8, { y: -20 });
+      slam("#b-007", 23.44, { fromScale: 1.6 });
+      leave("#b-007", 23.97, { y: -60, dur: 0.18 });
+      splice(24.17);
+
+      // ---------- (склейка) 1655, конические сечения, восьмёрка — всё за головой ----------
+      tl.fromTo("#b-1655", { opacity: 0, y: 40, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.3, ease: "power3.out" }, 24.19);
+      tl.fromTo("#yr", { textContent: 1600 }, { textContent: 1655, snap: { textContent: 1 }, duration: 0.8, ease: "power2.out", immediateRender: false }, 24.67);
+      leave("#b-1655", 26.37, { y: -60 });
+      enter("#cn-lead", 26.42, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      tl.set("#cn-svg", { opacity: 1 }, 26.42);
+      draw("#cn-el", 26.57, 0.45);
+      draw("#cn-pa", 27.02, 0.45);
+      draw("#cn-hy", 27.47, 0.45);
+      leave("#cn-lead", 28.42, { y: -20 });
+      leave("#cn-svg", 28.42, { y: -20 });
+      slam("#e8", 28.49, { fromScale: 1.3, blur: 8 });
+      tl.to("#e8", { rotation: 90, duration: 0.45, ease: "back.out(1.6)" }, 28.87);
+      enter("#e8-lead", 29.22, { fromY: -30, fromScale: 0.8, dur: 0.25 });
+      leave("#e8", 29.55, { y: -20 });
+      leave("#e8-lead", 29.55, { y: -20 });
+
+      // ---------- почему именно она — [пип] — историки спорят ----------
+      slam("#st-why", 29.72, { fromScale: 1.35, blur: 8 });
+      leave("#st-why", 30.37, { y: -20 });
+      slam("#cn-bleep", 30.45, { fromScale: 1.6, blur: 10 });
+      leave("#cn-bleep", 31.17, { scale: 0.6, y: 0 });
+      slam("#st-hist", 31.97, { fromScale: 1.35, blur: 8 });
+      leave("#st-hist", 33.22, { y: -20 });
+
+      // ---------- версия 1: римская тысяча → ∞ ----------
+      enter("#v1-lead", 33.31, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      slam("#v1-roman", 33.42, { fromScale: 1.3, blur: 8 });
+      tl.to("#v1-roman", { x: -230, duration: 0.3, ease: "power3.out" }, 35.02);
+      tl.fromTo("#v1-eq", { opacity: 0, scale: 1.5, filter: BLUR(10) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.2, ease: "power4.out" }, 35.11);
+      tl.set("#v1-eq", { x: 160 }, 35.11);
+      tl.to(["#v1-roman", "#v1-eq"], { scaleX: 0.45, opacity: 0, filter: BLUR(8), duration: 0.35, ease: "power2.in" }, 37.47);
+      tl.to("#v1-lead", { opacity: 0, duration: 0.12, ease: "none" }, 37.67);
+      slam("#v1-inf", 37.77, { fromScale: 1.2 });
+      draw("#v1-inf .lem", 37.77, 0.5);
+      enter("#v1-many", 39.27, { fromScale: 0.8, dur: 0.25 });
+      leave("#v1-inf", 40.12, { y: -20 });
+      leave("#v1-many", 40.12, { y: -20 });
+
+      // ---------- версия 2: омега, последняя буква — конец всего ----------
+      enter("#v2-lead", 40.22, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      tl.set("#gk-win", { opacity: 1 }, 40.27);
+      tl.fromTo("#gk-strip", { x: 700 }, { x: () => -(document.getElementById("gk-strip").scrollWidth - 620), duration: 2.4, ease: "power2.inOut" }, 40.27);
+      tl.to("#gk-om", { color: "#F0352C", scale: 1.3, duration: 0.2, ease: "back.out(2)" }, 42.91);
+      tl.to("#gk-win", { opacity: 0, duration: 0.2 }, 43.32);
+      tl.fromTo("#gk-w", { opacity: 0, scale: 1.5, filter: BLUR(10) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.2, ease: "power4.out" }, 43.43);
+      tl.to("#gk-w", { scaleY: 0.6, opacity: 0, filter: BLUR(6), duration: 0.3, ease: "power2.in" }, 44.07);
+      slam("#gk-inf", 44.22, { fromScale: 1.2 });
+      draw("#gk-inf .lem", 44.22, 0.3);
+      slam("#st-end", 44.59, { fromScale: 2.2, blur: 10 });
+      leave("#v2-lead", 44.47, { y: -20 });
+      leave("#gk-inf", 44.47, { y: -20 });
+      leave("#st-end", 45.42, { scale: 0.6, y: 0, y: -30 });
+
+      // ---------- бессонница: ночь за спиной ----------
+      tl.fromTo("#bg-night", { opacity: 0, scale: 1.08, filter: BLUR(14) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.45, ease: "power2.out" }, 45.52);
+      tl.fromTo("#bg-night img", { scale: 1 }, { scale: 1.06, duration: 6.00, ease: "none" }, 45.52);
+      tl.to("#bg-night", { opacity: 0, scale: 1.04, filter: BLUR(12), duration: 0.35, ease: "power2.in" }, 51.17);
+      slam("#st-insom", 46.77, { fromScale: 1.35, blur: 8 });
+      leave("#st-insom", 48.57, { y: -20 });
+      slam("#st-head", 49.92, { fromScale: 1.35, blur: 8 });
+      leave("#st-head", 51.17, { y: -20 });
+
+      // ---------- корень из 53-значного числа: огромный √ за головой ----------
+      enter("#rt-lead", 51.23, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      tl.set("#rt-svg", { opacity: 1 }, 51.23);
+      draw("#rt-sign", 51.47, 0.8);
+      enter("#rt-num", 52.37, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      tl.fromTo("#rt-n", { textContent: 0 }, { textContent: 53, snap: { textContent: 1 }, duration: 1.38, ease: "none", immediateRender: false }, 53.19);
+      enter("#rt-dawn", 54.99, { fromScale: 0.8, dur: 0.25 });
+      leave("#rt-lead", 56.62, { y: -20 });
+      leave("#rt-svg", 56.62, { y: -20 });
+      leave("#rt-num", 56.62, { y: -20 });
+      leave("#rt-dawn", 56.62, { y: -20 });
+
+      // ---------- ЕГЭ: (−∞; +∞) крупно на груди ----------
+      enter("#eg-lead", 56.72, { fromY: 60, fromScale: 0.9, dur: 0.3, ease: "power3.out" });
+      slam("#eg-big", 56.82, { fromScale: 1.3, blur: 8 });
+      tl.to("#eg-big", { opacity: 0, scale: 0.8, filter: BLUR(8), duration: 0.2, ease: "power2.in" }, 59.25);
+      tl.fromTo("#eg-ans", { opacity: 0, scale: 1.5, filter: BLUR(10) }, { opacity: 1, scale: 1, filter: BLUR(0), duration: 0.2, ease: "power4.out" }, 59.47);
+      tl.set("#eg-line", { opacity: 1 }, 56.87);
+      tl.fromTo("#eg-line", { y: 30 }, { y: 0, duration: 0.3, ease: "power3.out" }, 56.87);
+      draw("#eg-l", 59.57, 0.6);
+      draw("#eg-r", 60.57, 0.6);
+      tl.fromTo("#eg-al", { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "none" }, 60.12);
+      tl.fromTo("#eg-ar", { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "none" }, 61.12);
+      leave("#eg-lead", 61.62, { y: -20 });
+      leave("#eg-ans", 61.62, { y: -20 });
+      leave("#eg-line", 61.62, { y: -20 });
+
+      // ---------- кольцо: ∞ за спиной — СЕКРЕТНО ----------
+      slam("#b-inf2", 61.73, { fromScale: 1.3 });
+      draw("#b-inf2 .lem", 61.73, 0.55);
+      leave("#b-inf2", 62.72, { y: -60 });
+      slam("#st-secret2", 62.97, { fromScale: 2.2, blur: 10 });
+      leave("#st-secret2", 63.92, { scale: 0.6, y: 0, y: -30 });
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 63.99);
+      tl.set("#cta-arrow", { opacity: 1 }, 64.34);
+      draw("#arrow-path", 64.34, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 64.66);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 64.99);
+
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

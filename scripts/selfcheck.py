@@ -30,6 +30,7 @@
 зависший ноутбук и переснятый урок.
 """
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -46,7 +47,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import (INPUT_DIR, ROOT, WORK_DIR, detect_silence, ffmpeg_bin, ffprobe_bin,
+from common import (ROOT, WORK_DIR, detect_silence, ffmpeg_bin, ffprobe_bin,
                     load_preset, measure_noise_floor, snap_segments)
 from cut import plan_cut
 from look import expected_luma, look_filter
@@ -578,6 +579,20 @@ def check_cuts(report: Report):
     report.check(abs(camera[150][0] - 1.2) < 1e-3, "наезд прячет склейку с первого же кадра",
                  f"зум на склейке {camera[150][0]:.3f}")
 
+    # 15.10.2026: база проекта 1.2, наезд 1.2 — камера молча стояла на 1.2 весь ролик в семи роликах
+    from track import zoom_plan
+    try:
+        zoom_plan(300, fps, 1.2, [[5.0, 7.0, 1.2, 0.0, 0.6]])
+        report.check(False, "наезд не выше базы камеры — громкая ошибка, а не тихо пропавший акцент")
+    except ValueError:
+        report.check(True, "наезд не выше базы камеры — громкая ошибка, а не тихо пропавший акцент")
+    pushed = zoom_plan(600, fps, 1.2, [[12.0, 13.0, 1.36, 0.1]], push=0.006)
+    steps = float(np.abs(np.diff(pushed[:int(11.9 * fps)])).max())
+    after = pushed[int(13.2 * fps)]          # акцент кончился в 13.0 — база снова почти у 1.2
+    report.check(pushed[0] == 1.2 and 1.25 < pushed[int(11.9 * fps)] <= 1.2601 and after < 1.215 and steps < 0.001,
+                 "медленный наезд через мысль идёт и сбрасывается на пике акцента",
+                 f"{pushed[0]:.3f} → {pushed[int(11.9 * fps)]:.3f}, после акцента {after:.3f}, шаг {steps:.4f}")
+
     pieces = split_by_drops(0.0, 60.0, [[41.86, 48.98]])
     report.check(pieces == [(0.0, 41.86), (48.98, 60.0)], "вырезанный дубль не попадает в ролик",
                  str(pieces))
@@ -612,6 +627,12 @@ def check_edges(report: Report):
     _, end = find_edges(words, [(68.10, 68.34), (68.81, 69.65), (69.93, 70.64)], 60.0, 68.80)
     report.check(68.81 <= end <= 69.65, "последнее слово не обрезано, следующее не попало",
                  f"конец {end:.2f} с, тишина 68.81–69.65")
+
+    # воздух после последнего слова (edit.json air_end) — внутри паузы и не дальше её конца
+    _, wide = find_edges(words, [(68.10, 68.34), (68.81, 69.65), (69.93, 70.64)], 60.0, 68.80, air_end=0.6)
+    _, wider = find_edges(words, [(68.10, 68.34), (68.81, 69.65), (69.93, 70.64)], 60.0, 68.80, air_end=5.0)
+    report.check(abs(wide - 69.41) < 0.01 and wider <= 69.65, "воздух после последнего слова — в пределах паузы",
+                 f"0.6 с → {wide:.2f}, 5 с → {wider:.2f} (пауза до 69.65)")
 
     # слова идут вплотную, тишина только после лишнего: резать до него, по распознаванию
     words = [{"word": "мне", "start": 67.12, "end": 67.24}, {"word": "в", "start": 67.24, "end": 67.34}]
@@ -792,12 +813,15 @@ def check_sfx(report: Report):
     report.check(not off, "у каждого звука в манифесте честный замер громкости", "; ".join(off) or f"{len(files)} файлов")
 
     removed = manifest.get("_removed", {})
+    m_names = [n for n in manifest if not n.startswith("_")] + [p.stem for p in folder.glob("*.mp3")]
     leftovers = [n for n in removed if (folder / f"{n}.mp3").exists()]
     try:
         kit.audio("x", "glitch-1", 1.0)
         refused = False
     except ValueError as e:
         refused = "больше нет" in str(e)
+    report.check(not [n for n in m_names if n.startswith("glitch")], "шумов-помех (glitch) в библиотеке нет — Валера 15.10: «никогда не подойдут в рилы»",
+                 ", ".join(n for n in m_names if n.startswith("glitch")) or "ни одного")
     report.check("glitch-1" in removed and refused and not leftovers,
                  "убранный звук (glitch-1 с «бардака») не вернётся: файла нет, kit отказывает с причиной",
                  ", ".join(leftovers) or "чисто")
@@ -1026,8 +1050,11 @@ def check_grey_zones(report: Report, tmp: Path):
              # рамка .lead — во всю ширину и на высоте кнопок, а само слово — по центру: не заезд
              '        <div id="z-ok" class="g lead" style="top: 1000px;">центр</div>\n'
              '        <div id="z-safe" class="g lead" data-safe="стрелка на ник — намеренно"'
-             ' style="top: 1700px;">ник</div>')
-    beats = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("z-top", "z-right", "z-ok", "z-safe"))
+             ' style="top: 1700px;">ник</div>\n'
+             # лента в окне с overflow: hidden: её хвост за окном (и под кнопками справа) не виден — не заезд
+             '        <div id="z-tape" class="g" style="left: 300px; top: 800px; width: 400px; height: 90px; overflow: hidden;">'
+             '<div class="lead" style="left: 0; width: auto; white-space: nowrap; font-size: 70px;">лента бежит далеко вправо за окно</div></div>')
+    beats = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("z-top", "z-right", "z-ok", "z-safe", "z-tape"))
     (project / "index.html").write_text(build_page("зоны", 2.0, behind, front, beats, [], [], cta_at=5.0),
                                         encoding="utf-8")
     res = run_timeline(project / "index.html", zones=formats.grey_zones("9:16"))
@@ -1035,8 +1062,8 @@ def check_grey_zones(report: Report, tmp: Path):
     allowed = {g["el"] for g in res.get("greyAllowed", [])}
     flagged = {el for el, _ in grey}
     report.check(("#z-top", "верх") in grey and ("#z-right", "справа") in grey
-                 and not flagged & {"#z-ok", "#z-safe"} and not any(el.startswith("субтитр") for el in flagged),
-                 "текст в шапке и под кнопками ловится, текст по центру — нет",
+                 and not flagged & {"#z-ok", "#z-safe", "#z-tape"} and not any(el.startswith("субтитр") for el in flagged),
+                 "текст в шапке и под кнопками ловится, текст по центру и хвост ленты за краем окна — нет",
                  ", ".join(sorted(f"{el} ({z})" for el, z in grey)) or "ничего не поймано")
     report.check("#z-safe" in allowed, "осознанный заезд (data-safe) идёт отдельным списком, а не ошибкой",
                  ", ".join(sorted(allowed)) or "не найден")
@@ -1101,6 +1128,30 @@ def check_grey_zones(report: Report, tmp: Path):
                  "data-hold — отдельно",
                  f"висит: {', '.join(sorted(stale)) or 'ничего'}; осознанно: {', '.join(sorted(meant)) or 'ничего'}")
 
+    # текст вылез (Валера 15.10.2026: «"Больше математики" — текст за рамки вылетал»): слово шире своей
+    # плашки и надпись за краем кадра ловятся; лента в окне с overflow: hidden, вписанное слово и
+    # data-spill — нет. Плашка CTA из kit — та самая, что вылезала на 24 px во всех роликах 14–15.10.
+    front5 = ('        <div id="s-wide" class="g pill" style="left: 400px; top: 1300px; width: 200px; white-space: nowrap;">'
+              'очень длинное слово</div>\n'
+              '        <div id="s-ok" class="g pill" style="left: 245px; top: 1450px; width: 590px;">влезает</div>\n'
+              '        <div id="s-edge" class="g lead" style="top: 1600px; left: 700px; width: 600px; text-align: left;">за краем кадра</div>\n'
+              '        <div id="s-tape" class="g" style="left: 245px; top: 1100px; width: 300px; height: 80px; overflow: hidden;">'
+              '<div style="white-space: nowrap; font-size: 60px; color: #fff;">лента бежит далеко за окно</div></div>\n'
+              '        <div id="s-run" class="g lead" data-spill="бегущая строка" style="top: 1000px; left: 600px; width: 900px;'
+              ' text-align: left;">3,14159265358979</div>')
+    beats5 = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("s-wide", "s-ok", "s-edge", "s-tape", "s-run"))
+    # ширина букв — настоящими шрифтами: запасной шире Oswald, и CTA вылезала бы только здесь
+    (project / "assets" / "fonts").mkdir(exist_ok=True)
+    for font in ("Oswald-Bold.ttf", "Manrope-ExtraBold.ttf"):
+        shutil.copy2(ROOT / "presets" / "fonts" / font, project / "assets" / "fonts" / font)
+    (project / "index.html").write_text(build_page("вылет", 2.0, "", front5, beats5, [], [], cta_at=0.5), encoding="utf-8")
+    res = run_timeline(project / "index.html")
+    spilled = {s["el"] for s in res.get("spills", [])}
+    report.check(spilled == {"#s-wide", "#s-edge"},
+                 "текст шире своей плашки и за краем кадра ловится; лента в окне, вписанный текст, data-spill "
+                 "и плашка CTA из kit — нет",
+                 ", ".join(sorted(spilled)) or "ничего не поймано")
+
 
 def check_page_timeline(report: Report, tmp: Path):
     """Ничего не залипает на экране в покадровом рендере HyperFrames.
@@ -1148,6 +1199,24 @@ def check_page_timeline(report: Report, tmp: Path):
                  ", ".join(caps_bad) or "чисто")
     report.check(any("#nope" in w for w in res.get("warnings", [])), "селектор, который ничего не нашёл, виден",
                  "; ".join(res.get("warnings", []))[:120] or "предупреждений нет")
+    # склейки (15.10.2026, «склейки не спрятаны»): надпись через рез и рез без вспышки/смаза ловятся,
+    # splice() на странице проходит
+    try:
+        cross_beats = '      enter("#t-word", 1.0);\n      leave("#t-word", 3.0);\n'
+        (project / "index.html").write_text(build_page("проверка", 4.0, behind, "", cross_beats, [], [], cta_at=3.6),
+                                            encoding="utf-8")
+        bare = run_timeline(project / "index.html", splices=[2.0])["splices"][0]
+        (project / "index.html").write_text(build_page("проверка", 4.0, behind, "", 'enter("#t-word", 2.02);\n      splice(2.0);\n',
+                                                       [], [], cta_at=3.6), encoding="utf-8")
+        hidden = run_timeline(project / "index.html", splices=[2.0])["splices"][0]
+    except (RuntimeError, ValueError, KeyError, IndexError) as e:
+        report.check(False, "склейки разбираются на странице", str(e)[:200])
+    else:
+        report.check("#t-word" in bare["across"] and bare["flash"] < 0.3 and bare["blur"] < 4,
+                     "надпись через склейку и склейка без перехода ловятся", json.dumps(bare, ensure_ascii=False))
+        report.check(not hidden["across"] and hidden["flash"] >= 0.3 and hidden["blur"] >= 4,
+                     "splice(): вспышка и смаз на склейке, новое влетает на ней", json.dumps(hidden, ensure_ascii=False))
+
     old_stuck = {i["el"] for i in old.get("stuck", [])}
     old_risky = {i["el"] for i in old.get("risky", [])}
     report.check(old_entry != page and "субтитр «мы»" in old_stuck and "субтитр «кто»" in old_risky,
@@ -1476,7 +1545,10 @@ def check_batch(report: Report, tmp: Path):
     studio_api.batch.update(running=False, items=[])
     items, threads = [], []
     try:
-        with TestClient(app, base_url="http://127.0.0.1:8765") as live:
+        with temp_projects(tmp / "batch_projects", "main") as made, \
+                TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            for stem in ("РОЛИК_А", "РОЛИК_Б"):        # ролик вне проектов пачка не берёт — громко
+                (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
             live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б"], "engine": "claude"},
                       headers={"X-Studio-Token": TOKEN})
             for _ in range(150):
@@ -1571,30 +1643,50 @@ def check_viz(report: Report, tmp: Path):
                  (bad.get("pageErrors") or [bad.get("crash", "ничего не поймано")])[0][:80])
 
 
+@contextlib.contextmanager
+def temp_projects(root: Path, *names: str):
+    """Проекты проверки во временной папке: настоящие projects/ тест не трогает.
+
+    Все модули берут папку через projects.PROJECTS_DIR, поэтому подмены одной её достаточно.
+    Первый из names — проект по умолчанию.
+    """
+    import projects
+    saved = (projects.PROJECTS_DIR, projects.DEFAULT)
+    projects.PROJECTS_DIR, projects.DEFAULT = root, names[0]
+    try:
+        made = {name: projects.create(name) for name in names}
+        yield made
+    finally:
+        projects.PROJECTS_DIR, projects.DEFAULT = saved
+
+
 def check_approve(report: Report, tmp: Path):
     """Апрув убирает копии ролика (черновые версии, сырые рендеры), но не принятый и не решения."""
     import approve
 
     print("\nАпрув и уборка копий")
-    out, work, studio = tmp / "a_output", tmp / "a_work", tmp / "a_studio"
-    for folder in (out, work / "X", studio / "X" / "renders"):
+    work, studio = tmp / "a_work", tmp / "a_studio"
+    for folder in (work / "X", studio / "X" / "renders"):
         folder.mkdir(parents=True)
-    for name in ("X_v1.mp4", "X_v1.sheet.jpg", "X_v2.mp4", "X_v2.sheet.jpg", "XY_v1.mp4"):
-        (out / name).write_bytes(b"v")
     (studio / "X" / "renders" / "X_v1.mp4").write_bytes(b"raw")
     (work / "X" / "aroll.matte_mediapipe.mkv").write_bytes(b"mask")
     (work / "X" / "edit.json").write_text("{}", encoding="utf-8")
-    saved = (approve.OUTPUT_DIR, approve.WORK_DIR, approve.ROOT, approve.studio_dir)
-    approve.OUTPUT_DIR, approve.WORK_DIR, approve.ROOT = out, work, tmp
+    saved = (approve.WORK_DIR, approve.ROOT, approve.studio_dir)
+    approve.WORK_DIR, approve.ROOT = work, tmp
     approve.studio_dir = lambda: studio
-    try:
-        plan = approve.plan("X", "X_v2.mp4")
-        done = approve.apply("X", "X_v2.mp4", ["drafts"])
-    except Exception as e:
-        plan, done = {}, {"error": f"{type(e).__name__}: {e}"}
-    finally:
-        approve.OUTPUT_DIR, approve.WORK_DIR, approve.ROOT, approve.studio_dir = saved
-    left = sorted(p.name for p in out.iterdir())
+    with temp_projects(tmp / "a_projects", "main") as made:
+        out = made["main"].output
+        (made["main"].input / "X.MOV").write_bytes(b"src")
+        for name in ("X_v1.mp4", "X_v1.sheet.jpg", "X_v2.mp4", "X_v2.sheet.jpg", "XY_v1.mp4"):
+            (out / name).write_bytes(b"v")
+        try:
+            approve.plan("X", "X_v2.mp4")
+            done = approve.apply("X", "X_v2.mp4", ["drafts"])
+        except Exception as e:
+            done = {"error": f"{type(e).__name__}: {e}"}
+        finally:
+            approve.WORK_DIR, approve.ROOT, approve.studio_dir = saved
+    left = sorted(p.name for p in out.iterdir() if p.name != ".gitkeep")
     kept_rest = (work / "X" / "aroll.matte_mediapipe.mkv").exists() and (work / "X" / "edit.json").exists()
     report.check(left == ["XY_v1.mp4", "X_v2.mp4", "X_v2.sheet.jpg"] and not any((studio / "X" / "renders").iterdir())
                  and kept_rest and (work / "X" / "approved.json").exists(),
@@ -1768,6 +1860,20 @@ def check_transcript_source(report: Report, tmp: Path):
         caught, why = False, f"{type(e).__name__}: {e}"[:70]
     report.check(same and caught, "другое видео под старым именем — громкий отказ, а не чужие субтитры", why)
 
+    # Язык: английский ролик (тестовое для заказчика, 13.10) по русскому кэшу дал бы мусор в субтитрах
+    other = tmp / "IMG_0002.MOV"
+    other.write_bytes(b"z" * 500)
+    (cache / "IMG_0002.words.json").write_text('{"words": [], "text": ""}', encoding="utf-8")
+    try:
+        transcribe.run_transcribe(other, language="ru", cache_dir=cache)   # старый кэш без языка — русский
+        transcribe.run_transcribe(other, language="en", cache_dir=cache)
+        caught, why = False, "русский транскрипт отдан как английский молча"
+    except SystemExit as e:
+        caught, why = "распознана как" in str(e), str(e)[:70]
+    except Exception as e:
+        caught, why = False, f"{type(e).__name__}: {e}"[:70]
+    report.check(caught, "транскрипт другого языка — громкий отказ, а не чужие слова", why)
+
 
 def check_long_runs(report: Report):
     """Долгий ML-прогон спрашивает согласие по оценке счёта, а не по длине записи (инвариант 6)."""
@@ -1779,6 +1885,87 @@ def check_long_runs(report: Report):
     report.check(bool(ok), "улучшение голоса спрашивает согласие, если счёт дольше пяти минут",
                  "4-минутная запись (≈16 мин счёта) — спросит" if ok else "четыре минуты записи ушли бы без вопроса")
 
+    import matte
+    ask = getattr(matte, "needs_consent", None)
+    minute, short = 60 * 30, 10 * 30
+    ok = ask is not None and ask("birefnet", minute) and not ask("birefnet", short) and not ask("mediapipe", minute)
+    report.check(bool(ok), "маска BiRefNet спрашивает согласие, если счёт дольше пяти минут",
+                 f"минута дубля — ~{minute / matte.BIREFNET_FPS / 60:.0f} мин счёта, спросит" if ok
+                 else "минута дубля ушла бы в маску на четверть часа без вопроса")
+
+
+def check_projects(report: Report, tmp: Path):
+    """Проект — граница: язык, бриф, CTA, порог лица и выпуски одного не протекают в другой (14.10.2026)."""
+    import prep
+    import projects
+    import styles
+    import verify_page
+    import verify_render
+
+    print("\nПроекты")
+    problems = projects.check()
+    # до 14.10 видео лежали в общих input/ и output/: файл, брошенный туда по привычке, никто не увидит
+    stray = [f"{d}/{f.name}" for d in ("input", "output") if (ROOT / d).is_dir()
+             for f in (ROOT / d).iterdir() if f.suffix.lower() in projects.VIDEO_EXT]
+    report.check(not problems and not stray, "проекты в projects/ читаются, имена роликов не повторяются, "
+                 "в старых input/ и output/ видео нет", "; ".join(problems + stray)[:160] or ", ".join(projects.names()))
+    with temp_projects(tmp / "p_projects", "main", "client") as made:
+        main, client = made["main"], made["client"]
+        (main.root / "project.json").write_text(json.dumps(
+            {"language": "ru", "cta": True, "face_max": 165, "brief": {"style": "viral-behind"}}), encoding="utf-8")
+        (client.root / "project.json").write_text(json.dumps(
+            {"language": "en", "cta": False, "face_max": None,
+             "brief": {"style": "hormozi", "overrides": {"captions.font": "cormorant"}}}), encoding="utf-8")
+        (main.input / "IMG_0001.MOV").write_bytes(b"a")
+        (client.input / "IMG_0002.MOV").write_bytes(b"b")
+        saved = styles.WORK_DIR
+        styles.WORK_DIR = tmp / "p_work"
+        try:
+            mine, theirs = styles.load_brief("IMG_0001"), styles.load_brief("IMG_0002")
+        finally:
+            styles.WORK_DIR = saved
+        report.check(theirs["style"] == "hormozi" and theirs["overrides"].get("captions.font") == "cormorant"
+                     and mine["style"] == "viral-behind" and not mine["overrides"],
+                     "ролик без своего брифа берёт умолчания своего проекта, а не соседнего",
+                     f"заказчик: {theirs['style']}, свой: {mine['style']}")
+        langs = (prep.speech_language("IMG_0002", {}), prep.speech_language("IMG_0001", {}),
+                 prep.speech_language("IMG_0001", {"language": "en"}))
+        report.check(langs == ("en", "ru", "en"), "язык речи — из проекта, edit.json может переопределить",
+                     " / ".join(langs))
+        cta = 'id="cta"'
+        leaks = (verify_page.cta_leak("IMG_0002", cta), verify_page.cta_leak("IMG_0002--hormozi", cta),
+                 verify_page.cta_leak("IMG_0002", ""), verify_page.cta_leak("IMG_0001", cta))
+        report.check(bool(leaks[0]) and bool(leaks[1]) and leaks[2] == "" and leaks[3] is None,
+                     "плашка «смотри у меня в профиле» в проекте без CTA не пройдёт до рендера",
+                     "поймана и в варианте A/B" if leaks[1] else f"{leaks}")
+        faces = (verify_render.face_limit("IMG_0001")[0], verify_render.face_limit("IMG_0002")[0])
+        report.check(faces == (165, None), "порог засвета лица — свой у проекта (у заказчика не наша серия)",
+                     f"{faces}")
+        outs = (projects.output_dir("IMG_0002"), projects.output_dir("IMG_0001"))
+        report.check(outs == (client.output, main.output), "выпуск ложится в output/ проекта ролика",
+                     " / ".join(f"{o.parent.name}/output" for o in outs))
+        try:
+            projects.of("IMG_9999")
+            lost = "ролик без проекта получил проект молча"
+        except projects.ProjectError as e:
+            lost = "" if "ни в одном проекте" in str(e) else str(e)[:70]
+        (client.input / "IMG_0001.mp4").write_bytes(b"c")
+        try:
+            projects.index()
+            clash = "одно имя в двух проектах прошло молча"
+        except projects.ProjectError as e:
+            clash = "" if "двух проектах" in str(e) else str(e)[:70]
+        (client.input / "IMG_0001.mp4").unlink()
+        report.check(not lost and not clash, "ролик вне проектов и одно имя в двух проектах — громкий отказ",
+                     lost or clash or "оба пойманы")
+        import matte
+        (main.root / "project.json").write_text(json.dumps({"long_matte": True}), encoding="utf-8")
+        agreed = (matte.project_consent(ROOT / "work" / "IMG_0001" / "aroll.mp4"),
+                  matte.project_consent(ROOT / "work" / "IMG_0002" / "aroll.mp4"),
+                  matte.project_consent(ROOT / "work" / "IMG_9999" / "aroll.mp4"))
+        report.check(agreed == ("main", None, None), "согласие на долгую маску — только у роликов своего проекта",
+                     "чужой ролик и ролик вне проектов спросят" if agreed == ("main", None, None) else f"{agreed}")
+
 
 def check_web_import(report: Report, tmp: Path):
     """Перетаскивание из Telegram даёт странице путь к файлу, а не сам файл.
@@ -1788,7 +1975,13 @@ def check_web_import(report: Report, tmp: Path):
     ждёт ролик от видео, которого в работе нет.
     """
     print("\nПриём перетащенного файла")
+    with temp_projects(tmp / "w_projects", "main", "client") as projs:
+        _check_web_import(report, tmp, projs)
+
+
+def _check_web_import(report: Report, tmp: Path, projs: dict):
     from server import import_local_file
+    inbox = projs["main"].input
 
     report.check("error" in import_local_file(""), "пустой путь отвергнут")
     report.check("error" in import_local_file(str(tmp / "нет-такого.mp4")),
@@ -1807,8 +2000,8 @@ def check_web_import(report: Report, tmp: Path):
     try:
         first = import_local_file(cached.as_uri())      # file:///C:/… на Windows, file:///… на Mac
         if "name" in first:
-            landed.append(INPUT_DIR / first["name"])
-        arrived = "name" in first and (INPUT_DIR / first["name"]).exists()
+            landed.append(inbox / first["name"])
+        arrived = "name" in first and (inbox / first["name"]).exists()
         report.check(arrived, "файл по file://-ссылке лёг в input/",
                      first.get("name") or first.get("error", ""))
         report.check(arrived and Path(first["name"]).suffix == ".mp4",
@@ -1816,9 +2009,16 @@ def check_web_import(report: Report, tmp: Path):
 
         second = import_local_file(str(cached))
         if "name" in second:
-            landed.append(INPUT_DIR / second["name"])
+            landed.append(inbox / second["name"])
         report.check(arrived and second.get("name") not in (None, first.get("name")),
                      "повторный приём не затирает уже лежащий файл", second.get("name", ""))
+        # в другой проект с тем же именем — тоже рядом: у роликов общий work/<имя>/ на все проекты
+        third = import_local_file(str(cached), "client")
+        landed.append(projs["client"].input / third.get("name", "-"))
+        report.check(third.get("project") == "client" and third.get("name") not in
+                     (None, first.get("name"), second.get("name")),
+                     "файл ложится в input/ выбранного проекта, и имя не повторяет ролик другого проекта",
+                     f"{third.get('project')}: {third.get('name') or third.get('error', '')}")
     finally:
         for path in landed:
             path.unlink(missing_ok=True)
@@ -1827,12 +2027,10 @@ def check_web_import(report: Report, tmp: Path):
     import studio_api
     from fastapi.testclient import TestClient
 
-    inbox, queue = tmp / "inbox", tmp / "queue"
-    inbox.mkdir()
-    saved = (server.INPUT_DIR, server.OUTPUT_DIR, server.PRESET_DIR, studio_api.QUEUE, studio_api.ensure_runner)
-    server.INPUT_DIR, server.OUTPUT_DIR, server.PRESET_DIR = inbox, tmp / "outbox", tmp
+    queue = tmp / "queue"
+    saved = (server.PRESET_DIR, studio_api.QUEUE, studio_api.ensure_runner)
+    server.PRESET_DIR = tmp
     studio_api.QUEUE, studio_api.ensure_runner = queue, (lambda: False)
-    (tmp / "outbox").mkdir()
     try:
         web = TestClient(server.app, base_url="http://127.0.0.1:8765")
         key = {"X-Studio-Token": server.TOKEN}
@@ -1874,7 +2072,7 @@ def check_web_import(report: Report, tmp: Path):
         report.check("готово за 3 с" in body and '"code": 0' in body,
                      "поток панели читает лог задачи очереди и сообщает итог", body.replace("\n", " ")[:80] or "—")
     finally:
-        server.INPUT_DIR, server.OUTPUT_DIR, server.PRESET_DIR, studio_api.QUEUE, studio_api.ensure_runner = saved
+        server.PRESET_DIR, studio_api.QUEUE, studio_api.ensure_runner = saved
 
 
 def check_render(report: Report, preset: dict, n_segments: int, tmp: Path):
@@ -2361,18 +2559,20 @@ def check_studio_failures(report: Report, tmp: Path):
     from server import TOKEN, app
 
     key = {"X-Studio-Token": TOKEN}
-    inbox, work, queue = tmp / "studio_in", tmp / "studio_work", tmp / "studio_queue"
-    for folder in (inbox, work / "X", queue):
+    work, queue = tmp / "studio_work", tmp / "studio_queue"
+    for folder in (work / "X", queue):
         folder.mkdir(parents=True)
+    stack = contextlib.ExitStack()          # временные проекты снимаются в finally ниже
+    inbox = stack.enter_context(temp_projects(tmp / "studio_projects", "main"))["main"].input
     subprocess.run([ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=64x64:r=30:d=1",
                     "-c:v", "libx264", str(inbox / "X.mp4")], check=True)
     (work / "X" / "brief.json").write_text("{ сломано", encoding="utf-8")
     import jobqueue
     jobqueue.write_job("20-prep-X", [["python", "-c", "pass"]], queue=queue)   # как кладёт мозг
     woke = []
-    saved = (studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
+    saved = (studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
              studio_api.ensure_runner, studio_api.runner_alive)
-    studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE = inbox, work, work, queue
+    studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE = work, work, queue
     studio_api.ensure_runner, studio_api.runner_alive = (lambda: woke.append(1) or True), (lambda: False)
     try:
         try:
@@ -2386,8 +2586,9 @@ def check_studio_failures(report: Report, tmp: Path):
         except styles.StyleError:
             rejected = True
     finally:
-        (studio_api.INPUT_DIR, studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
+        (studio_api.WORK_DIR, styles.WORK_DIR, studio_api.QUEUE,
          studio_api.ensure_runner, studio_api.runner_alive) = saved
+        stack.close()
     report.check(marked and rejected, "битый бриф помечает свой ролик, а не роняет студию; кривой не сохраняется",
                  why if not marked else ("кривой бриф отвергнут" if rejected else "кривой бриф сохранился"))
     report.check(bool(woke), "задачу, которую мозг положил в очередь, студия запускает сама, без кнопки")
@@ -2445,6 +2646,16 @@ def check_studio_failures(report: Report, tmp: Path):
 
     said = brain.explain_error("Claude usage limit reached · /upgrade to increase your usage limit")
     report.check(said.startswith("Лимит"), "лимит подписки Claude не выдаётся за «Codex устарел»", said[:50])
+    said = brain.explain_error("You've hit your session limit · resets 6:20am (Europe/Moscow)")
+    report.check(said.startswith("Лимит"), "лимит сессии Claude — «Лимит», пачка останавливается, а не бежит по роликам",
+                 said[:50])
+
+    # 14.10.2026: результат с is_error пачка читала как обычный ответ и крутила ходы впустую
+    failed = brain.parse_line("claude", json.dumps({"type": "result", "is_error": True,
+                                                     "result": "Failed to authenticate. API Error: 403 Request not allowed"}))
+    errors = [e["text"] for e in failed if e["type"] == "error"]
+    report.check(bool(errors) and "не авторизован" in errors[0],
+                 "ошибка входа мозга (403) — громкая ошибка, пачка останавливается", (errors or ["молча"])[0][:60])
 
 
 def main():
@@ -2497,6 +2708,7 @@ def main():
         section(report, check_cutout_video, tmp)
         section(report, check_portable, tmp)
         section(report, check_approve, tmp)
+        section(report, check_projects, tmp)
         section(report, check_batch, tmp)
         section(report, check_viz, tmp)
         section(report, check_render, preset, 200 if args.long else 60, tmp)

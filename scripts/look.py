@@ -12,7 +12,7 @@
 
 Подобрать значение на своём кадре, без экспорта откуда-либо:
 
-  .venv/bin/python scripts/look.py input/IMG_3279.MOV --at 12 --at 40
+  .venv/bin/python scripts/look.py projects/antishkola/input/IMG_3279.MOV --at 12 --at 40
 """
 import argparse
 import subprocess

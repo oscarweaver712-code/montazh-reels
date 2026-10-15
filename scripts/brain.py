@@ -55,9 +55,12 @@ STUDIO_PROMPT = f"""Тебя вызывают из локальной студи
 — Отвечай по-русски, коротко и по делу. В конце: что сделано, где файл, как откатить.
 — Питон проекта здесь: {PY}.
 — Тяжёлое (transcribe, prep, track, matte, reframe, render_reel, reels.py) не запускай сам:
-  клади в очередь — {PY} scripts/jobqueue.py add <NN>-<имя> "python scripts/prep.py input/X.MOV"
+  клади в очередь — {PY} scripts/jobqueue.py add <NN>-<имя> "python scripts/prep.py projects/<проект>/input/X.MOV"
   ["следующий шаг" …] (порядок по номеру: 05-render, 10-transcribe, 20-prep, 30-fast).
   Очередь выполняет студия сама, по одной. Ход: work/_queue/logs/, готовое — done/, упавшее — failed/.
+— Ролик принадлежит проекту (projects/<проект>/: input/, output/, rules.md, project.json, references/);
+  чей он — {PY} scripts/projects.py where <имя>. Правила проекта (rules.md) важнее стиля, и правила
+  одного проекта в другой не переносятся. Новый проект — {PY} scripts/projects.py new <имя>.
 — Бриф ролика (стиль, формат, цели, варианты) — work/<имя>/brief.json, текст для тебя:
   {PY} scripts/styles.py --brief <имя>. Каталог стилей: presets/styles/.
 — Вопрос задавай, только если без ответа дальше нельзя; иначе выбирай разумно и пиши, что выбрал.
@@ -243,6 +246,10 @@ def parse_line(engine: str, line: str) -> list:
             out.append({"type": "result", "ok": not ev.get("is_error"), "text": ev.get("result") or "",
                         "session": ev.get("session_id"), "cost": ev.get("total_cost_usd"),
                         "denied": denials})
+            if ev.get("is_error"):
+                # 14.10.2026: «Failed to authenticate. API Error: 403» приходил только текстом результата —
+                # пачка не видела ошибки и прожгла на ней оставшиеся ходы ролика
+                out.append({"type": "error", "text": explain_error(ev.get("result") or "агент закончил ход ошибкой")})
         return out
 
     if engine == "codex":
@@ -290,11 +297,13 @@ def explain_error(message: str) -> str:
         pass
     low = message.lower()
     # лимит — первым: у Claude в нём есть «/upgrade», и раньше это читалось как «Codex устарел»
-    if "rate limit" in low or "usage limit" in low or "429" in low:
+    # 15.10.2026: «You've hit your session limit · resets 6:20am» не узнавался — пачка пробежала по всем роликам
+    if "rate limit" in low or "usage limit" in low or "session limit" in low or "429" in low:
         return f"Лимит подписки исчерпан — подожди или переключи мозг. ({message})"
     if "newer version of codex" in low or ("codex" in low and "upgrade" in low):
         return f"Codex устарел для выбранной модели — выполни в терминале `codex update`. ({message})"
-    if "not logged in" in low or "login" in low or "unauthorized" in low or "401" in low:
+    if ("not logged in" in low or "login" in low or "unauthorized" in low or "401" in low
+            or "failed to authenticate" in low or "403" in low):
         return f"Мозг не авторизован — открой терминал и войди (claude → /login или codex login). ({message})"
     return message
 

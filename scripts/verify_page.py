@@ -43,6 +43,7 @@ from common import ROOT, WORK_DIR
 STUDIO = ROOT / "studio"
 CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell"
 FPS = 30
+SPLICE_JUMP = 0.1    # на склейке крупность меняется хотя бы на столько (1.2 → 1.36 у Take.splice_punches)
 HOLD_MAX = 5.0      # с: дольше графика без изменений — динамика проседает (Валера 13.10, IMG_1803)
 
 # Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
@@ -85,7 +86,12 @@ CHECK_JS = r"""
       for (const child of timeline.getChildren(false, true, true)) {
         const start = offset + child.startTime();
         if (typeof child.getChildren === "function") { walk(child, start); continue; }
-        if (!touches(child.vars)) { idle.push(child); continue; }
+        if (!touches(child.vars)) {
+          // смаз кадра на склейке (splice) нужен проверке склеек — его не глушим
+          const camBlur = child.vars && "filter" in child.vars && child.targets().some((el) => el.classList && el.classList.contains("cam"));
+          if (!camBlur) idle.push(child);
+          continue;
+        }
         if (child.timeline) { walk(child.timeline, start); continue; }     // stagger, keyframes
         tweens++;
         const v = child.vars;
@@ -200,7 +206,12 @@ CHECK_JS = r"""
         }
         if (nodes.length) {
           const safe = el.closest("[data-safe]");
-          items.push({ el, nodes, allowed: safe ? safe.getAttribute("data-safe") : null });
+          // окно с overflow: hidden (бегущая лента букв) прячет то, что за его краем, — там букв не видно
+          const clips = [];
+          for (let p = nodes[0].parentElement; p && p.id !== "root" && p !== document.body; p = p.parentElement) {
+            if (getComputedStyle(p).overflow !== "visible") clips.push(p);
+          }
+          items.push({ el, nodes, clips, allowed: safe ? safe.getAttribute("data-safe") : null });
         }
       });
       const visible = (el) => {
@@ -221,11 +232,16 @@ CHECK_JS = r"""
           // по высоте строка не выше рамки элемента: у крупного шрифта с плотной строкой (Oswald,
           // line-height 0.92) «область шрифта» выше заглавных — пустая полоса, а не буквы (IMG_1803 v4)
           const box = it.el.getBoundingClientRect();
+          const cuts = it.clips.map((c) => c.getBoundingClientRect());
           for (const node of it.nodes) {
             range.selectNodeContents(node);
             for (const raw of range.getClientRects()) {
               const r = { left: raw.left, right: raw.right,
                           top: Math.max(raw.top, box.top), bottom: Math.min(raw.bottom, box.bottom) };
+              for (const c of cuts) {
+                r.left = Math.max(r.left, c.left); r.right = Math.min(r.right, c.right);
+                r.top = Math.max(r.top, c.top); r.bottom = Math.min(r.bottom, c.bottom);
+              }
               if (r.right - r.left < 2 || r.bottom - r.top < 2) continue;
               for (const z of zones) {
                 const [x0, y0, x1, y1] = z.rect;
@@ -321,6 +337,88 @@ CHECK_JS = r"""
       for (const rec of open.values()) if (rec.count >= 2) res.faceHits.push(rec);
     }
 
+    // ---- текст вылез (Валера 15.10.2026: «в конце фраза "Больше математики" — текст за рамки вылетал»):
+    // «МАТЕМАТИКИ» шрифтом 104 px шире плашки CTA (590 px минус поля) и торчал за её правый край. Меряются
+    // строки текста (Range) против рамки ближайшего предка с подложкой или обводкой — плашки, стикера,
+    // штампа — и против кадра. Два замера подряд глубже 4 px; вылет на время влёта не в счёт.
+    // data-spill="причина" на элементе или предке — осознанно за краем (бегущая строка).
+    res.spills = [];
+    {
+      const stage = document.getElementById("root").getBoundingClientRect();
+      const boxed = (n) => {
+        const cs = getComputedStyle(n);
+        const bg = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor);
+        const alpha = bg ? (bg[1].split(",").length > 3 ? parseFloat(bg[1].split(",")[3]) : 1) : 0;
+        return alpha > 0.15 || parseFloat(cs.borderLeftWidth) > 0 || cs.backgroundImage !== "none";
+      };
+      const shownText = (n) => {
+        for (let p = n; p && p !== document.body; p = p.parentElement) {
+          const cs = getComputedStyle(p);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.5) return false;
+        }
+        return true;
+      };
+      const items = [];
+      document.querySelectorAll("#front .g, #behind .g, .cap").forEach((el) => {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const n = walker.currentNode;
+          if (!n.textContent.trim() || n.parentElement.closest(".katex-mathml")) continue;
+          if (n.parentElement.closest(".g, .cap") !== el) continue;
+          let box = null;
+          for (let p = n.parentElement; p; p = p.parentElement) {
+            if (boxed(p)) { box = p; break; }
+            if (p === el) break;
+          }
+          // окно с overflow: hidden (бегущая лента букв) прячет то, что за краем, — это не вылет
+          const clips = [];
+          for (let p = n.parentElement; p && p !== document.body; p = p.parentElement) {
+            if (p.id === "root") break;
+            if (getComputedStyle(p).overflow !== "visible") clips.push(p);
+          }
+          items.push({ el, n, box, clips });
+        }
+      });
+      const range = document.createRange();
+      const open = new Map();
+      for (let t = 0; t <= duration + 1e-6; t += 0.25) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        const seen = new Set();
+        for (const it of items) {
+          if (!shownText(it.n.parentElement)) continue;
+          range.selectNodeContents(it.n);
+          const b = it.box ? it.box.getBoundingClientRect() : null;
+          let depth = 0, where = "";
+          const cuts = it.clips.map((c) => c.getBoundingClientRect());
+          for (const raw of range.getClientRects()) {
+            const r = { left: raw.left, right: raw.right, top: raw.top, bottom: raw.bottom };
+            for (const c of cuts) {
+              r.left = Math.max(r.left, c.left); r.right = Math.min(r.right, c.right);
+              r.top = Math.max(r.top, c.top); r.bottom = Math.min(r.bottom, c.bottom);
+            }
+            if (r.right - r.left < 2 || r.bottom - r.top < 2) continue;
+            const off = Math.max(stage.left - r.left, r.right - stage.right, stage.top - r.top, r.bottom - stage.bottom);
+            if (off > depth) { depth = off; where = "кадра"; }
+            if (b) {
+              const out = Math.max(b.left - r.left, r.right - b.right);
+              if (out > depth) { depth = out; where = "плашки"; }
+            }
+          }
+          if (depth <= 4) continue;
+          // data-spill="причина" — осознанно за кадром (бегущая строка цифр уезжает за край)
+          if (it.n.parentElement.closest("[data-spill]")) continue;
+          const key = label(it.el) + "|" + it.n.textContent.trim().slice(0, 30);
+          seen.add(key);
+          const rec = open.get(key);
+          if (rec) { rec.last = t; rec.count++; rec.depth = Math.max(rec.depth, Math.round(depth)); }
+          else open.set(key, { el: label(it.el), text: it.n.textContent.trim().slice(0, 40), where, from: t, last: t,
+                               count: 1, depth: Math.round(depth) });
+        }
+        for (const [key, rec] of [...open]) if (!seen.has(key)) { if (rec.count >= 2) res.spills.push(rec); open.delete(key); }
+      }
+      for (const rec of open.values()) if (rec.count >= 2) res.spills.push(rec);
+    }
+
     // ---- динамика (Валера 13.10.2026: «плашка про миллион очень долго висела, мы теряли в динамике» —
     // таблица mille/-one в IMG_1803 v5 висела 13 с, из них 8 с без единого изменения). Графика поверх
     // и за человеком (#front .g, #behind .g; фоны и вспышка — нет) не стоит без изменений дольше
@@ -387,6 +485,34 @@ CHECK_JS = r"""
         before = now;
       }
       for (const [el, rec] of runs) close(el, rec);
+    }
+
+    // ---- склейки (Валера 15.10.2026: «склейки не спрятаны за переходами вспышками»): на каждой склейке
+    // дубля (C.splices) — переход: вспышка или смаз кадра в кадрах реза (kit: splice(t)); и ни одна
+    // надпись или фон не висит через рез — уходит до него, новое влетает на нём. Висящее «СЕКРЕТНО»
+    // поверх реза только подчёркивало, что банка в руке перескочила. data-splice="причина" — осознанно.
+    res.splices = [];
+    const splices = C.splices || [];
+    if (splices.length) {
+      const flashEl = document.getElementById("flash");
+      const camEl = document.querySelector(".cam");
+      const alpha = (el) => { let a = 1; for (let n = el; n && n !== document.body; n = n.parentElement) {
+        const cs = getComputedStyle(n); if (cs.display === "none" || cs.visibility === "hidden") return 0; a *= parseFloat(cs.opacity); } return a; };
+      const items = [...document.querySelectorAll(".g, #plate")].filter((el) => el.id !== "flash" && !el.closest("[data-splice]")
+        && !(el.parentElement && el.parentElement.closest(".g")));
+      for (const s of splices) {
+        let peakFlash = 0, peakBlur = 0;
+        for (let k = Math.round(s * fps) - 1; k <= Math.round(s * fps) + 2; k++) {
+          tl.totalTime(0, false); tl.totalTime(k / fps, false);
+          if (flashEl) peakFlash = Math.max(peakFlash, parseFloat(getComputedStyle(flashEl).opacity));
+          if (camEl) peakBlur = Math.max(peakBlur, blurOf(camEl));
+        }
+        tl.totalTime(0, false); tl.totalTime(Math.max(0, s - 0.1), false);
+        const pre = new Set(items.filter((el) => alpha(el) >= 0.15));
+        tl.totalTime(0, false); tl.totalTime(s + 0.1, false);
+        const across = items.filter((el) => pre.has(el) && alpha(el) >= 0.15).map(label);
+        res.splices.push({ t: s, flash: peakFlash, blur: peakBlur, across });
+      }
     }
 
     document.querySelectorAll(".g").forEach((el) => {
@@ -507,7 +633,7 @@ def face_track(project: Path, step: float = 0.25, margin: float = 12.0) -> list:
 
 
 def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: list | None = None,
-                 faces: list | None = None) -> dict:
+                 faces: list | None = None, splices: list | None = None) -> dict:
     """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS).
 
     zones — серые зоны площадок [(название, (x0, y0, x1, y1))]: текст в них попадёт в res["grey"].
@@ -519,7 +645,7 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     config = json.dumps({"fps": fps, "errors": [], "warnings": [], "zoneStep": 0.25, "zoneDepth": 8,
                          "holdMax": HOLD_MAX,
                          "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])],
-                         "faces": [list(f) for f in (faces or [])]},
+                         "faces": [list(f) for f in (faces or [])], "splices": list(splices or [])},
                         ensure_ascii=False)
     head = (f'<head>\n    <base href="{page_path.parent.as_uri()}/">\n'
             f'    <script>window.__HF_CHECK = {config};{EARLY_JS}    </script>')
@@ -546,6 +672,37 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     return json.loads(html.unescape(found.group(1)))
 
 
+def take_splices(project: Path) -> list:
+    """Секунды склеек на шкале дубля (по вырезам drop в aroll.json); нет дубля — пусто."""
+    meta = take_dir(project) / "aroll.json"
+    if not meta.exists():
+        return []
+    acc, out = 0.0, []
+    for s0, s1 in json.loads(meta.read_text(encoding="utf-8")).get("segments", [])[:-1]:
+        acc += s1 - s0
+        out.append(round(acc, 3))
+    return out
+
+
+def camera_jumps(project: Path, splices: list) -> dict:
+    """{склейка: |зум после − зум до|} по camera.js — сменился ли план на резе."""
+    path = project / "camera.js"
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    found = re.search(r"window\.CAMERA = (\[.*\]);", text, re.S)
+    fps_m = re.search(r"window\.CAMERA_FPS = ([\d.]+)", text)
+    if not found:
+        return {}
+    cam, cfps = json.loads(found.group(1)), float(fps_m.group(1)) if fps_m else 30.0
+    out = {}
+    for t in splices:
+        k = int(round(t * cfps))
+        if 0 < k < len(cam):
+            out[t] = abs(cam[k][2] - cam[k - 1][2])
+    return out
+
+
 def explain(item: dict) -> str:
     """«субтитр «мы»: висит 48.87–96.07 с — уход в 48.85 раньше конца появления (48.90)»."""
     text = f"{item['el']}: {item['got']:.2f} вместо {item['want']:.2f} на {item['from']:.2f}–{item['to']:.2f} с"
@@ -555,6 +712,25 @@ def explain(item: dict) -> str:
         text += (f" — {b['kind']} в {b['start']:.2f} кончается раньше, чем {a['kind']} "
                  f"{a['start']:.2f}–{a['end']:.2f}")
     return text
+
+
+def cta_leak(name: str, page_text: str) -> str | None:
+    """Плашка «смотри у меня в профиле» в ролике проекта без CTA: текст провала, "" — чисто, None — не мерить.
+
+    Плашка — про профиль Валеры; в ролике заказчика это утечка чужого проекта (14.10.2026).
+    Страницы-образцы и проверки живут вне проектов — для них None.
+    """
+    import projects
+    try:
+        owner = projects.of(name.split("--")[0])
+    except projects.ProjectError:
+        return None
+    if owner.config["cta"]:
+        return None
+    if 'id="cta"' in page_text:
+        return (f"плашка «смотри у меня в профиле» в ролике проекта {owner.name}, а он без CTA "
+                f"(project.json) — build_page(..., cta=False)")
+    return ""
 
 
 def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
@@ -583,6 +759,9 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     page_text = page_path.read_text(encoding="utf-8")
     gone = missing_assets(project, page_text)
     check(not gone, "все картинки, звуки и шрифты на месте", gone)
+    leak = cta_leak(project.name, page_text)
+    if leak is not None:
+        check(not leak, leak or "плашки «смотри у меня в профиле» нет: проект без CTA")
     if SFX_NORM_MARK in page_text:
         sounds = sound_problems(page_text)
         check(not sounds, "звуки: не громче нормы, без убранных и без одинаковых подряд", sounds)
@@ -593,10 +772,11 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         print("  · звуки по правилам до 12.10.2026 — при правке ролика пересобрать page.py")
 
     started = time.time()
+    splices = take_splices(project)
     import formats
     zones = formats.grey_zones(stage_format(page_text)) if stage_format(page_text) else []
     faces = face_track(project)
-    res = run_timeline(page_path, fps, zones=zones, faces=faces)
+    res = run_timeline(page_path, fps, zones=zones, faces=faces, splices=splices)
     if not res.get("ok"):
         check(False, "таймлайн разобран", [res.get("crash", "?")])
         return failed
@@ -620,6 +800,12 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         check(not soft, "фон за спиной не стоит размытым, пока виден (размытие — только в наплыве)", soft)
     elif soft:
         print(f"  · размытый фон на показе: {len(soft)} (при правке ролика — убрать blur с конечного состояния)")
+    spills = [f"{s['el']} «{s['text']}» вылезает за край {s['where']} на {s['depth']} px, {s['from']:.2f}–{s['last'] + 0.25:.2f} с"
+              for s in res.get("spills", [])]
+    if strict:
+        check(not spills, "текст не вылезает за край своей плашки и за кадр", spills)
+    elif spills:
+        print(f"  · текст вылезает за плашку или кадр: {len(spills)} (при правке ролика — уменьшить шрифт или расширить)")
     holds = [f"{h['el']} висит без изменений {h['hold']:.1f} с ({h['from']:.2f}–{h['to']:.2f} с) — оживи изнутри "
              f"(строка, подсветка), раздели или убери раньше" for h in res.get("holds", [])]
     if strict:
@@ -637,6 +823,24 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
             print(f"  · текст в серых зонах площадок: {len(grey)} (при правке ролика — поправить или пометить data-safe)")
         for g in res.get("greyAllowed", []):
             print(f"  · осознанный заезд: {g['el']} «{g['text']}» — {g['zone']}: {g['allowed']}")
+    if splices:
+        jumps = camera_jumps(project, splices)
+        bad = []
+        for sp in res.get("splices", []):
+            t = sp["t"]
+            if sp["flash"] < 0.3 and sp["blur"] < 4:
+                bad.append(f"склейка {t:.2f} с: ни вспышки, ни смаза — splice({t:.2f}) в beats")
+            jump = jumps.get(t)
+            if jump is not None and jump < SPLICE_JUMP:
+                bad.append(f"склейка {t:.2f} с: крупность меняется на {jump:.2f} (нужно ≥ {SPLICE_JUMP}) — "
+                           f"наезд Take.splice_punches() в director.json")
+            if sp["across"]:
+                bad.append(f"склейка {t:.2f} с: через рез висит {', '.join(sp['across'][:4])} — уход до склейки, "
+                           f"новое — на ней")
+        if strict:
+            check(not bad, "склейки спрятаны: переход, смена крупности, ничего не висит через рез", bad)
+        elif bad:
+            print(f"  · склейки без перехода: {len(bad)} (при правке ролика — splice() и Take.splice_punches)")
     if res["never"]:
         print(f"  · ни разу не появляются: {', '.join(res['never'][:12])}")
     print(f"  · {res['elements']} элементов, {res['tweens']} твинов прозрачности, {res['frames']} кадров "

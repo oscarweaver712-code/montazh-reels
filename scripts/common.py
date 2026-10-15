@@ -12,8 +12,8 @@ import host  # noqa: E402
 host.utf8_console()          # на Windows вывод в лог очереди иначе падал бы на «✓»
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUT_DIR = ROOT / "input"
-OUTPUT_DIR = ROOT / "output"
+# Исходники и готовые ролики — у каждого проекта свои: projects/<имя>/input и output (projects.py).
+# Общих input/ и output/ больше нет (14.10.2026).
 WORK_DIR = ROOT / "work"
 PRESET_DIR = ROOT / "presets"
 FONT_DIR = PRESET_DIR / "fonts"

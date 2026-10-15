@@ -137,12 +137,19 @@ def run_transcribe(video: Path, language: str = "ru", force: bool = False,
         check_source(video, cache)
         print("  → транскрипт уже есть, использую готовый (--force чтобы пересчитать)")
         with open(words_json, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        was = data.get("language", "ru")            # транскрипты до 13.10 — все русские
+        if was != language:
+            sys.exit(f"✗ Речь {video.name} распознана как «{was}», а просят «{language}». Субтитры и рез "
+                     f"по словам чужого языка выйдут мусором. Распознай заново: .venv/bin/python "
+                     f"scripts/transcribe.py {video} --language {language} --force")
+        return data
 
     wav = cache / f"{stem}.16k.wav"
     try:
         extract_audio(video, wav)
         data = transcribe(wav, language)
+        data["language"] = language
     finally:
         wav.unlink(missing_ok=True)          # дорожка для распознавания — временная, даже при сбое
 
@@ -185,5 +192,6 @@ if __name__ == "__main__":
         check_engine()
         sys.exit(0)
     if len(sys.argv) < 2:
-        sys.exit("Использование: transcribe.py <видеофайл> [--force] | --check")
-    run_transcribe(Path(sys.argv[1]).resolve(), force="--force" in sys.argv)
+        sys.exit("Использование: transcribe.py <видеофайл> [--language en] [--force] | --check")
+    lang = sys.argv[sys.argv.index("--language") + 1] if "--language" in sys.argv else "ru"
+    run_transcribe(Path(sys.argv[1]).resolve(), language=lang, force="--force" in sys.argv)

@@ -1,6 +1,7 @@
 # Монтаж Reels — автопайплайн
 
-Кидаешь сырое видео в `input/` и забираешь готовый ролик из `output/`: вертикаль для Reels,
+Кидаешь сырое видео в `projects/<проект>/input/` и забираешь готовый ролик из `projects/<проект>/output/`:
+вертикаль для Reels,
 Shorts и TikTok или горизонталь для YouTube. Всё считается локально на этой машине, видео
 никуда не уходит.
 
@@ -46,7 +47,7 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 1. Открой папку проекта в терминале и запусти `claude` или `codex`. Студия откроется в
    браузере сама (http://127.0.0.1:8765). Без агента её поднимает двойной клик по
    `2 Монтаж — Mac.command` или `2 Монтаж — Windows.bat`.
-2. Перетащи видео в студию — оно ляжет в `input/`.
+2. Выбери проект и перетащи видео в студию — оно ляжет в `projects/<проект>/input/`.
 3. Выбери ролик и задай, какой нужен результат: цели (охват, удержание, доверие, сохранения,
    продажи), формат (9:16, 16:9, 1:1, 4:5) и стиль. Если нужно сравнение, добавь варианты для A/B.
 4. Нажми **«Смонтировать с мозгом»**: мозг смонтирует по брифу, тяжёлые шаги пройдут через
@@ -58,7 +59,7 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 
 **Один ролик — одна сессия мозга.** У разговора с агентом конечный контекст: если монтировать
 десять роликов в одной сессии, каждый следующий выходит хуже. Поэтому студия держит разговоры
-каждого ролика отдельно, а пачку («Пачкой: новые из input/» в студии или
+каждого ролика отдельно, а пачку («Пачкой: новые» в студии или
 `.venv/bin/python scripts/batch.py` из терминала) ведёт по одному ролику, и у каждого — новая
 сессия. Агент в терминале на «смонтируй новые» сам запустит пачку.
 
@@ -103,10 +104,10 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 
 ```bash
 .venv/bin/python scripts/styles.py --goals trust=5,sales=4 --bold 0.7 --format 16:9   # подбор под цель
-.venv/bin/python scripts/reels.py input/urok.mp4 --style video-essay --format 16:9     # быстрый монтаж в стиле
+.venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4 --style video-essay --format 16:9     # быстрый монтаж в стиле
 .venv/bin/python scripts/render_reel.py IMG_3317 --variant hormozi                       # вариант для A/B
 .venv/bin/python scripts/analyze_reference.py work/ref.mp4      # «как у этого ролика»: темп, текст, цвет
-.venv/bin/python scripts/timeline_view.py output/IMG_3317_v1.mp4 10 16   # кадры + звук + слова картинкой
+.venv/bin/python scripts/timeline_view.py projects/antishkola/output/IMG_3317_v1.mp4 10 16   # кадры + звук + слова картинкой
 ```
 
 Исходник может быть любых пропорций: под другой формат кадр перекадрируется по лицу
@@ -114,19 +115,19 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 
 ## Режиссёрский монтаж
 
-Скажи Claude Code «смонтируй новые из input/» — дальше по скиллу `reels`
+Скажи Claude Code «смонтируй новые» — дальше по скиллу `reels`
 (`.claude/skills/reels/SKILL.md`, там же все ловушки). Шаги и где что лежит:
 
 | Шаг | Команда | Что получается |
 |---|---|---|
-| Распознавание | `scripts/transcribe.py input/X.MOV` | `work/X.txt`, слова с таймингами |
-| Чистовой дубль | `scripts/prep.py input/X.MOV` | `work/X/aroll.mp4` — подрезка по тишине, цвет, голос (решения в `work/X/edit.json`) |
+| Распознавание | `scripts/transcribe.py projects/antishkola/input/X.MOV` | `work/X.txt`, слова с таймингами |
+| Чистовой дубль | `scripts/prep.py projects/antishkola/input/X.MOV` | `work/X/aroll.mp4` — подрезка по тишине, цвет, голос (решения в `work/X/edit.json`) |
 | Камера и маска | `scripts/track.py`, `scripts/matte.py --cutout` | слежение за лицом, человек без фона для текста «за спиной» |
 | План | `scripts/plan.py X`, потом `--check` | `work/X/plan.md` — разбор исходника и раскадровка: что и чем в каждом месте |
 | Доска (по месту) | `scripts/manim_clip.py X work/X/manim/сцена.py` | клип ManimGX: формула преобразуется, график строится |
 | Графика | `work/X/page.py` | `studio/X/index.html` — удары по словам, карточки, субтитры |
 | Проверка страницы | `scripts/verify_page.py X` | за 2 с: ничего не залипнет, лицо не закрыто, плашки не висят, ассеты на месте |
-| Готовый ролик | `scripts/render_reel.py X` | `output/X_vN.mp4` — рендер, громкость −14 LUFS, проверка файла |
+| Готовый ролик | `scripts/render_reel.py X` | `projects/<проект>/output/X_vN.mp4` — рендер, громкость −14 LUFS, проверка файла |
 
 Пачка роликов идёт через очередь `scripts/jobqueue.py` (`work/_queue/`): строго один тяжёлый
 процесс за раз, чтобы ноутбуком можно было пользоваться, пока считается.
@@ -144,9 +145,9 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 Если удобнее из терминала:
 
 ```bash
-.venv/bin/python scripts/reels.py                      # всё из input/
-.venv/bin/python scripts/reels.py input/urok.mp4       # один файл
-.venv/bin/python scripts/reels.py input/urok.mp4 --hook "Так делают 90% учеников"
+.venv/bin/python scripts/reels.py                      # всё из input/ антишколы (--project <имя> — другого)
+.venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4       # один файл
+.venv/bin/python scripts/reels.py projects/antishkola/input/urok.mp4 --hook "Так делают 90% учеников"
 ```
 
 Или просто скажи Claude Code: «смонтируй последнее видео» — подхватится скилл `reels`.
@@ -205,8 +206,10 @@ winget (он есть в Windows 11 и в «App Installer» из Microsoft Store
 ## Папки
 
 ```
-input/    — сюда сырые видео
-output/   — отсюда готовые ролики (варианты A/B: <имя>--<стиль>_vN.mp4)
+projects/ — проекты: у каждого свои input/ (сырые видео), output/ (готовые ролики, варианты A/B:
+            <имя>--<стиль>_vN.mp4), rules.md (правила автора или заказчика), project.json (язык,
+            CTA, стиль по умолчанию) и references/. antishkola — ролики Валеры, по умолчанию;
+            новый заказ — `scripts/projects.py new <имя>`, и его правила с антишколой не смешиваются
 work/     — транскрипты, дубли, решения (brief.json, edit.json, plan.md, director.json, page.py), очередь
 studio/   — проекты HyperFrames: страница графики и её ассеты (пересобираются из work/)
 presets/  — стили монтажа (styles/), пресет быстрого конвейера, шрифты, звуки

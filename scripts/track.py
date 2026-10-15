@@ -45,7 +45,14 @@ DEFAULTS = {
     "dead_zone_y": 0.025,
     "follow_sec": 0.45,    # плавность доезда камеры
     "smooth_sec": 0.12,    # сглаживание дрожи самого детектора
+    "push": 0.0,           # медленный наезд через мысль: прирост зума в секунду (0 — нет)
 }
+
+# Наезд режиссёра ниже этого над базой глазом не виден. 15.10.2026 база проекта стала 1.2, а наезды
+# в страницах писались тем же 1.2 — камера брала максимум из двух, и в семи роликах пачки не было
+# ни одного акцента и ни одного наезда на склейке (Валера: «склейки не спрятаны»). Теперь это отказ.
+MIN_PUNCH = 0.04
+PUSH_CAP = 0.06        # медленный наезд набирает не больше этого и сбрасывается на пике акцента
 
 
 # ---------------------------------------------------------------- поиск лиц
@@ -169,24 +176,42 @@ def coverage_violations(camera: list, width: int, height: int, eps: float = 1e-6
     return bad
 
 
-def zoom_plan(n: int, fps: float, base: float, punches: list, offset: float = 0.0) -> np.ndarray:
+def zoom_plan(n: int, fps: float, base: float, punches: list, offset: float = 0.0, push: float = 0.0) -> np.ndarray:
     """Базовое приближение плюс акценты режиссёра: [начало, конец, зум, въезд, выезд].
 
     Въезд 0 — мгновенный скачок крупности (так прячут склейку), выезд по умолчанию равен
     въезду. offset — с какой секунды ролика начинается этот кусок (для резки по склейкам).
+    push — медленный наезд через мысль (зум в секунду): база ползёт вверх до PUSH_CAP и
+    сбрасывается на пике следующего акцента — там зум задан самим акцентом, и сброса не видно.
+    Наезд не выше базы хотя бы на MIN_PUNCH — громкая ошибка: он молча ничего бы не делал.
     """
-    zoom = np.full(n, float(base))
+    parsed = []
     for punch in punches or []:
         start, end, level = float(punch[0]) - offset, float(punch[1]) - offset, float(punch[2])
         ease_in = float(punch[3]) if len(punch) > 3 else 0.35
         ease_out = float(punch[4]) if len(punch) > 4 else ease_in
+        if level < base + MIN_PUNCH - 1e-9:
+            raise ValueError(
+                f"Наезд {start + offset:.2f}–{end + offset:.2f} с до {level:g} при базе камеры {base:g} не виден: "
+                f"нужен зум не ниже {base + MIN_PUNCH:.2f} (уровень стиля — Take.punch, склейка — Take.splice_punches)")
+        parsed.append((start, end, level, ease_in, ease_out))
+    t = np.arange(n) / fps
+    floor = np.full(n, float(base))
+    if push > 0:
+        resets = sorted(s + e for s, _, _, e, _ in parsed if 0 <= s + e < n / fps)
+        last = np.zeros(n)
+        for r in resets:
+            last[t >= r] = r
+        floor += np.minimum(PUSH_CAP, push * (t - last))
+    zoom = floor.copy()
+    for start, end, level, ease_in, ease_out in parsed:
         for i in range(max(0, int(round(start * fps))), min(n, int(np.ceil(end * fps)))):
-            t = i / fps
-            rise = min(1.0, (t - start) / ease_in) if ease_in > 0 else 1.0
-            fall = min(1.0, (end - t) / ease_out) if ease_out > 0 else 1.0
+            ti = i / fps
+            rise = min(1.0, (ti - start) / ease_in) if ease_in > 0 else 1.0
+            fall = min(1.0, (end - ti) / ease_out) if ease_out > 0 else 1.0
             k = max(0.0, min(rise, fall))
             k = k * k * (3 - 2 * k)                       # плавный вход и выход
-            zoom[i] = max(zoom[i], base + (level - base) * k)
+            zoom[i] = max(zoom[i], floor[i] + (level - floor[i]) * k)
     return zoom
 
 
@@ -253,7 +278,7 @@ def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float) ->
     else:
         fy = 0.38
 
-    zoom = zoom_plan(n, fps, cfg["base_zoom"], punches, offset)
+    zoom = zoom_plan(n, fps, cfg["base_zoom"], punches, offset, push=cfg.get("push", 0.0))
 
     # Сколько надо приблизить, чтобы лицо встало в цель и окно не вылезло. Лицо стоит
     # на доле f окна шириной S/z: левый край окна = лицо − f·S/z ≥ 0, правый ≤ размер.

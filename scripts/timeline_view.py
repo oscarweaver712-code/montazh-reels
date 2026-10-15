@@ -10,7 +10,7 @@
 за раз, память не растёт: кадры берутся по одному seek'у.
 
   .venv/bin/python scripts/timeline_view.py work/IMG_3279/aroll.mp4 10 16
-  .venv/bin/python scripts/timeline_view.py output/IMG_3279_v1.mp4 41.5 44.5 --frames 10
+  .venv/bin/python scripts/timeline_view.py projects/antishkola/output/IMG_3279_v1.mp4 41.5 44.5 --frames 10
   → work/_views/IMG_3279_aroll_10.00-16.00.png (путь печатается последней строкой)
 """
 import argparse

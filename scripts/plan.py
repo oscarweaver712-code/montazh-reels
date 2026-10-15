@@ -166,8 +166,56 @@ def analysis(stem: str) -> list:
     return lines
 
 
+def decisions(stem: str, fmt: str) -> list:
+    """Карта решений: что видно в исходнике и в проекте → что из этого следует для монтажа.
+
+    Речь разбирает analysis(); здесь — то, что решается до раскадровки: чьи правила, какой язык,
+    нужна ли финальная плашка, совпадает ли кадр с форматом, хватит ли записи на один ролик и
+    видно ли лицо (14.10.2026, «на вход видео — и чётко понятно, что с ним делать»).
+    """
+    import projects
+    from common import probe
+
+    lines = []
+    try:
+        project, source = projects.of(stem), projects.source(stem)
+    except projects.ProjectError as e:
+        return [f"- проект: {e} → сначала положи исходник в projects/<проект>/input/"]
+    cfg = project.config
+    lines.append(f"- проект {project.name} («{project.title}») → правила projects/{project.name}/rules.md "
+                 f"важнее стиля: прочитай до раскадровки" + ("" if project.rules.exists() else " (rules.md нет — спроси автора)"))
+    if cfg["language"] != "ru":
+        lines.append(f"- речь на «{cfg['language']}» → субтитры и надписи на этом языке; русские привычки текста "
+                     f"(ё, «ёлочки», шутки серии) не переносить")
+    lines.append("- CTA: " + ("финальная плашка «смотри у меня в профиле» — да" if cfg["cta"]
+                              else "плашки нет → build_page(..., cta=False), verify_page это проверит"))
+    info = probe(source) if source else None
+    if info:
+        src_w, src_h = info["width"], info["height"]
+        want_w, want_h = (int(x) for x in fmt.split(":"))
+        if (src_w > src_h) != (want_w > want_h) or (src_w == src_h) != (want_w == want_h):
+            side = "горизонталь" if src_w > src_h else "вертикаль" if src_h > src_w else "квадрат"
+            lines.append(f"- исходник {src_w}×{src_h} ({side}) под {fmt} → перекадрирование по лицу (prep с "
+                         f"\"format\" в edit.json); слово за спиной и подмена фона — только если человек в кадре целиком")
+        if info["duration"] > 90:
+            lines.append(f"- запись {info['duration'] / 60:.1f} мин → больше одного ролика: нарежь по мыслям "
+                         f"(раздел «Нарезка длинного урока» скилла), у каждой части своё имя и свой план")
+    faces = WORK_DIR / stem / "aroll.faces.json"
+    if faces.exists():
+        data = json.loads(faces.read_text(encoding="utf-8"))
+        seen = sum(1 for f in data.get("frames", []) if f and f[4] >= 0.6) / max(1, len(data.get("frames", [])))
+        if seen < 0.8:
+            lines.append(f"- лицо видно в {seen * 100:.0f}% кадров → камера по лицу будет терять его: в эти места — "
+                         f"графика на весь кадр или перебивка, а не карточка у лица")
+    else:
+        lines.append(f"- лицо ещё не найдено (track.py) → раскадровку по лицу не ставь, пока его нет")
+    return lines
+
+
 def skeleton(stem: str) -> str:
     tools = " · ".join(TOOLS)
+    meta_path = WORK_DIR / stem / "aroll.json"
+    fmt = json.loads(meta_path.read_text(encoding="utf-8")).get("format", "9:16") if meta_path.exists() else "9:16"
     return f"""# План монтажа {stem}
 
 > Сначала план, потом страница (правило Валеры, 13.10.2026). Раздел «Исходник» посчитал plan.py;
@@ -176,6 +224,9 @@ def skeleton(stem: str) -> str:
 
 ## Исходник
 {chr(10).join(analysis(stem))}
+
+## Что видно → что делаю
+{chr(10).join(decisions(stem, fmt))}
 
 ## Мысль ролика
 {TODO} одной фразой: что зритель унесёт

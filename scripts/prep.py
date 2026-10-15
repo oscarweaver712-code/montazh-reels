@@ -7,14 +7,16 @@
   {
     "trim": [6.2, 63.6],     # откуда и докуда дубль; границы сами уезжают в тишину
     "cut_pauses": false,      # паузы внутри пока не режем — дубль идёт сплошняком
-    "format": "16:9"          # формат ролика (formats.py); по умолчанию — из брифа или 9:16
+    "format": "16:9",         # формат ролика (formats.py); по умолчанию — из брифа или 9:16
+    "language": "en",         # язык речи для распознавания; по умолчанию — из project.json проекта
+    "air_end": 0.6            # тишины после последнего слова, с (не дальше конца паузы); по умолчанию 0.12
   }
 
 Если пропорции исходника и формата расходятся (горизонтальный урок под Reels), кадр
 перекадрируется по лицу (reframe.py), а не режется по центру. Если у ролика есть бриф
 (work/<имя>/brief.json, его пишет студия), цвет берётся из стиля брифа.
 
-  .venv/bin/python scripts/prep.py input/IMG_3279.MOV
+  .venv/bin/python scripts/prep.py projects/antishkola/input/IMG_3279.MOV
 
 На выходе work/<имя>/aroll.mp4 и aroll.words.json — слова уже на шкале дубля.
 """
@@ -39,12 +41,28 @@ from transcribe import run_transcribe
 AIR = 0.12          # сколько тишины оставить до первого слова и после последнего
 
 
-def find_edges(words: list, silences: list, start_hint: float, end_hint: float) -> tuple:
+def speech_language(stem: str, edit: dict) -> str:
+    """Язык речи: edit.json "language", иначе язык проекта ролика (project.json), иначе русский."""
+    if edit.get("language"):
+        return edit["language"]
+    import projects
+    try:
+        return projects.of_or_default(stem).config["language"]
+    except projects.ProjectError:
+        return "ru"
+
+
+def find_edges(words: list, silences: list, start_hint: float, end_hint: float,
+               air_end: float = AIR) -> tuple:
     """Границы дубля в настоящей тишине, а не по таймингам распознавания.
 
     Whisper ставит конец слова на 0.3–0.4 с раньше, чем человек договорил: если резать
     по нему, последнее слово ролика оборвётся. Поэтому конец — это начало тишины после
     последнего слова, а начало — конец тишины перед первым.
+
+    air_end — сколько тишины оставить после последнего слова (не дальше конца паузы). По
+    умолчанию AIR; для финала, после которого графике нужно доиграть, — больше (edit.json
+    "air_end": 0.6; IMG_6668, 13.10: с 0.12 с ролик обрывался на последнем слове).
     """
     inside = [w for w in words if start_hint - 0.05 <= w["start"] < end_hint]
     if not inside:
@@ -66,7 +84,7 @@ def find_edges(words: list, silences: list, start_hint: float, end_hint: float) 
         start = max(0.0, first["start"] - 0.2)
 
     after = next((s for s in silences if s[0] >= last["start"] + 0.1), None)
-    end = min(after[0] + AIR, after[1]) if after else last["end"] + 0.3
+    end = min(after[0] + air_end, after[1]) if after else last["end"] + 0.3
     # Лишнее слово за краем отрезается по распознаванию, только если оно звучит раньше
     # тишины. Если whisper просто приклеил его начало к концу последнего — верим тишине.
     if following and (after is None or following["end"] <= after[0]):
@@ -158,7 +176,7 @@ def refresh_words(video: Path, out_dir: Path, edit: dict) -> None:
     if not meta_path.exists():
         sys.exit(f"Нет {meta_path.relative_to(WORK_DIR.parent)} — сначала полный prep.py")
     segments = json.loads(meta_path.read_text(encoding="utf-8"))["segments"]
-    words = run_transcribe(video)["words"]
+    words = run_transcribe(video, language=speech_language(video.stem, edit))["words"]
     mark_dropped(words, edit.get("drop") or [])
     aroll_words = remap_words(words, segments)
     (out_dir / "aroll.words.json").write_text(
@@ -166,10 +184,64 @@ def refresh_words(video: Path, out_dir: Path, edit: dict) -> None:
     print(f"  ✓ слов на шкале дубля: {len(aroll_words)}")
 
 
+def make_hq(video: Path, out_dir: Path, preset: dict, edit: dict, fmt: str) -> Path:
+    """Дубль для страницы с запасом под зум камеры (15.10.2026, IMG_1799: «не херишь ли качество»).
+
+    Обычный дубль — 1080×1920, а камера страницы приближает до 1.36: лицо растягивалось из ~800 px,
+    резкость выходила вдвое ниже, чем у того же кадра из 4K-исходника. Здесь тот же рез (сегменты
+    берутся из aroll.json, а не считаются заново), тот же цвет, звук — байт в байт из aroll.mp4
+    (с «пипами» и громкостью). Включается только у ролика с "hq" в edit.json; compose берёт его вместо
+    aroll.mp4. Слежение, маска и тайминги остаются на обычном дубле — геометрия страницы та же.
+    """
+    scale = float(edit.get("hq") or 0)
+    if not 1.0 < scale <= 2.0:
+        sys.exit(f"✗ edit.json → \"hq\": {edit.get('hq')!r} — нужен множитель от 1.1 до 2 (обычно 1.5)")
+    meta_path, base = out_dir / "aroll.json", out_dir / "aroll.mp4"
+    if not meta_path.exists() or not base.exists():
+        sys.exit("✗ сначала обычный дубль: prep.py без --hq")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    width, height = preset["video"]["width"], preset["video"]["height"]
+    preset["video"]["width"], preset["video"]["height"] = (round(width * scale / 2) * 2, round(height * scale / 2) * 2)
+    bitrate = float(str(preset["video"].get("bitrate", "12M")).rstrip("Mm"))
+    preset["video"]["bitrate"] = f"{bitrate * scale * scale:.0f}M"
+    preset["look"] = meta.get("look") or preset.get("look")
+    for key in ("cut", "subs"):
+        preset[key]["enabled"] = False
+    preset["motion"]["punch_in"] = False
+    preset["audio"]["enabled"] = False             # звук всё равно берётся из aroll.mp4
+    print(f"\n▶ {video.name} → дубль для страницы {preset['video']['width']}×{preset['video']['height']} "
+          f"({preset['video']['bitrate']}), рез из aroll.json")
+    started = time.time()
+    try:
+        picture = reframe(video, fmt)
+    except RuntimeError as error:
+        sys.exit(f"✗ {error}")
+    out = out_dir / "aroll.hq.mp4"
+    raw = out_dir / ".aroll.hq.video.mp4"
+    part = out_dir / ".aroll.hq.part.mp4"
+    try:
+        render(picture, raw, meta["segments"], preset, ass_path=None, noise_floor=None)
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-i", str(raw), "-i", str(base),
+                        "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-movflags", "+faststart", str(part)],
+                       check=True)
+        a, b = probe(part), probe(base)
+        if abs(a["duration"] - b["duration"]) > 1.5 / meta["fps"]:
+            sys.exit(f"✗ дубль для страницы {a['duration']:.3f} с, а обычный {b['duration']:.3f} с — "
+                     f"кадры разъехались бы с камерой и субтитрами, не отдаю")
+        part.replace(out)
+    finally:
+        raw.unlink(missing_ok=True)
+        part.unlink(missing_ok=True)
+    print(f"  ✓ готово за {time.time() - started:.0f} с → {out.relative_to(WORK_DIR.parent)}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="Чистовой дубль: подрезка, цвет, голос")
     ap.add_argument("video")
     ap.add_argument("--preset", default="viral")
+    ap.add_argument("--hq", action="store_true",
+                    help="второй дубль для страницы в разрешении edit.json → hq (×1.5): тот же рез, цвет и звук")
     ap.add_argument("--words-only", action="store_true",
                     help="только пересчитать слова на шкале готового дубля, видео не трогать")
     args = ap.parse_args()
@@ -198,6 +270,9 @@ def main():
     except (ValueError, styles.StyleError) as error:
         sys.exit(f"✗ {error}")
     preset["video"]["width"], preset["video"]["height"] = formats.size(fmt)
+    if args.hq:
+        make_hq(video, out_dir, preset, edit, fmt)
+        return
     print(f"\n▶ {video.name}: {info['width']}×{info['height']}, {info['duration']:.1f} с → формат {fmt}")
 
     # У ролика один дубль. Пересборка в другом формате молча заменила бы дубль готового
@@ -212,13 +287,14 @@ def main():
                      f"и prep по новому имени (в его edit.json — \"format\": \"{fmt}\"). "
                      f"Или удали work/{stem}/aroll.* , если старый формат больше не нужен.")
 
-    data = run_transcribe(video)
+    data = run_transcribe(video, language=speech_language(video.stem, edit))
     words = data["words"]
     silences = detect_silence(video, preset["cut"].get("silence_db", -35),
                               preset["cut"].get("silence_min", 0.10))
 
     trim = edit.get("trim") or [0.0, info["duration"]]
-    start, end = find_edges(words, silences, float(trim[0]), float(trim[1]))
+    start, end = find_edges(words, silences, float(trim[0]), float(trim[1]),
+                            float(edit.get("air_end", AIR)))
     if edit.get("cut_pauses", False):
         sys.exit("Рез пауз внутри дубля в prep.py пока не включён — договорились не резать")
 
