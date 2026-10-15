@@ -71,8 +71,3 @@ studio/*/hyperframes.json
 studio/*/package.json
 
 .DS_Store
-
-# видео в downloads/ (референсы, стоковые клипы) — тоже видео, в git не идут
-work/*/downloads/**/*.mp4
-work/*/downloads/**/*.mov
-work/*/downloads/**/*.webm
