@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import projects
-from common import ROOT, WORK_DIR, plural
+from common import ROOT, WORK_DIR, plural, sheet_path
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
 GROUPS = {
@@ -72,9 +72,9 @@ def plan(stem: str, final: str) -> dict:
         if path == approved:
             continue
         drafts.append(path)
-        sheet = path.with_suffix(".sheet.jpg")
-        if sheet.exists():
-            drafts.append(sheet)
+        for sheet in (sheet_path(path, WORK_DIR), path.with_suffix(".sheet.jpg")):   # новое место и старое (до 16.10)
+            if sheet.exists():
+                drafts.append(sheet)
     # сырые рендеры до мастеринга — в проекте ролика и в проектах его вариантов
     for project in [studio_dir() / stem, *studio_dir().glob(f"{stem}--*")]:
         renders = project / "renders"

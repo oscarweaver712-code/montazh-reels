@@ -1038,7 +1038,7 @@ function renderVersions() {
     parts.push(`<span class="ver" data-view="out:${esc(o.name)}" aria-pressed="${S.view === `out:${o.name}`}" title="${esc(o.name)} · ${o.size_mb} МБ">${esc(o.name.replace(`${v.stem}_`, "").replace(".mp4", ""))}
       ${o.approved ? `<span class="ok" title="Принят как финал">✓ финал</span>` : `<button type="button" data-approve="${esc(o.name)}" title="Принять как финал: черновые версии этого ролика удалятся">✓ принять</button>`}
       <a href="/api/studio/file/output/${encodeURIComponent(o.name)}" download="${esc(o.name)}" title="Скачать ${esc(o.name)}" style="color:inherit;text-decoration:none;padding:0 4px">⬇</a>
-      ${o.sheet ? `<button type="button" data-sheet="${esc(o.sheet)}" title="Сетка кадров">кадры</button>` : ""}
+      ${o.sheet ? `<button type="button" data-sheet="${esc(o.name)}" title="Сетка кадров">кадры</button>` : ""}
       <button type="button" data-reveal="output|${esc(o.name)}" title="Показать в Finder">⌕</button></span>`);
   }
   parts.push(`<span class="ver" data-view="src" aria-pressed="${S.view === "src"}" title="Исходник">исходник</span>`);
@@ -1046,7 +1046,7 @@ function renderVersions() {
 }
 $("versions").addEventListener("click", async (e) => {
   const a = e.target.closest("[data-approve]"); if (a) { e.stopPropagation(); openApprove(a.dataset.approve); return; }
-  const sh = e.target.closest("[data-sheet]"); if (sh) { e.stopPropagation(); window.open(`/api/studio/file/output/${encodeURIComponent(sh.dataset.sheet)}`, "_blank"); return; }
+  const sh = e.target.closest("[data-sheet]"); if (sh) { e.stopPropagation(); window.open(`/api/studio/sheet/${encodeURIComponent(sh.dataset.sheet)}`, "_blank"); return; }
   const r = e.target.closest("[data-reveal]");
   if (r) { e.stopPropagation(); const [folder, name] = r.dataset.reveal.split("|"); try { await api("/api/studio/reveal", { method: "POST", json: { folder, name } }); } catch (err) { toast(err.message, true); } return; }
   const v = e.target.closest("[data-view]"); if (!v) return;

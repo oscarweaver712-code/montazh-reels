@@ -840,6 +840,15 @@ def check_sfx(report: Report):
     report.check("glitch-1" in removed and refused and not leftovers,
                  "убранный звук (glitch-1 с «бардака») не вернётся: файла нет, kit отказывает с причиной",
                  ", ".join(leftovers) or "чисто")
+    try:
+        kit.audio("x", "air-1", 1.0)
+        air_back = True
+    except ValueError as e:
+        air_back = "по ушам" not in str(e)
+    hiss = [n for n, (names, *_) in kit.SOFT_KINDS.items() if any(x.startswith("air") for x in names)]
+    report.check(not air_back and not hiss and not list(folder.glob("air-*.mp3")),
+                 "свист air на вспышках не вернётся (Валера 16.10: «по ушам ездят») — на склейках накат swell",
+                 ", ".join(hiss) or "чисто")
 
     def effective(tag: str) -> float:
         name, vol = re.search(r'sfx/([\w.\-]+)\.mp3".*data-volume="([\d.]+)"', tag).groups()
@@ -871,6 +880,53 @@ def check_sfx(report: Report):
     loud = '<audio id="sfx-x" src="assets/sfx/impact-bass-1.mp3" data-start="1.00" data-volume="0.36"></audio>'
     report.check(bool(sound_problems(loud)) and not sound_problems("".join(ok_seq)),
                  "проверка страницы ловит звук громче нормы (удар 0.36 из старых роликов)")
+
+    # тихие звуки монтажа (16.10, тест удержания на IMG_3303): свой класс — часто, но тихо, вразнобой и не у ударов
+    soft_ok = [kit.audio("s0", "swell-1", 1.0), kit.audio("s1", "tap-1", 1.5), kit.audio("s2", "tap-2", 2.0),
+               kit.audio("s3", "swell-3", 2.6), kit.audio("i", "impact-bass-1", 4.0)]
+    soft_level = effective(kit.audio("x", "tap-1", 1.0))
+    report.check(not refused_by_rules(soft_ok)
+                 and refused_by_rules([kit.audio("a", "tap-1", 1.0), kit.audio("b", "tap-1", 1.6)])          # тот же подряд
+                 and refused_by_rules([kit.audio("a", "tap-1", 1.0), kit.audio("b", "tap-2", 1.2)])          # слиплись
+                 and refused_by_rules([kit.audio("a", "impact-bass-1", 1.0), kit.audio("b", "swell-1", 1.3)])  # у удара
+                 and refused_by_rules([kit.audio(f"t{i}", f"tap-{i % 3 + 1}", 1.0 + 0.5 * i) for i in range(8)])  # густо
+                 and abs(soft_level - (kit.SFX_TARGET + kit.SOFT_DB)) <= 0.5,
+                 "тихие звуки монтажа: часто можно, но на 9 дБ тише, вразнобой, не вплотную, не у удара и не гуще 6 за 10 с",
+                 f"тап {soft_level:.1f} LUFS при тихой норме {kit.SFX_TARGET + kit.SOFT_DB:g}")
+    placed = kit.soft_track([(1.0, "cut"), (1.05, "line"), (2.0, "text"), (2.5, "text"), (4.2, "text")],
+                            [kit.audio("i", "impact-bass-1", 4.0)])
+    names = re.findall(r"sfx/([\w-]+)\.mp3", "".join(placed))
+    report.check(names == ["swell-1", "tap-1", "tap-2"] and not refused_by_rules(placed)
+                 and 'data-start="0.74"' in placed[0],
+                 "раскладка тихих звуков: склейка важнее линии, накат — с упреждением, у удара — тишина, тапы чередуются", ", ".join(names))
+    # фоновая музыка (17.10: «менять постоянно, но по громкости негромко, вот как сейчас хорошо»)
+    import tempfile
+    import materials
+    import verify_page
+    with tempfile.TemporaryDirectory() as t:
+        tmp = Path(t)
+        (tmp / "w" / "X" / "materials").mkdir(parents=True)
+        shutil.copy2(folder / "swell-1.mp3", tmp / "w" / "X" / "materials" / "yt-test.mp3")
+        saved = (materials.WORK_DIR, verify_page.STUDIO)
+        materials.WORK_DIR, verify_page.STUDIO = tmp / "w", tmp / "studio"
+        try:
+            bgm = kit.background_music("X", "yt-test.mp3", 30.0)
+            quiet = sound_problems(bgm, "X")
+            vol = float(re.search(r'data-volume="([\d.]+)"', bgm).group(1))
+            loud_bgm = sound_problems(bgm.replace(f'data-volume="{vol:.3f}"', f'data-volume="{min(1.0, vol * 2):.3f}"'), "X")
+            (tmp / "studio" / "Y").mkdir(parents=True)
+            (tmp / "studio" / "Y" / "index.html").write_text(bgm, encoding="utf-8")
+            again = sound_problems(bgm, "X")
+            try:
+                kit.background_music("X", "song.mp3", 30.0)
+                any_file = True
+            except ValueError:
+                any_file = False
+        finally:
+            materials.WORK_DIR, verify_page.STUDIO = saved
+    report.check(not quiet and any("громче" in p for p in loud_bgm) and any("уже стоит" in p for p in again) and not any_file,
+                 "фоновая музыка: трек фонотеки, не громче «как сейчас», в двух роликах один трек — красное",
+                 f"тихо: {quiet or 'чисто'}; громче: {len(loud_bgm)}; повтор: {len(again)}")
 
 
 def check_footage(report: Report, tmp: Path):
@@ -2342,6 +2398,8 @@ def check_approve(report: Report, tmp: Path):
     (studio / "X" / "renders" / "X_v1.mp4").write_bytes(b"raw")
     (work / "X" / "aroll.matte_mediapipe.mkv").write_bytes(b"mask")
     (work / "X" / "edit.json").write_text("{}", encoding="utf-8")
+    (work / "X" / "sheets").mkdir()
+    (work / "X" / "sheets" / "X_v1.sheet.jpg").write_bytes(b"sheet")    # сетки кадров — не в output/ (16.10)
     saved = (approve.WORK_DIR, approve.ROOT, approve.studio_dir)
     approve.WORK_DIR, approve.ROOT = work, tmp
     approve.studio_dir = lambda: studio
@@ -2359,7 +2417,12 @@ def check_approve(report: Report, tmp: Path):
             approve.WORK_DIR, approve.ROOT, approve.studio_dir = saved
     left = sorted(p.name for p in out.iterdir() if p.name != ".gitkeep")
     kept_rest = (work / "X" / "aroll.matte_mediapipe.mkv").exists() and (work / "X" / "edit.json").exists()
+    import common
+    sheet = common.sheet_path(out / "X_v2.mp4", work)
+    report.check(sheet.parent == work / "X" / "sheets" and "output" not in sheet.parts,
+                 "сетка кадров ролика пишется в work/<имя>/sheets/, в output/ — только видео", str(sheet))
     report.check(left == ["XY_v1.mp4", "X_v2.mp4", "X_v2.sheet.jpg"] and not any((studio / "X" / "renders").iterdir())
+                 and not (work / "X" / "sheets" / "X_v1.sheet.jpg").exists()
                  and kept_rest and (work / "X" / "approved.json").exists(),
                  "апрув: черновые версии и сырые рендеры убраны, принятый, чужой ролик и решения — на месте",
                  f"в output/: {', '.join(left)}" + (f"; {done.get('error')}" if done.get("error") else ""))

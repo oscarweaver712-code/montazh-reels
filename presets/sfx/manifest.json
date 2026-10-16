@@ -5,7 +5,10 @@
   "whoosh-short": "убран 12.10.2026: это байт в байт whoosh.mp3 под другим именем — «чередование» давало один и тот же звук подряд; бери whoosh",
   "click-soft": "убран 12.10.2026: это байт в байт click.mp3 под другим именем; бери click",
   "glitch-2": "убран 15.10.2026 по просьбе Валеры: «звуки шумов помех убирай нахуй навсегда, они никогда не подойдут в рилы» (стоял на склейке IMG_1799)",
-  "glitch-3": "убран 15.10.2026 по просьбе Валеры: «звуки шумов помех убирай нахуй навсегда, они никогда не подойдут в рилы» (стоял на склейке IMG_1799)"
+  "glitch-3": "убран 15.10.2026 по просьбе Валеры: «звуки шумов помех убирай нахуй навсегда, они никогда не подойдут в рилы» (стоял на склейке IMG_1799)",
+  "air-1": "убран 16.10.2026: Валера про звуки на вспышках-переходах — «по ушам ездят» (шумовой свист на 1–3 кГц); вместо него swell-1..3",
+  "air-2": "убран 16.10.2026: Валера про звуки на вспышках-переходах — «по ушам ездят» (шумовой свист на 1–3 кГц); вместо него swell-1..3",
+  "air-3": "убран 16.10.2026: Валера про звуки на вспышках-переходах — «по ушам ездят» (шумовой свист на 1–3 кГц); вместо него swell-1..3"
  },
  "chime": {
   "file": "chime.mp3",
@@ -90,5 +93,85 @@
   "duration": 0.57,
   "description": "Punchy whoosh/impact — fast reveal or hard transition accent. Sync to the motion.",
   "loudness_m": -15.2
+ },
+ "tap-1": {
+  "file": "tap-1.mp3",
+  "duration": 0.11,
+  "description": "Glass-like soft tap — a word or label flies in.",
+  "loudness_m": -24.8,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "tap-2": {
+  "file": "tap-2.mp3",
+  "duration": 0.11,
+  "description": "Glass-like soft tap, slightly higher — next word or card.",
+  "loudness_m": -23.9,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "tap-3": {
+  "file": "tap-3.mp3",
+  "duration": 0.11,
+  "description": "Glass-like soft tap, highest — third in a row of items.",
+  "loudness_m": -23.5,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "tick-1": {
+  "file": "tick-1.mp3",
+  "duration": 0.06,
+  "description": "Barely audible tick — a line of a diagram draws, a number steps.",
+  "loudness_m": -28.7,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "tick-2": {
+  "file": "tick-2.mp3",
+  "duration": 0.06,
+  "description": "Barely audible tick, higher — next line or step.",
+  "loudness_m": -28.6,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "bubble-1": {
+  "file": "bubble-1.mp3",
+  "duration": 0.08,
+  "description": "Soft bubble pop — stamp lands, counter starts, plate appears.",
+  "loudness_m": -21.8,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "bubble-2": {
+  "file": "bubble-2.mp3",
+  "duration": 0.08,
+  "description": "Soft bubble pop, higher — the next stamp or plate.",
+  "loudness_m": -21.6,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "swell-1": {
+  "file": "swell-1.mp3",
+  "duration": 0.37,
+  "description": "Dark soft swell peaking at its end — a flash cut, entering a cutaway. No hiss.",
+  "loudness_m": -23.9,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "swell-2": {
+  "file": "swell-2.mp3",
+  "duration": 0.37,
+  "description": "Dark soft swell, a little brighter — leaving a cutaway back to the speaker.",
+  "loudness_m": -25.3,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
+ },
+ "swell-3": {
+  "file": "swell-3.mp3",
+  "duration": 0.34,
+  "description": "Darkest soft swell — slide change, framing switch.",
+  "loudness_m": -23.8,
+  "soft": true,
+  "source": "свой синтез, scripts/sfx_soft.py (16.10.2026)"
  }
 }

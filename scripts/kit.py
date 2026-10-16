@@ -38,6 +38,21 @@ SFX_DIR = _Path(__file__).resolve().parent.parent / "presets" / "sfx"
 SFX_TARGET = -25.0       # LUFS, пиковая мгновенная громкость звука при уровне 1
 SFX_MIN_GAP = 1.0        # с между звуками: ближе — сливаются в кашу
 SFX_MAX_USES = 2         # один и тот же файл — не больше двух раз за ролик
+# Тихие звуки монтажа (manifest → soft: swell, tap, tick, bubble — scripts/sfx_soft.py), 16.10.2026:
+# Валера — звуки на переходы и вылеты текста «минимально заметны, но они должны быть»; после теста на IMG_3303 (17.10)
+# — «звуки переходов точно оставляем для следующих видосов». Это другой класс, чем удары: их много, поэтому правила
+# свои — тише нормы на 9 дБ, не ближе 0,35 с друг к другу и 0,6 с к удару, один файл подряд не звучит (чередуются
+# варианты), не больше SOFT_PER_10S за любые 10 с.
+SOFT_DB = -9.0
+SOFT_MIN_GAP = 0.35
+SOFT_LOUD_GAP = 0.6
+SOFT_PER_10S = 6
+# Фоновая музыка (17.10.2026: «фоновую музыку будем менять постоянно, но по громкости негромко, вот как сейчас хорошо, и
+# тоже в стиле лоуфай»): лоу-фай из фонотеки YouTube, в материалах ролика как yt-*.mp3 (scripts/music.py), уровень —
+# BGM_LEVEL от нормы материалов (~25 дБ тише голоса, IMG_3303 v5). Громче — verify_page краснеет; трек одного ролика
+# в другом не повторяется.
+BGM_LEVEL = 0.3
+BGM_PREFIX = "yt-"
 _AUDIO_TAG = _re.compile(r'<audio id="sfx-[^"]*" src="assets/sfx/([\w.\-]+)\.mp3" data-start="([\d.]+)"')
 
 
@@ -67,11 +82,20 @@ def audio(sid: str, name: str, start: float, level: float = 1.0,
         raise ValueError(f"звука «{name}» нет в presets/sfx (или он без замера громкости). Есть: {known}")
     if not 0 < level <= 1:
         raise ValueError(f"уровень звука «{name}» = {level}: бывает от 0 до 1 (1 — норма, громче нельзя)")
-    gain = min(1.0, level * 10 ** ((SFX_TARGET - info["loudness_m"]) / 20))
+    target = SFX_TARGET + (SOFT_DB if info.get("soft") else 0.0)     # тихий звук монтажа — на 9 дБ тише нормы
+    gain = min(1.0, level * 10 ** ((target - info["loudness_m"]) / 20))
     extra = (f' data-duration="{duration}"' if duration else "") + \
             (f' data-fade-out="{fade_out}"' if fade_out else "")
     return (f'      <audio id="sfx-{sid}" src="assets/sfx/{info["file"]}" data-start="{start:.2f}"'
             f'{extra} data-volume="{gain:.3f}"></audio>')
+
+
+def background_music(stem: str, name: str, duration: float) -> str:
+    """Фоновый лоу-фай на весь ролик — громкость проекта (BGM_LEVEL), уход в конце за 1,5 с. Трек — yt-*.mp3 из материалов."""
+    if not name.startswith(BGM_PREFIX):
+        raise ValueError(f"фоновая музыка — трек фонотеки YouTube в материалах ({BGM_PREFIX}*.mp3, scripts/music.py), "
+                         f"а не «{name}»")
+    return material_audio("bgm", stem, name, 0.0, BGM_LEVEL, duration=round(duration, 2), fade_out=1.5)
 
 
 def material_audio(sid: str, stem: str, name: str, start: float, level: float = 1.0,
@@ -97,8 +121,25 @@ def check_sounds(sounds: list) -> None:
     """Звуки ролика: одно семейство не звучит дважды подряд, файл — не чаще двух раз, между
     звуками — не меньше секунды. Ошибка — при сборке страницы, до рендера, со всеми нарушениями.
     """
-    found = sorted((float(m.group(2)), m.group(1)) for s in sounds for m in _AUDIO_TAG.finditer(s))
+    every = sorted((float(m.group(2)), m.group(1)) for s in sounds for m in _AUDIO_TAG.finditer(s))
+    manifest = sfx_manifest()
+    soft = lambda name: bool((manifest.get(name) or {}).get("soft"))     # noqa: E731
+    found = [x for x in every if not soft(x[1])]           # удары и акценты — правила 12.10 между собой
+    quiet = [x for x in every if soft(x[1])]
     problems = []
+    for (t1, a), (t2, b) in zip(quiet, quiet[1:]):
+        if a == b:
+            problems.append(f"{a} ({t1:.2f} с) и снова {b} ({t2:.2f} с) — тихий звук подряд один и тот же: чередуй варианты")
+        if t2 - t1 < SOFT_MIN_GAP:
+            problems.append(f"{a} ({t1:.2f} с) и {b} ({t2:.2f} с) ближе {SOFT_MIN_GAP:g} с — тихие звуки слипаются")
+    for tq, q in quiet:
+        near = [(t, n) for t, n in found if abs(t - tq) < SOFT_LOUD_GAP]
+        if near:
+            problems.append(f"{q} ({tq:.2f} с) рядом с ударом {near[0][1]} ({near[0][0]:.2f} с) — ближе {SOFT_LOUD_GAP:g} с")
+        dense = [t for t, _ in quiet if tq <= t < tq + 10]
+        if len(dense) > SOFT_PER_10S:
+            problems.append(f"{len(dense)} тихих звуков за 10 с с {tq:.2f} с — можно {SOFT_PER_10S}: «тыц-тыц» отвлекает")
+            break
     for (t1, a), (t2, b) in zip(found, found[1:]):
         if sfx_family(a) == sfx_family(b):
             problems.append(f"{a} ({t1:.2f} с) и {b} ({t2:.2f} с) — одно семейство «{sfx_family(a)}» подряд: "
@@ -109,6 +150,52 @@ def check_sounds(sounds: list) -> None:
                  for name, n in _Counter(name for _, name in found).items() if n > SFX_MAX_USES]
     if problems:
         raise ValueError("Звуки ролика нарушают правила (kit.check_sounds):\n  " + "\n  ".join(problems))
+
+
+SOFT_KINDS = {   # событие → варианты, уровень (доля тихой нормы), приоритет (меньше — важнее), упреждение, с
+    "cut": (("swell-1", "swell-3", "swell-2"), 0.8, 0, 0.26),   # склейка со вспышкой, вход и выход перебивки
+    "stamp": (("bubble-1", "bubble-2"), 0.9, 1, 0.0),            # штамп, крупное слово ударом, счётчик
+    "text": (("tap-1", "tap-2", "tap-3"), 0.85, 2, 0.0),         # влёт слова, подписи, карточки
+    "line": (("tick-1", "tick-2"), 0.7, 3, 0.0),                 # линия схемы, шаг числа
+    "frame": (("swell-3", "swell-1"), 0.5, 4, 0.26),             # смена плана общий ↔ крупный (tk.framing) — если есть место
+}
+# Накат (swell) растёт к концу: он стартует раньше события на упреждение, и пик ложится на вспышку. Правила
+# расстояний — по началу звука, как в check_sounds.
+
+
+def soft_track(events: list, sounds: list, prefix: str = "soft") -> list:
+    """Тихие звуки монтажа по событиям [(t, kind)] (kind из SOFT_KINDS) — с правилами check_sounds заранее.
+
+    Событий в ролике больше, чем звуков, которые можно поставить: важнее — склейка, потом удар, слово, линия.
+    Событие, которое не помещается (рядом удар из sounds, другой тихий ближе SOFT_MIN_GAP, за 10 с уже
+    SOFT_PER_10S), пропускается молча — это решение раскладки, а не ошибка. Варианты одного вида чередуются.
+    Возвращает теги <audio> (добавь к sounds до build_page).
+    """
+    loud = [float(m.group(2)) for s in sounds for m in _AUDIO_TAG.finditer(s)
+            if not (sfx_manifest().get(m.group(1)) or {}).get("soft")]
+    unknown = sorted({k for _, k in events if k not in SOFT_KINDS})
+    if unknown:
+        raise ValueError(f"soft_track: вида событий {', '.join(unknown)} нет — есть {', '.join(SOFT_KINDS)}")
+    kept = []
+    for at, kind in sorted(events, key=lambda e: (SOFT_KINDS[e[1]][2], e[0])):
+        t = round(max(0.0, at - SOFT_KINDS[kind][3]), 2)          # начало звука: накат — раньше события
+        if any(abs(t - x) < SOFT_LOUD_GAP for x in loud) or any(abs(t - x) < SOFT_MIN_GAP for x, _ in kept):
+            continue
+        times = sorted([x for x, _ in kept] + [t])
+        if any(sum(1 for y in times if x <= y < x + 10) > SOFT_PER_10S for x in times):
+            continue
+        kept.append((t, kind))
+    tags, last, turn = [], None, {k: 0 for k in SOFT_KINDS}
+    for i, (t, kind) in enumerate(sorted(kept)):
+        names, level = SOFT_KINDS[kind][:2]
+        name = names[turn[kind] % len(names)]
+        if name == last:                       # тот же файл подряд — следующий вариант
+            turn[kind] += 1
+            name = names[turn[kind] % len(names)]
+        turn[kind] += 1
+        last = name
+        tags.append(audio(f"{prefix}{i}", name, t, level))
+    return tags
 
 
 def card(cid: str, img: str, name: str, sub: str, side: str = "right") -> str:

@@ -1,0 +1,23 @@
+{
+ "style": "viral-behind",
+ "formats": [
+  "9:16"
+ ],
+ "variants": [],
+ "goals": {
+  "reach": 4,
+  "retention": 4,
+  "trust": 3,
+  "saves": 2,
+  "sales": 2
+ },
+ "boldness": 0.3,
+ "overrides": {
+  "color.brightness": -8,
+  "camera.base_zoom": 1.2,
+  "camera.punch_level": 1.36,
+  "camera.push_in": true,
+  "graphics.viz": "often"
+ },
+ "notes": ""
+}

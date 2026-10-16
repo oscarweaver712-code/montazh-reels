@@ -41,6 +41,8 @@ work/*/materials/*.mp4
 work/*/materials/*.mov
 work/*/materials/*.m4v
 work/*/materials/*.webm
+# музыка из фонотеки YouTube (yt-*): по её условиям треки не распространяются отдельно от роликов — не в git
+work/*/materials/yt-*
 !work/*/manim/
 work/*/manim/*.mp4
 work/*/manim/*.png

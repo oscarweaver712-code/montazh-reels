@@ -28,6 +28,7 @@ import jobqueue
 import materials
 import projects
 import styles
+import common
 from common import ROOT, WORK_DIR, ffprobe_bin
 from jobqueue import CURRENT, QUEUE, runner_alive
 
@@ -103,7 +104,7 @@ def outputs_for(stem: str, project: "projects.Project | None" = None) -> list:
         rest = path.stem[len(stem):]
         if rest and rest[0] not in "_-":
             continue                      # IMG_32790 не принадлежит IMG_3279
-        sheet = path.with_suffix(".sheet.jpg")
+        sheet = common.sheet_path(path)
         items.append({"name": path.name, "mtime": path.stat().st_mtime,
                       "size_mb": round(path.stat().st_size / 1_048_576, 1),
                       "sheet": sheet.name if sheet.exists() else None,
@@ -734,6 +735,19 @@ def studio_file(folder: str, name: str):
         raise HTTPException(404, str(e))
     media = {".jpg": "image/jpeg", ".png": "image/png"}.get(path.suffix.lower(), "video/mp4")
     return FileResponse(path, media_type=media)
+
+
+@router.get("/api/studio/sheet/{name}")
+def studio_sheet(name: str):
+    """Сетка кадров ролика из output/ — лежит в work/<имя>/sheets/ (common.sheet_path), в output/ только видео."""
+    try:
+        video = projects.locate("output", name)
+    except projects.ProjectError as e:
+        raise HTTPException(404, str(e))
+    sheet = common.sheet_path(video)
+    if not sheet.exists():
+        raise HTTPException(404, f"у {name} нет сетки кадров")
+    return FileResponse(sheet, media_type="image/jpeg")
 
 
 @router.post("/api/studio/reveal")

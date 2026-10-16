@@ -23,6 +23,16 @@ VENV_PY = host.venv_python(ROOT)
 STUDIO_CHILD, QUEUE_STEP = "REELS_STUDIO_CHILD", "REELS_QUEUE_STEP"
 
 
+def sheet_path(video: Path, work_dir: Path | None = None) -> Path:
+    """Сетка кадров готового ролика — рядом с решениями ролика, а не в output/ (Валера 16.10.2026: «в Output я хочу
+    видеть только видео», раскадровки мешали пересылать ролики). work/<имя>/sheets/<файл>.sheet.jpg: имя — без версии
+    (_v4) и варианта (--sfx); ролик без папки в work/ — work/_sheets/."""
+    work_dir = work_dir or WORK_DIR
+    stem = re.sub(r"_v\d+$", "", Path(video).stem).split("--")[0]
+    folder = work_dir / stem / "sheets" if (work_dir / stem).is_dir() else work_dir / "_sheets"
+    return folder / f"{Path(video).stem}.sheet.jpg"
+
+
 def require_queue(what: str) -> None:
     """Тяжёлый шаг агент студии запускает только через очередь — громкий отказ, а не второй тяжёлый процесс.
 

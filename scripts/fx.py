@@ -40,7 +40,7 @@ THEMES = {
                    ("#F5E15A", "#141210", "'InterX'"), ("#C8291F", "#fff", "'Cormorant'")],
         "MARKS": ["#fff", "#FF8FB1", "#F5E15A", "#fff"],
     },
-    # стиль проекта antishkola (projects/antishkola/rules.md п.14, IMG_3303 v4): крем #F2EBDD и красный #F0352C, жёлтого
+    # стиль проекта antishkola (projects/antishkola/rules.md п.14, IMG_3303 v5): крем #F2EBDD и красный #F0352C, жёлтого
     # нет; крупное — Oswald заглавными, подвод и мелкое — Manrope, цитаты и номера — Cormorant; без тёмных плашек —
     # плашка = бумага, как карточки-портреты
     "antishkola": {

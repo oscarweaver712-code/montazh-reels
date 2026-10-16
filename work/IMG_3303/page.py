@@ -10,6 +10,11 @@ v3 (16.10.2026) — после разноса v2 («вставки не к ме�
   - схемы v1 (паркеты, упаковка кругов, периметры) — крупно на груди, без плашек, крем и красный;
   - из приёмов fx — один: вертиго на «шестиугольник самый выгодный» (п.18, редко);
   - серия картинок вместо видео — тест на «меньше воска» (п.15).
+v5 (17.10.2026) — v4 плюс тихие звуки монтажа и еле слышный лоу-фай: Валера про связку --sfx v2 и --music v1 —
+«пожени… будет гениально», «звуки переходов точно оставляем для следующих видосов, фоновую музыку будем менять постоянно,
+но по громкости негромко, вот как сейчас хорошо, и тоже в стиле лоуфай» (rules.md п.9, п.14). Звуки раскладывает
+kit.soft_track по событиям ниже (SOFT_EVENTS), музыка — kit.background_music: No Rush (Dyalla), фонотека YouTube —
+выбран scripts/music.py из трёх (1 % энергии в полосе голоса, разброс 3,4 дБ).
 v2 — page_v2.py.bak, director_v2.json.bak, plan_v2.md.bak. Время — секунды ролика (drop нет).
 
 Проверено: замостить плоскость одинаковыми правильными многоугольниками можно только треугольниками, квадратами и
@@ -28,10 +33,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import fx  # noqa: E402
-from kit import Take, audio, build_page, card, footage, slides  # noqa: E402
+from kit import Take, audio, background_music, build_page, card, footage, slides, soft_track  # noqa: E402
 
 STEM = "IMG_3303"
-tk = Take(STEM)
+VARIANT = globals().get("VARIANT")       # вариант A/B зовёт этот файл через runpy с VARIANT (compose.TEST_VARIANTS)
+tk = Take(STEM, VARIANT)
 DUR = tk.duration
 fx.use_for(STEM)
 for name in ("darwin_4.jpg", "bg_comb.jpg", "comb_2.jpg"):
@@ -279,10 +285,29 @@ switch, whips = tk.framing(keep_wide=[(2.3, 4.7), (6.1, 9.0), (12.9, 16.2), (40.
 beats += whips
 
 CTA = 54.55
+
+
+def soft_events():
+    """События под тихие звуки монтажа (что прозвучит — решает kit.soft_track): склейка со вспышкой — накат, удар
+    словом — пузырёк, влёт подписи — тап, линия схемы — тик, смена плана — накат тише и в последнюю очередь."""
+    ev = [(t, "frame") for a, b, *_ in switch for t in (a, b)]
+    ev += [(4.58, "cut"), (6.21, "cut"), (8.91, "cut"), (13.05, "cut"), (16.10, "cut"),      # перебивки: вход и выход
+           (40.52, "cut"), (41.82, "cut"), (43.12, "cut"), (33.61, "cut")]                   # серия картинок, вертиго
+    ev += [(3.70, "stamp"), (4.66, "stamp"), (7.77, "stamp"), (24.87, "stamp"), (29.11, "stamp"), (47.13, "stamp"),
+           (17.80, "stamp"), (18.60, "stamp"), (42.17, "stamp")]
+    ev += [(0.05, "text"), (16.30, "text"), (30.53, "text"), (31.37, "text"), (32.29, "text"), (43.45, "text"),
+           (44.73, "text")]                                       # финал: у плашки свой pop от build_page
+    ev += [(9.73, "line"), (11.53, "line"), (19.81, "line"), (22.25, "line"), (35.53, "line"), (36.37, "line"),
+           (37.61, "line"), (38.60, "line"), (39.27, "line")]
+    return ev
+
+
+sounds += soft_track(soft_events(), sounds)
+sounds.append(background_music(STEM, "yt-no-rush.mp3", DUR))
 page = build_page("Почему соты у пчёл шестиугольные", DUR, behind, front + "\n" + parts.front, beats, sounds, fg,
                   cta_at=CTA, extra_css=css + parts.css, fmt=tk.fmt, captions=tk.captions)
 page = parts.finalize(page)
-out = ROOT / f"studio/{STEM}/index.html"
+out = ROOT / f"studio/{tk.project}/index.html"
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(page, encoding="utf-8")
 
@@ -292,11 +317,12 @@ director = {
                 [50.0, 53.5, tk.punch, 0.10]] + switch,
     "text_fixes": tk.fixes({126: "ЕГЭ", 59: "Круглые", 2: "ПИК", 118: "***", 81: "квадратами и", 82: ""}),
     "keep_case": ["ЕГЭ", "ЖК", "ПИК"],
+    "footage_ok": "смонтирован до правила 17.10 (три ИИ-видео), принят Валерой как образец стиля",
     "accent_words": ["ПИК", "шестиугольные.", "воск.", "шестиугольниками.", "периметр.", "Дарвин", "80"],
     # субтитры прячутся только под текстом, который повторяет речь (rules.md п.16): ПИК, ПОЧЕМУ?, ШЕСТИУГОЛЬНЫЕ, Маркс,
     # ЛИШНИЙ ВОСК, 3 СПОСОБА, САМЫЙ ВЫГОДНЫЙ, МЕНЬШЕ ВОСКА, цитата, 80+, финал; под пипом — звёзды только на плашке, субтитр «себе»; схемы и перебивки — с субтитрами
     "hide_captions": [[0.0, 2.40], [4.60, 6.05], [7.70, 8.90], [16.20, 19.05], [24.80, 25.70], [29.05, 30.45], [34.25, 35.25],
                       [42.10, 43.10], [44.70, 46.45], [47.10, 47.62], [52.10, 53.60], [CTA - 0.2, DUR]],
 }
-(ROOT / f"work/{STEM}/director.json").write_text(json.dumps(director, ensure_ascii=False, indent=1), encoding="utf-8")
+(ROOT / f"work/{STEM}/director{'.' + VARIANT if VARIANT else ''}.json").write_text(json.dumps(director, ensure_ascii=False, indent=1), encoding="utf-8")
 print("ok", len(page.splitlines()), "строк, длина", round(DUR, 2))

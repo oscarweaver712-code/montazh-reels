@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import formats
-from common import WORK_DIR, ffmpeg_bin, ffprobe_bin
+from common import WORK_DIR, ffmpeg_bin, ffprobe_bin, sheet_path
 
 # Пустота у края — это ровный чёрный фон страницы (Y≈16) без единой фактуры. Тёмный стол или
 # штора тоже бывают около 16–20, но в них есть шум и перепады: поэтому смотрим и на разброс.
@@ -196,7 +196,9 @@ def main():
                             capture_output=True, encoding="utf-8", errors="replace")
     check(not decode.stderr.strip(), "файл декодируется без ошибок", decode.stderr.strip()[:80] or "чисто")
 
-    sheet = contact_sheet(video, video.with_suffix(".sheet.jpg"), width=width, height=height,
+    out = sheet_path(video)                    # не в output/: там только видео (Валера 16.10)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    sheet = contact_sheet(video, out, width=width, height=height,
                           duration=duration)
     print(f"  · сетка кадров: {sheet}")
     if failed:

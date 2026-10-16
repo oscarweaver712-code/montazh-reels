@@ -161,6 +161,9 @@ def loudness(stem: str, name: str) -> float:
 def origin(stem: str, area: str, name: str) -> dict:
     """Откуда файл: положил человек, сгенерировано, найдено ИИ, библиотека звуков, анимация."""
     downloads = WORK_DIR / stem / "downloads"
+    if area == "materials" and name.startswith("yt-"):
+        return {"code": "library", "label": "фонотека YouTube · автора указывать не нужно",
+                "detail": "условия фонотеки: только в своих роликах, отдельно не распространять (не в git)"}
     if area == "materials" or (area == "img" and (folder(stem) / name).exists()):
         return {"code": "mine", "label": "добавил ты"}
     if area == "img":

@@ -21,6 +21,9 @@ The following `.mp3` files are bundled with this skill:
 - `typing.mp3`
 - `whoosh.mp3` / `whoosh-cinematic.mp3`
 
+Exception — the quiet editing pack `swell-1..3`, `tap-1..3`, `tick-1..2`, `bubble-1..2` is synthesized by this project
+(`scripts/sfx_soft.py`, 16.10.2026) and is not from Pixabay; manifest marks them `"soft": true` with their source.
+
 See `manifest.json` for per-file metadata (duration, energy character, recommended use).
 
 ## License

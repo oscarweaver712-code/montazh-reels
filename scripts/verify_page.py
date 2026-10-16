@@ -29,6 +29,7 @@ HyperFrames, видео и звук отключены. Таймлайн про�
 import argparse
 import html
 import json
+import math
 import re
 import subprocess
 import sys
@@ -45,6 +46,7 @@ CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headl
 FPS = 30
 SPLICE_JUMP = 0.1    # на склейке крупность меняется хотя бы на столько (1.2 → 1.36 у Take.splice_punches)
 HOLD_MAX = 5.0      # с: дольше графика без изменений — динамика проседает (Валера 13.10, IMG_1803)
+FOOTAGE_MAX = 2     # ИИ-видео на ролик (Валера 17.10: «генерации видео в одном видео 1-2 в самых топовых местах, не больше»)
 CAP_GAP_MAX = 3.0   # с: дольше речь без субтитров не идёт (Валера 16.10, IMG_3303 v3: «надолго пропали»)
 
 # Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
@@ -652,7 +654,37 @@ def find_chrome() -> str:
 SFX_NORM_MARK = 'name="reels-sfx-norm"'        # kit ставит в страницы с нормой звука
 
 
-def sound_problems(page: str) -> list:
+def music_problems(page: str, project: str | None) -> list:
+    """Фоновая музыка (Валера 17.10.2026: «менять постоянно, но по громкости негромко, вот как сейчас хорошо»): трек
+    фонотеки (yt-*), не громче kit.BGM_LEVEL от нормы материалов и не тот, что уже стоит в другом ролике."""
+    import kit
+    import materials
+    tracks = re.findall(r'<audio id="sfx-[^"]*" src="assets/materials/([^"]+)"[^>]*?data-volume="([\d.]+)"', page)
+    if not tracks or project is None:
+        return []
+    stem = project.split("--")[0]
+    problems, limit = [], kit.SFX_TARGET + 20 * math.log10(kit.BGM_LEVEL) + 0.5
+    for name, volume in tracks:
+        if not name.startswith(kit.BGM_PREFIX):
+            continue                           # свой звук человека из материалов — его громкость решает он
+        try:
+            level = materials.loudness(stem, name) + 20 * math.log10(max(float(volume), 1e-6))
+        except Exception as e:                 # нет замера — громкость не проверить
+            problems.append(f"{name}: не замерить громкость музыки — {e}")
+            continue
+        if level > limit:
+            problems.append(f"{name}: музыка на {level:.1f} LUFS — громче, чем «негромко, как сейчас» ({limit - 0.5:.1f}); "
+                            f"kit.background_music ставит уровень сам")
+        mark = f'src="assets/materials/{name}"'
+        others = sorted(d.name for d in STUDIO.glob("*/") if d.name.split("--")[0] != stem
+                        and (d / "index.html").exists() and mark in (d / "index.html").read_text(encoding="utf-8"))
+        if others:
+            problems.append(f"{name}: этот трек уже стоит в {', '.join(others[:3])} — музыку меняем в каждом ролике "
+                            f"(возьми другой лоу-фай, scripts/music.py)")
+    return problems
+
+
+def sound_problems(page: str, project: str | None = None) -> list:
     """Звуки страницы по правилам: громкость по замеру файла не выше нормы, убранных нет, повторов нет."""
     import math
 
@@ -670,8 +702,12 @@ def sound_problems(page: str) -> list:
             problems.append(f"{name}: нет в presets/sfx или нет замера громкости")
             continue
         level = info["loudness_m"] + 20 * math.log10(max(float(volume), 1e-6))
-        if level > kit.SFX_TARGET + 0.5:
-            problems.append(f"{name}: {level:.1f} LUFS — громче нормы {kit.SFX_TARGET:g} (на ~11 дБ тише голоса)")
+        target = kit.SFX_TARGET + (kit.SOFT_DB if info.get("soft") else 0.0)
+        if level > target + 0.5:
+            problems.append(f"{name}: {level:.1f} LUFS — громче нормы {target:g}" +
+                            (" для тихого звука монтажа" if info.get("soft") else " (на ~11 дБ тише голоса)"))
+
+    problems += music_problems(page, project)
     try:
         kit.check_sounds([page])
     except ValueError as e:
@@ -778,6 +814,16 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
         raise RuntimeError(f"Chrome не вернул разбор страницы {page_path.parent.name}:\n"
                            f"{result.stderr.strip()[-600:]}")
     return json.loads(html.unescape(found.group(1)))
+
+
+def load_director(project: Path) -> dict | None:
+    """director.json ролика (варианта — director.<вариант>.json, если есть)."""
+    work = take_dir(project)
+    variant = project.name.split("--")[1] if "--" in project.name else None
+    for path in ([work / f"director.{variant}.json"] if variant else []) + [work / "director.json"]:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return None
 
 
 def caption_gaps(project: Path, limit: float = CAP_GAP_MAX) -> list:
@@ -903,7 +949,7 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     if leak is not None:
         check(not leak, leak or "плашки «смотри у меня в профиле» нет: проект без CTA")
     if SFX_NORM_MARK in page_text:
-        sounds = sound_problems(page_text)
+        sounds = sound_problems(page_text, project.name)
         check(not sounds, "звуки: не громче нормы, без убранных и без одинаковых подряд", sounds)
     elif strict:
         check(False, "страница собрана до норм звука 12.10.2026 — пересобери её page.py "
@@ -947,6 +993,14 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         check(not gaps, f"субтитры не пропадают дольше {CAP_GAP_MAX:g} с, пока идёт речь", gaps)
     elif dupes or gaps:
         print(f"  · субтитры двоятся: {len(dupes)}, пропадают дольше {CAP_GAP_MAX:g} с: {len(gaps)} (при правке ролика — hide_captions)")
+    clips = sorted(set(re.findall(r'src="assets/footage/([^"]+\.mp4)"', page_text)))
+    allowed = (load_director(project) or {}).get("footage_ok")
+    if len(clips) > FOOTAGE_MAX and allowed:
+        print(f"  · ИИ-видео {len(clips)} — больше {FOOTAGE_MAX}, осознанно: {allowed}")
+    elif strict or len(clips) <= FOOTAGE_MAX:
+        check(len(clips) <= FOOTAGE_MAX, f"ИИ-видео не больше {FOOTAGE_MAX} на ролик — только в самых топовых местах",
+              [f"{len(clips)}: {', '.join(clips)} — остальные места закрой серией фото (kit.slides) или графикой"]
+              if len(clips) > FOOTAGE_MAX else [])
     over = res.get("fgOverCut", [])
     check(not over, "на перебивке (футаж, серия картинок) нет человека поверх — окна вырезки до и после",
           [f"вырезка видна поверх перебивки на {over[0]:.2f}–{over[-1]:.2f} с ({len(over)} замеров)"] if over else [])

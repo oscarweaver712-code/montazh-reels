@@ -287,8 +287,17 @@ def project_name(stem: str, variant: str | None = None) -> str:
     return f"{stem}--{variant}" if variant else stem
 
 
+# Варианты A/B, которые проверяют приём, а не стиль: тот же стиль, что у основного ролика, своя страница
+# work/<имя>/page.<вариант>.py → studio/<имя>--<вариант>/. Список закрытый — опечатка в имени стиля не должна
+# молча собрать ролик в стиле по умолчанию.
+TEST_VARIANTS = {"sfx": "тихие звуки на переходах и влётах текста — тест удержания (16.10.2026, rules.md п.9)",
+                 "music": "еле слышная фоновая музыка (лоу-фай из фонотеки YouTube) — тест удержания (17.10.2026, rules.md п.9)"}
+
+
 def ruling_style(stem: str, variant: str | None = None) -> dict | None:
     """Стиль, по которому собирается проект: вариант, стиль брифа или None (как раньше)."""
+    if variant in TEST_VARIANTS:
+        variant = None                    # приём проверяется в стиле основного ролика
     if variant:
         brief = styles.load_brief(stem)
         overrides = brief.get("overrides") if brief.get("style") == variant else None
