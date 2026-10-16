@@ -87,6 +87,9 @@ Step "Самопроверка (около минуты: честно кодир
 & $Python scripts\selfcheck.py
 Check "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."
 
+Step "ИИ, который монтирует: Claude и Codex"
+& $Python scripts\brain.py --status
+
 Write-Host ""
 Write-Host "✓ Готово. Открой папку в терминале и запусти claude или codex — студия откроется в браузере сама."
 Write-Host "  Без агента: двойной клик по «2 Монтаж — Windows.bat». Подробности в README.md"

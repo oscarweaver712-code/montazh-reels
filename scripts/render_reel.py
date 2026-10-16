@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import host
 import projects
 from common import ROOT, WORK_DIR
+from common import require_queue
 from compose import HYPERFRAMES, STUDIO, compose, project_name
 from master import master
 from plan import check as plan_problems
@@ -125,6 +126,7 @@ def render_reel(stem: str, version: str, variant: str | None = None, need_plan: 
 
 
 def main():
+    require_queue("сборка ролика")
     ap = argparse.ArgumentParser(description="Готовый ролик из проекта HyperFrames, с проверками")
     ap.add_argument("stem", help="имя ролика, например IMG_3317")
     ap.add_argument("--version", help="v1, v2… (по умолчанию — следующая свободная в output/ проекта)")

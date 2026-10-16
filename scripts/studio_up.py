@@ -80,7 +80,14 @@ def stop_server() -> None:
         print("Студия и так не работает")
         return
     os.kill(int(state["pid"]), signal.SIGTERM)
-    print("Студия остановлена")
+    # ждём, пока погаснет: сервер ещё секунды отвечает (закрывает соединения вкладок), и запуск
+    # сразу после --stop принимал его за живой — не поднимал новый, а старый затем гас (16.10.2026)
+    for _ in range(40):                       # до 10 секунд
+        if not ping(timeout=0.3):
+            print("Студия остановлена")
+            return
+        time.sleep(0.25)
+    print(f"Студия не погасла за 10 с (pid {state['pid']}) — лог: {LOG.relative_to(ROOT)}")
 
 
 def main():

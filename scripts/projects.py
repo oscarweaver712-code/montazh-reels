@@ -9,6 +9,7 @@
   projects/<имя>/
     project.json    название, язык речи, умолчания брифа (стиль, форматы, цели), CTA, проверка лица
     rules.md        правила этого проекта — агент читает их до монтажа, они важнее стиля
+    setup.json      анкета проекта (студия: «Проект → Настроить»): ответы ложатся блоком в rules.md
     references/     референсы: ссылки, ролики, скриншоты (analyze_reference.py их меряет)
     input/          исходники — ролик принадлежит тому проекту, в чьём input/ лежит
     output/         готовые ролики проекта
@@ -248,6 +249,117 @@ RULES_TEMPLATE = """# Правила проекта «{title}»
 """
 
 
+# ---------------------------------------------------------------- анкета проекта
+
+# Валера, 16.10.2026: «шаблон правил в новых проектах, и чтобы ИИ требовал ответы на вопросы
+# предварительно». Новый проект без ответов на обязательные вопросы не монтируется — ни из студии,
+# ни пачкой: ИИ без них монтирует «как-нибудь», а заметят это уже на готовом ролике.
+SETUP_QUESTIONS = [
+    {"id": "about", "q": "О чём ролики и кто в кадре", "required": True,
+     "hint": "Тема, ниша, кто говорит. Например: «репетитор ЕГЭ по математике, объясняет с юмором»"},
+    {"id": "audience", "q": "Для кого", "required": True,
+     "hint": "Кто смотрит: возраст, чем живут, что им важно"},
+    {"id": "platforms", "q": "Где публикуем", "required": True, "multi": True,
+     "options": ["Instagram Reels", "TikTok", "YouTube Shorts", "YouTube 16:9", "VK Клипы", "Telegram"]},
+    {"id": "language", "q": "Язык речи в роликах", "required": True, "options": ["ru", "en"]},
+    {"id": "tone", "q": "Характер монтажа", "required": True, "multi": True, "free": True,
+     "options": ["спокойный, экспертный", "динамичный, вирусный", "дерзкий, с юмором", "премиальный, минимализм"]},
+    {"id": "never", "q": "Чего нельзя", "required": True,
+     "hint": "Табу: мат в субтитрах, глитчи, чужие логотипы, цвета, приёмы. Нет табу — так и напиши"},
+    {"id": "cta", "q": "Призыв в конце", "options": ["без призыва", "подписаться", "ссылка в профиле"], "free": True},
+    {"id": "length", "q": "Длительность", "hint": "«до 60 секунд», «как в исходнике, без жёсткой нарезки»"},
+    {"id": "brand", "q": "Шрифт, цвета, фирменный стиль", "hint": "Шрифты, цвета (#hex), логотип, что всегда одинаково"},
+    {"id": "captions", "q": "Субтитры", "hint": "Крупные по слову или фразой, цвет ударного слова, где на экране"},
+    {"id": "sound", "q": "Музыка и звуки", "hint": "Нужна ли музыка, какие звуки, насколько заметно"},
+    {"id": "graphics", "q": "Графика и фоны", "hint": "Картинки за спиной, схемы, мемы, фото — сколько и каких"},
+    {"id": "references", "q": "Референсы", "hint": "Ссылки на ролики, которые нравятся, и что именно в них взять. Файлы — ниже"},
+    {"id": "extra", "q": "Что ещё важно", "hint": "Всё, что не влезло выше: нюансы, предпочтения, привычки автора"},
+]
+SETUP_BEGIN = "<!-- анкета проекта: этот блок пишет студия по ответам анкеты («Проект → Настроить проект») -->"
+SETUP_END = "<!-- /анкета -->"
+FORMAT_OF = {"YouTube 16:9": "16:9"}           # остальные площадки — вертикаль 9:16
+
+
+def _answer(value) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(v).strip() for v in value if str(v).strip())
+    return str(value or "").strip()
+
+
+def load_setup(project: "Project") -> dict | None:
+    path = project.root / "setup.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ProjectError(f"projects/{project.name}/setup.json: битый JSON ({e})")
+    return data.get("answers") if isinstance(data, dict) and isinstance(data.get("answers"), dict) else {}
+
+
+def missing_setup(project: "Project") -> list:
+    """Обязательные вопросы анкеты без ответа. Пусто — проект настроен.
+
+    Проекты, чьи правила написаны руками до анкеты (antishkola, firuza), считаются настроенными:
+    их rules.md уже не шаблон. Новый проект с нетронутым шаблоном — не настроен.
+    """
+    answers = load_setup(project)
+    if answers is None:
+        rules = project.rules_text().strip()
+        if rules and rules != RULES_TEMPLATE.format(title=project.title).strip():
+            return []
+        answers = {}
+    return [q for q in SETUP_QUESTIONS if q.get("required") and not _answer(answers.get(q["id"]))]
+
+
+def setup_markdown(answers: dict) -> str:
+    lines = [SETUP_BEGIN, "## Анкета проекта", ""]
+    for q in SETUP_QUESTIONS:
+        value = _answer(answers.get(q["id"]))
+        if value:
+            lines.append(f"- **{q['q']}:** {value}")
+    return "\n".join(lines + ["", SETUP_END])
+
+
+def save_setup(project: "Project", answers: dict) -> list:
+    """Ответы анкеты → setup.json, блок «Анкета проекта» в rules.md и умолчания project.json.
+
+    Блок между метками переписывается целиком, остальной rules.md — нет: правила, дописанные руками
+    или ИИ, анкета не трогает. Возвращает обязательные вопросы, оставшиеся без ответа.
+    """
+    known = {q["id"] for q in SETUP_QUESTIONS}
+    unknown = set(answers) - known
+    if unknown:
+        raise ProjectError(f"В анкете нет вопросов: {', '.join(sorted(unknown))}")
+    clean = {k: v for k, v in answers.items() if _answer(v)}
+    (project.root / "setup.json").write_text(json.dumps({"answers": clean}, ensure_ascii=False, indent=1) + "\n",
+                                             encoding="utf-8")
+    rules = project.rules_text() or RULES_TEMPLATE.format(title=project.title)
+    block = setup_markdown(clean)
+    if SETUP_BEGIN in rules and SETUP_END in rules:
+        head, rest = rules.split(SETUP_BEGIN, 1)
+        rules = head + block + rest.split(SETUP_END, 1)[1]
+    else:
+        lines = rules.splitlines()
+        at = next((i + 1 for i, line in enumerate(lines) if line.startswith("# ")), 0)
+        rules = "\n".join(lines[:at] + ["", block, ""] + lines[at:]).rstrip() + "\n"
+    project.rules.write_text(rules, encoding="utf-8")
+    # умолчания роликов из ответов: язык, форматы площадок, нужен ли призыв
+    path = project.root / "project.json"
+    config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if _answer(clean.get("language")) in ("ru", "en"):
+        config["language"] = _answer(clean["language"])
+    platforms = clean.get("platforms") or []
+    if isinstance(platforms, list) and platforms:
+        config.setdefault("brief", {})["formats"] = sorted({FORMAT_OF.get(p, "9:16") for p in platforms},
+                                                           key=lambda f: f != "9:16")
+    if "cta" in clean:
+        config["cta"] = "без" not in _answer(clean["cta"]).lower()
+    path.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    load_config(path, project.name)                   # проверка: записанное читается
+    return missing_setup(Project(project.name))
+
+
 def create(name: str, title: str = "") -> Project:
     """Каркас нового проекта. Существующий не трогается."""
     if not NAME_RE.match(name or ""):
@@ -300,6 +412,8 @@ def main():
     new.add_argument("--title", default="")
     where = sub.add_parser("where", help="чей ролик")
     where.add_argument("stem")
+    ready = sub.add_parser("ready", help="настроен ли проект: обязательные вопросы анкеты без ответа")
+    ready.add_argument("name")
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
     try:
@@ -314,7 +428,15 @@ def main():
             project = create(args.name, args.title)
             print(f"  ✓ проект {project.name}: projects/{project.name}/\n"
                   f"    исходники — в input/, референсы — в references/, правила — rules.md,\n"
-                  f"    стиль и форматы по умолчанию — project.json")
+                  f"    стиль и форматы по умолчанию — project.json\n"
+                  f"    до первого монтажа ответь на анкету: студия → «Проект → Настроить проект»\n"
+                  f"    ({', '.join(q['q'] for q in SETUP_QUESTIONS if q.get('required'))})")
+        elif args.cmd == "ready":
+            left = missing_setup(get(args.name))
+            if left:
+                sys.exit(f"✗ проект {args.name} не настроен — нет ответов: " + "; ".join(q["q"] for q in left)
+                         + ". Спроси человека (студия: «Проект → Настроить проект») и не монтируй до ответа")
+            print(f"  ✓ проект {args.name} настроен")
         elif args.cmd == "where":
             project = of(args.stem)
             print(f"{args.stem} → {project.name} ({project.title})")

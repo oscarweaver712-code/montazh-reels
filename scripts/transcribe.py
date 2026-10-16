@@ -21,6 +21,7 @@ import numpy as np
 
 import host
 from common import WORK_DIR, ffmpeg_bin, run
+from common import require_queue
 
 MODEL = "mlx-community/whisper-large-v3-turbo"        # mlx-whisper
 FW_MODEL = "large-v3-turbo"                           # faster-whisper (mobiuslabsgmbh/faster-whisper-large-v3-turbo)
@@ -193,5 +194,6 @@ if __name__ == "__main__":
         sys.exit(0)
     if len(sys.argv) < 2:
         sys.exit("Использование: transcribe.py <видеофайл> [--language en] [--force] | --check")
+    require_queue("распознавание речи")
     lang = sys.argv[sys.argv.index("--language") + 1] if "--language" in sys.argv else "ru"
     run_transcribe(Path(sys.argv[1]).resolve(), language=lang, force="--force" in sys.argv)

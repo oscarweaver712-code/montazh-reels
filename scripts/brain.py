@@ -64,6 +64,10 @@ STUDIO_PROMPT = f"""Тебя вызывают из локальной студи
 — Бриф ролика (стиль, формат, цели, варианты) — work/<имя>/brief.json, текст для тебя:
   {PY} scripts/styles.py --brief <имя>. Каталог стилей: presets/styles/.
 — Вопрос задавай, только если без ответа дальше нельзя; иначе выбирай разумно и пиши, что выбрал.
+— Рядом в своих сессиях могут монтироваться другие ролики: трогай только work/<свой ролик>/ и
+  studio/<свой ролик>/; общие файлы (scripts/, presets/, правила проекта) — только по прямой просьбе.
+  В имени задачи очереди — имя ролика (20-prep-IMG_3317): по нему студия понимает, чья задача.
+— Человек может дописать просьбу посреди хода — придёт строкой «Человек дописал…»: учти её с текущего шага.
 """
 
 
@@ -103,6 +107,44 @@ def engines() -> dict:
     return out
 
 
+def auth_status(name: str, path: str) -> dict:
+    """Вошёл ли человек в мозг и на каком тарифе: claude auth status / codex login status.
+
+    Ничего не запускает в модели и ничего не тратит. Не смогли узнать — logged_in None (не «нет»).
+    """
+    try:
+        if name == "claude":
+            out = subprocess.run([path, "auth", "status", "--json"], capture_output=True, encoding="utf-8",
+                                 errors="replace", timeout=20, env=clean_env())
+            data = json.loads(out.stdout or "{}")
+            plan = data.get("subscriptionType") or ("API-ключ" if data.get("authMethod") == "apiKey" else data.get("authMethod"))
+            return {"logged_in": bool(data.get("loggedIn")), "plan": plan}
+        out = subprocess.run([path, "login", "status"], capture_output=True, encoding="utf-8", errors="replace",
+                             timeout=20, env=clean_env(), stdin=subprocess.DEVNULL)
+        text = f"{out.stdout} {out.stderr}"
+        ok = out.returncode == 0 and "not logged" not in text.lower()
+        plan = "ChatGPT" if "ChatGPT" in text else ("API-ключ" if "API key" in text else None)
+        return {"logged_in": ok, "plan": plan if ok else None}
+    except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+        return {"logged_in": None}
+
+
+def connect_command(engine: str, action: str) -> str:
+    """Команда для терминала: поставить мозг (официальный способ) или войти в него через браузер."""
+    path = find_binary(engine)
+    quoted = (f'& "{path}"' if host.IS_WINDOWS else f'"{path}"') if path else engine
+    if action == "install":
+        if engine == "claude":
+            return ("irm https://claude.ai/install.ps1 | iex" if host.IS_WINDOWS
+                    else "curl -fsSL https://claude.ai/install.sh | bash")
+        return "npm install -g @openai/codex"          # npm есть: на Node работает HyperFrames
+    if action == "login":
+        if not path:
+            raise ValueError(f"{engine} ещё не установлен — сначала «Установить»")
+        return f"{quoted} auth login" if engine == "claude" else f"{quoted} login"
+    raise ValueError("действие — install или login")
+
+
 # Переменные сессии агента, в которой подняли сервер студии (хук старта, терминал агента).
 # Сервер живёт дольше этой сессии, и без чистки каждый ход мозга и каждая задача очереди
 # получали чужие номер сессии, сокет и ключ для сообщений, «я дочерняя сессия» и даже её
@@ -121,17 +163,27 @@ def clean_env() -> dict:
     return {k: v for k, v in os.environ.items() if k not in SESSION_VARS}
 
 
-def child_env() -> dict:
+def child_env(thread_id: str | None = None) -> dict:
     env = host.utf8_env(clean_env())
     env[CHILD_ENV] = "1"
+    if thread_id:
+        env["REELS_THREAD"] = thread_id       # хук дописанных просьб (scripts/inbox_hook.mjs) знает, чей ход
     # из Finder PATH короткий — без него агент не найдёт ffmpeg, node и npx
     extra = [str(Path(folder).expanduser()) for folder in EXTRA_BIN]
     env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
     return env
 
 
+# Хук «после каждого действия»: дописанное человеком посреди монтажа агент получает сразу, а не в конце
+# хода (замер 16.10.2026: Claude видит его после ближайшего действия). Только агентам студии — через
+# --settings, в настройки проекта его не кладём. Codex в режиме exec хуки после действий не вызывает
+# (проверено на 0.162) — ему дописанное студия отдаёт следующим ходом.
+INBOX_HOOK = {"hooks": {"PostToolUse": [{"matcher": "", "hooks": [
+    {"type": "command", "command": 'node "$CLAUDE_PROJECT_DIR/scripts/inbox_hook.mjs"', "timeout": 10}]}]}}
+
+
 def command(engine: str, prompt: str, session: str | None = None, mode: str = "safe",
-            model: str | None = None, context: str = "") -> list:
+            model: str | None = None, context: str = "", thread_id: str | None = None) -> list:
     """Команда запуска одного хода агента. prompt — реплика человека."""
     binary = find_binary(engine)
     if not binary:
@@ -148,6 +200,8 @@ def command(engine: str, prompt: str, session: str | None = None, mode: str = "s
             cmd += ["--permission-mode", "acceptEdits", "--allowedTools", *SAFE_TOOLS]
         if model:
             cmd += ["--model", model]
+        if thread_id:
+            cmd += ["--settings", json.dumps(INBOX_HOOK)]
         if session:
             cmd += ["--resume", session]
         return cmd
@@ -245,7 +299,7 @@ def parse_line(engine: str, line: str) -> list:
                        for d in ev.get("permission_denials") or []]
             out.append({"type": "result", "ok": not ev.get("is_error"), "text": ev.get("result") or "",
                         "session": ev.get("session_id"), "cost": ev.get("total_cost_usd"),
-                        "denied": denials})
+                        "denied": denials, "context": context_size(ev.get("usage"))})
             if ev.get("is_error"):
                 # 14.10.2026: «Failed to authenticate. API Error: 403» приходил только текстом результата —
                 # пачка не видела ошибки и прожгла на ней оставшиеся ходы ролика
@@ -288,6 +342,22 @@ def parse_line(engine: str, line: str) -> list:
     return out
 
 
+def context_size(usage: dict | None) -> int | None:
+    """Сколько токенов занимал разговор в последнем обращении к модели — по нему видно, что сессия разрослась.
+
+    usage итога Claude — сумма за ход; размер контекста — у последнего обращения (iterations[-1]):
+    вход + прочитанное из кэша + записанное в кэш.
+    """
+    if not isinstance(usage, dict):
+        return None
+    last = (usage.get("iterations") or [None])[-1] or usage
+    try:
+        return int(last.get("input_tokens", 0)) + int(last.get("cache_read_input_tokens", 0)) \
+            + int(last.get("cache_creation_input_tokens", 0))
+    except (TypeError, ValueError):
+        return None
+
+
 def explain_error(message: str) -> str:
     """Ошибки агента — человеческим языком, с тем, что делать."""
     try:
@@ -316,10 +386,10 @@ def _thread_path(thread_id: str) -> Path:
     return THREADS / f"{thread_id}.json"
 
 
-def new_thread(engine: str, title: str = "", stem: str | None = None) -> dict:
+def new_thread(engine: str, title: str = "", stem: str | None = None, project: str | None = None) -> dict:
     THREADS.mkdir(parents=True, exist_ok=True)
     thread = {"id": uuid.uuid4().hex[:12], "engine": engine, "title": title or "Новый разговор",
-              "stem": stem, "session": None, "created": time.time(), "updated": time.time(),
+              "stem": stem, "project": project, "session": None, "created": time.time(), "updated": time.time(),
               "messages": []}
     save_thread(thread)
     return thread
@@ -369,6 +439,96 @@ def fill_turn_costs(messages: list) -> None:
                 ev["turn"] = turn_cost(messages[:i], ev)
 
 
+# ---------------------------------------------------------------- свежая сессия ролика
+
+# Сессия одного ролика тоже растёт: пятнадцать заходов «поправь то, поправь это» — и монтаж
+# деградирует так же, как в пачке в одном разговоре (Валера, 16.10.2026: «свежая сессия автоматом»).
+# Порог — размер контекста у Claude и число просьб человека у любого мозга. Состояние ролика живёт в
+# файлах work/<имя>/, поэтому свежей сессии хватает короткой передачи дел.
+FRESH_CONTEXT = 120_000
+FRESH_REQUESTS = 8
+
+
+def needs_fresh(thread: dict) -> str | None:
+    """Почему разговор пора продолжить свежей сессией, или None."""
+    if not thread.get("session"):
+        return None
+    msgs = thread.get("messages") or []
+    for m in reversed(msgs):
+        res = next((e for e in m.get("events") or [] if e.get("type") == "result"), None)
+        if res and res.get("context"):
+            if res["context"] >= FRESH_CONTEXT:
+                return f"разговор занял ≈{res['context'] // 1000} тыс. токенов"
+            break
+    asks = sum(1 for m in msgs if m.get("role") == "user" and not m.get("auto"))   # ходы пачки «продолжай» — не просьбы
+    if asks >= FRESH_REQUESTS:
+        return f"в разговоре уже {asks} просьб"
+    return None
+
+
+def _final_text(message: dict, limit: int) -> str:
+    texts = [e.get("text", "") for e in message.get("events") or [] if e.get("type") == "text" and e.get("text")]
+    text = " ".join((texts[-1] if texts else "").split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def handoff(thread: dict, keep: int = 6) -> str:
+    """Передача дел свежей сессии: последние просьбы человека и итоги ответов. Подробности — в файлах."""
+    msgs = thread.get("messages") or []
+    pairs = []
+    for i, m in enumerate(msgs):
+        if m.get("role") != "user":
+            continue
+        reply = msgs[i + 1] if i + 1 < len(msgs) and msgs[i + 1].get("role") == "assistant" else {}
+        ask = " ".join(m.get("text", "").split())
+        pairs.append(f"— просьба: {ask[:400]}" + (f"\n  итог: {_final_text(reply, 500)}" if _final_text(reply, 500) else ""))
+    stem = thread.get("stem")
+    where = (f"Состояние ролика — в файлах work/{stem}/ (plan.md, edit.json, director.json, page.py, timeline.json — "
+             f"ручные правки человека, их не затирать). Читай их, а не полагайся на этот пересказ.") if stem else \
+        "Состояние — в файлах проекта; читай их, а не полагайся на этот пересказ."
+    return ("Это продолжение работы в свежей сессии: прошлая разрослась, и монтаж в ней стал бы хуже.\n"
+            f"Что было в прошлой сессии ({len(pairs)} просьб, последние {min(keep, len(pairs))}):\n"
+            + "\n".join(pairs[-keep:]) + "\n" + where)
+
+
+# ---------------------------------------------------------------- дописанное по ходу
+
+INBOX = WORK_DIR / "_studio" / "inbox"
+
+
+def inbox_add(thread_id: str, text: str) -> str:
+    """Просьба человека к идущему ходу: файл, который хук агента заберёт после ближайшего действия."""
+    _thread_path(thread_id)                          # проверка номера
+    box = INBOX / thread_id
+    box.mkdir(parents=True, exist_ok=True)
+    msg_id = f"{time.time():.6f}".replace(".", "")
+    tmp = box / f"{msg_id}.part"
+    tmp.write_text(json.dumps({"text": text, "at": time.time()}, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(box / f"{msg_id}.json")
+    return msg_id
+
+
+def inbox_state(thread_id: str) -> dict:
+    """{id: доставлено ли} по дописанному в этот разговор."""
+    box = INBOX / thread_id
+    if not box.exists():
+        return {}
+    return {p.stem: p.suffix == ".done" for p in sorted(box.iterdir()) if p.suffix in (".json", ".done")}
+
+
+def inbox_take(thread_id: str) -> list:
+    """Недоставленное хуком (Codex, или ход кончился раньше) — забрать, чтобы отдать следующим ходом."""
+    box = INBOX / thread_id
+    texts = []
+    for path in sorted(box.glob("*.json")) if box.exists() else []:
+        try:
+            texts.append(json.loads(path.read_text(encoding="utf-8"))["text"])
+            path.replace(path.with_suffix(".done"))
+        except (OSError, ValueError, KeyError):
+            continue
+    return texts
+
+
 def list_threads() -> list:
     if not THREADS.exists():
         return []
@@ -378,6 +538,33 @@ def list_threads() -> list:
             t = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        items.append({k: t.get(k) for k in ("id", "engine", "title", "stem", "updated")}
+        items.append({k: t.get(k) for k in ("id", "engine", "title", "stem", "project", "updated", "fresh_of")}
                      | {"count": len(t.get("messages", []))})
     return sorted(items, key=lambda t: -(t["updated"] or 0))
+
+
+def status_report() -> str:
+    """Подключены ли Claude и Codex — для установщика: монтирует ИИ, без него только ручные правки."""
+    lines, ready = [], []
+    for name, e in engines().items():
+        title = "Claude" if name == "claude" else "Codex"
+        if not e["available"]:
+            lines.append(f"  ✗ {title}: не установлен")
+            continue
+        auth = auth_status(name, e["path"])
+        if auth.get("logged_in") is False:
+            lines.append(f"  ✗ {title}: установлен, но вход не выполнен")
+        else:
+            ready.append(title)
+            lines.append(f"  ✓ {title}: готов{' · ' + auth['plan'] if auth.get('plan') else ''}")
+    tail = ("  Монтирует ИИ — без него студия умеет только ручные правки. Подключить лучше оба (кончится лимит у одного —\n"
+            "  продолжит второй): студия → кнопка «Подключи ИИ» вверху справа, установка и вход — в пару кликов.")
+    return "\n".join(lines + ([tail] if len(ready) < 2 else []))
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["--status"]:
+        host.utf8_console()
+        print(status_report())
+    else:
+        sys.exit("Использование: brain.py --status — подключены ли Claude и Codex")

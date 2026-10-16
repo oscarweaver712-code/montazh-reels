@@ -185,7 +185,9 @@ def stop_tree(proc: subprocess.Popen) -> None:
 def run_step(argv: list, log, name: str, hang: float) -> int:
     """Один шаг: ждёт конца, кнопки «Остановить» или зависания (ни процессора, ни вывода)."""
     log.flush()
-    proc = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, env=host.utf8_env())
+    env = host.utf8_env()
+    env["REELS_QUEUE_STEP"] = "1"                 # тяжёлым скриптам: «я из очереди» (common.require_queue)
+    proc = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, env=env)
     cpu, size, busy = tree_cpu(proc.pid), os.fstat(log.fileno()).st_size, time.time()
     while True:
         try:
@@ -208,6 +210,23 @@ def run_step(argv: list, log, name: str, hang: float) -> int:
             return 124
 
 
+TIMINGS = QUEUE / "timings.jsonl"
+
+
+def note_timing(step: list, seconds: float) -> None:
+    """Сколько шёл удачный шаг — студия по этим замерам пишет «≈ 4 мин» у шагов монтажа на этой машине."""
+    script = next((Path(a).name for a in step if a.endswith(".py")), None)
+    stem = next((m.group(1) for a in step for m in [re.search(r"(IMG_\d+\w*|[A-Z]+_\d+)", a)] if m), None)
+    if not script:
+        return
+    try:
+        with open(TIMINGS, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"script": script, "stem": stem, "hq": "--hq" in step, "seconds": round(seconds, 1),
+                                "at": round(time.time())}) + "\n")
+    except OSError:
+        pass                                   # замер — подсказка, а не условие работы очереди
+
+
 def run_job(job: Path, log) -> int:
     """Выполняет задачу; код возврата первого упавшего шага или 0."""
     if job.suffix == ".sh":
@@ -225,7 +244,10 @@ def run_job(job: Path, log) -> int:
             log.write(f"$ {shlex.join(step)}\n")
             log.flush()
             try:
+                began = time.time()
                 code = run_step([program(step[0]), *step[1:]], log, job.stem, hang)
+                if code == 0:
+                    note_timing(step, time.time() - began)
             except OSError as e:
                 log.write(f"✗ не запустилось «{step[0]}»: {e}\n")
                 code = 127

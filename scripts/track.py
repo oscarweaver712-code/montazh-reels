@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host
 from common import MODEL_DIR, ROOT, ffmpeg_bin, probe
+from common import require_queue
 
 YUNET = MODEL_DIR / "face_detection_yunet_2023mar.onnx"
 
@@ -384,6 +385,7 @@ def preview_sheet(video: Path, camera: list, fps: float, out: Path, samples: int
 
 
 def main():
+    require_queue("слежение за лицом")
     ap = argparse.ArgumentParser(description="Слежение за лицом и путь камеры")
     ap.add_argument("video")
     ap.add_argument("--punches", help="JSON: [[начало, конец, зум, въезд], ...]")

@@ -32,6 +32,7 @@
 import argparse
 import contextlib
 import json
+import math
 import os
 import re
 import shutil
@@ -147,6 +148,13 @@ class Report:
         if not ok:
             self.failed.append(title)
         return ok
+
+
+def stage_page_assets(project: Path) -> None:
+    """Тестовый проект страницы: правки монтажной (layers.js, edits.js) — как кладёт compose.py."""
+    import timeline
+    shutil.copy2(timeline.LAYERS_JS, project / "layers.js")
+    (project / "edits.js").write_text(timeline.edits_js({}), encoding="utf-8")
 
 
 def probe_value(path: Path, entries: str, stream: str | None = None) -> str:
@@ -640,6 +648,13 @@ def check_edges(report: Report):
     report.check(end <= 67.24, "лишнее слово без паузы перед ним не попадает в дубль",
                  f"конец {end:.2f} с")
 
+    # IMG_1816: тихое «профиле» порог −35 дБ счёл паузой (66.62–67.36), она началась раньше слова —
+    # конец уезжал в тишину после лишнего «это,» (67.68), и ролик кончался обрывком слова
+    words = [{"word": "профиле,", "start": 66.70, "end": 67.02}, {"word": "это,", "start": 67.36, "end": 67.56}]
+    _, end = find_edges(words, [(66.62, 67.36), (67.55, 67.80)], 60.0, 67.20)
+    report.check(67.02 <= end < 67.36, "тихое последнее слово: лишнее после паузы не попадает в дубль",
+                 f"конец {end:.2f} с, «это» с 67.36")
+
     # Дубль начинается со звука (0.93), а whisper начал «Это» на 0.76: по началу слова оно
     # выпадало из субтитров, и все правки текста по номерам съезжали на слово.
     from cut import remap_words
@@ -1041,6 +1056,7 @@ def check_grey_zones(report: Report, tmp: Path):
     (project / "assets").mkdir(parents=True)
     shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
     (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    stage_page_assets(project)
     caps = [{"t0": 0.2, "t1": 1.8, "text": "по центру", "accent": False}]
     (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n",
                                          encoding="utf-8")
@@ -1170,6 +1186,7 @@ def check_page_timeline(report: Report, tmp: Path):
     (project / "assets").mkdir(parents=True)
     shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
     (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    stage_page_assets(project)
     caps = [{"t0": 0.50, "t1": 1.20, "text": "обычная", "accent": False},
             {"t0": 1.807, "t1": 1.847, "text": "мы", "accent": False},    # кадр 1.867 — между уходом и концом входа
             {"t0": 2.927, "t1": 3.007, "text": "кто", "accent": False}]   # щель 3.007–3.017 пока мимо кадров
@@ -1222,6 +1239,182 @@ def check_page_timeline(report: Report, tmp: Path):
     report.check(old_entry != page and "субтитр «мы»" in old_stuck and "субтитр «кто»" in old_risky,
                  "старый вход субтитров ловится: «мы» залипает, «кто» — без запаса по кадрам",
                  f"залипает: {', '.join(sorted(old_stuck)) or '—'}; без запаса: {', '.join(sorted(old_risky)) or '—'}")
+
+
+def probe_page(project: Path, js: str) -> dict:
+    """Страница в том же Chrome, что и рендер: свой скрипт после страницы пишет ответ JSON в DOM."""
+    from verify_page import find_chrome
+    page = (project / "index.html").read_text(encoding="utf-8")
+    page = re.sub(r'(<(?:video|audio)\b[^>]*?)\s+src="[^"]*"', r"\1", page)
+    page = page.replace("<head>", f'<head>\n<base href="{project.as_uri()}/">\n<script>window.__timelines = {{}}; '
+                        'window.__errs = []; window.addEventListener("error", (e) => window.__errs.push(String(e.message)));'
+                        '</script>', 1)
+    cut = page.rfind("</body>")
+    page = page[:cut] + ("<script>(function(){let out;try{out=(" + js + ")();}catch(e){out={crash:String(e)}}"
+                         "out.errors=window.__errs;const p=document.createElement('pre');p.id='probe';"
+                         "p.textContent=JSON.stringify(out);document.body.appendChild(p);})();</script>\n") + page[cut:]
+    wrapper = project / "_probe.html"
+    wrapper.write_text(page, encoding="utf-8")
+    try:
+        res = subprocess.run([find_chrome(), "--headless", "--disable-gpu", "--no-first-run", "--mute-audio",
+                              f"--user-data-dir={project / '_profile'}", "--virtual-time-budget=2000", "--dump-dom",
+                              wrapper.as_uri()], capture_output=True, encoding="utf-8", errors="replace", timeout=120)
+    finally:
+        wrapper.unlink(missing_ok=True)
+        shutil.rmtree(project / "_profile", ignore_errors=True)
+    m = re.search(r'<pre id="probe">(.*?)</pre>', res.stdout, re.S)
+    if not m:
+        raise RuntimeError(f"Chrome не отдал разбор страницы: {res.stderr.strip()[-200:]}")
+    import html as _html
+    return json.loads(_html.unescape(m.group(1)))
+
+
+def check_timeline(report: Report, tmp: Path):
+    """Ручные правки монтажной (timeline.py, presets/studio/layers.js).
+
+    Правки человека живут в work/<имя>/timeline.json и ложатся поверх решений агента последними:
+    page.py агента director.json перезаписывает. Проверка: наезд и зона без субтитров правятся и
+    возвращаются, разметка правится без накопления (дважды = один раз, сняли правку — как было),
+    звук сдвигается в атрибутах (HyperFrames читает время звука оттуда, а не из таймлайна —
+    замер 16.10.2026), слой сдвигается в таймлайне страницы, двигается и меняет шрифт, цвет и
+    текст на кадре; правка, которая разошлась со страницей, — громкая ошибка с текстом.
+    """
+    import timeline
+    from kit import audio, build_page
+
+    print("\nДорожки студии и ручные правки")
+    director = {"punches": [[1.0, 2.0, 1.36, 0.1], [3.0, 4.0, 1.36, 0.1]], "hide_captions": [[5.0, 6.0]],
+                "text_fixes": {"1": "раз"}}
+    edits = timeline.normalize({"camera": {"remove": [[3.0, 4.0]], "add": [[3.5, 4.5, 1.4, 0.1, 0.25]]},
+                                "captions": {"hide_add": [[7.0, 8.0]], "hide_remove": [[5.0, 6.0]],
+                                             "fixes": {"2": "два"}}})
+    d = timeline.apply_director(director, edits)
+    report.check(d["punches"] == [[1.0, 2.0, 1.36, 0.1], [3.5, 4.5, 1.4, 0.1, 0.25]]
+                 and d["hide_captions"] == [[7.0, 8.0]] and d["text_fixes"] == {"1": "раз", "2": "два"}
+                 and director["punches"][1] == [3.0, 4.0, 1.36, 0.1],
+                 "правки камеры и субтитров ложатся поверх решений агента, director.json не трогается",
+                 json.dumps(d, ensure_ascii=False)[:160])
+
+    project = tmp / "tl-page"
+    (project / "assets" / "fonts").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    shutil.copy2(timeline.FONT_DIR / "Unbounded-ExtraBold.ttf", project / "assets" / "fonts" / "Unbounded-ExtraBold.ttf")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    shutil.copy2(timeline.LAYERS_JS, project / "layers.js")
+    behind = '        <div id="t-word" class="g big" style="top: 200px; font-size: 200px;">тест <b>два</b></div>'
+    beats = '      enter("#t-word", 1.0);\n      leave("#t-word", 2.0);\n'
+    page = build_page("правки", 4.0, behind, "", beats, [audio("boom", "impact-bass-1", 1.2)], [], cta_at=3.5)
+
+    shifted = timeline.normalize({"items": {"t-word": {"shift": 0.5}, "sfx-boom": {"shift": 0.3}}})
+    muted = timeline.normalize({"items": {"sfx-boom": {"mute": True}}})
+    once = timeline.patch_page(page, shifted)
+    twice = timeline.patch_page(once, shifted)
+    back = timeline.patch_page(once, {})
+    boom = re.search(r'<audio[^>]*id="sfx-boom"[^>]*>', once)
+    report.check(once == twice and back == timeline.patch_page(page, {}) and boom
+                 and 'data-start="1.500"' in boom.group(0) and 'data-orig-start="1.20"' in boom.group(0),
+                 "звук сдвигается в разметке; повторная правка не копится, снятая — возвращает как было",
+                 boom.group(0)[:150] if boom else "звука нет на странице")
+    hush = re.search(r'<audio[^>]*id="sfx-boom"[^>]*>', timeline.patch_page(page, muted))
+    loud = re.search(r'<audio[^>]*id="sfx-boom"[^>]*>', timeline.patch_page(timeline.patch_page(page, muted), {}))
+    report.check(hush and 'data-volume="0"' in hush.group(0) and loud and 'data-volume="0"' not in loud.group(0)
+                 and "data-orig-volume" not in loud.group(0),
+                 "выключенный звук молчит, включённый — с прежней громкостью", (hush.group(0) if hush else "")[:150])
+    try:
+        timeline.patch_page(page, {"items": {"nope": {"dx": 10}}})
+        report.check(False, "правка на слой, которого нет на странице, — громкий отказ", "прошла молча")
+    except timeline.EditError as e:
+        report.check(True, "правка на слой, которого нет на странице, — громкий отказ", str(e)[:90])
+
+    styled = timeline.normalize({"items": {"t-word": {"shift": 0.5, "dx": 40, "dy": -20, "scale": 1.5,
+                                                      "font": "Unbounded-ExtraBold", "color": "#F0352C",
+                                                      "texts": ["проба ", "три"]}},
+                                 "captions": {"style": {"font": "Unbounded-ExtraBold", "color": "#FFFFFF"}}})
+    js = """() => {
+      const tl = window.__timelines.main, el = document.getElementById("t-word"), cs = getComputedStyle(el);
+      const starts = tl.getChildren(true, true, false).filter((tw) => tw.targets && tw.targets().includes(el)).map((tw) => tw.startTime());
+      return { first: Math.min(...starts), translate: el.style.translate, scale: el.style.scale, color: cs.color,
+               font: cs.fontFamily, text: el.textContent, capsFont: !!document.getElementById("studio-captions"),
+               face: [...document.styleSheets].some((s) => [...s.cssRules].some((r) => r.cssText.includes("Unbounded-ExtraBold.ttf"))) };
+    }"""
+    try:
+        (project / "edits.js").write_text(timeline.edits_js(styled), encoding="utf-8")
+        (project / "index.html").write_text(timeline.patch_page(page, styled), encoding="utf-8")
+        got = probe_page(project, js)
+        stale = timeline.normalize({"items": {"t-word": {"texts": ["один кусок"]}}})
+        (project / "edits.js").write_text(timeline.edits_js(stale), encoding="utf-8")
+        (project / "index.html").write_text(timeline.patch_page(page, stale), encoding="utf-8")
+        bad = probe_page(project, "() => ({})")
+    except (RuntimeError, ValueError, FileNotFoundError) as e:
+        report.check(False, "страница с правками разбирается в Chrome", str(e)[:200])
+        return
+    report.check(abs(got.get("first", 0) - 1.5) < 0.01 and not got.get("errors"),
+                 "слой сдвигается целиком в таймлайне страницы (+0.5 с)", json.dumps(got, ensure_ascii=False)[:160])
+    report.check(got.get("translate") == "40px -20px" and got.get("scale") == "1.5" and got.get("color") == "rgb(240, 53, 44)"
+                 and "Студия Unbounded-ExtraBold" in got.get("font", "") and got.get("face")
+                 and got.get("text") == "проба три" and got.get("capsFont"),
+                 "слой двигается, масштабируется, меняет шрифт, цвет и текст; субтитры — свой шрифт",
+                 json.dumps(got, ensure_ascii=False)[:220])
+    report.check(any("правки студии" in e and "t-word" in e for e in bad.get("errors", [])),
+                 "правка текста, разошедшаяся со страницей, — громкая ошибка с текстом, а не тихий пропуск",
+                 "; ".join(bad.get("errors", []))[:140] or "ошибки нет")
+    # свой текст на кадре: рисуется на странице, входит и уходит движением; кривой — не проходит
+    ut = timeline.merge_text({**timeline.TEXT_DEFAULT, "id": "t1", "t0": 0.5, "t1": 1.8, "x": 540, "y": 330, "text": "x"},
+                             {"text": "мой текст", "font": "Unbounded-ExtraBold"}, 4.0, 1080, 1920)
+    try:
+        withtext = timeline.normalize({"texts": [ut]})
+        (project / "edits.js").write_text(timeline.edits_js(withtext), encoding="utf-8")
+        (project / "index.html").write_text(timeline.patch_page(page, withtext), encoding="utf-8")
+        ut_got = probe_page(project, """() => { const tl = window.__timelines.main, el = document.getElementById("ut-t1");
+          if (!el) return { missing: true };
+          tl.seek(1.0); const mid = getComputedStyle(el).opacity; tl.seek(1.9); const after = getComputedStyle(el).opacity;
+          return { text: el.textContent, mid, after, font: getComputedStyle(el).fontFamily, front: el.parentElement.id }; }""")
+    except (RuntimeError, ValueError, FileNotFoundError) as e:
+        ut_got = {"crash": str(e)[:150]}
+    report.check(ut_got.get("text") == "мой текст" and ut_got.get("mid") == "1" and ut_got.get("after") == "0"
+                 and "Unbounded" in ut_got.get("font", "") and ut_got.get("front") == "front" and not ut_got.get("errors"),
+                 "свой текст встаёт на кадр, виден в своё время и уходит", json.dumps(ut_got, ensure_ascii=False)[:180])
+    for change, why in (({"text": "  "}, "пустой текст"), ({"text": "я" * 161}, "текст длиннее 160 знаков"),
+                        ({"t1": 0.7}, "текст короче полсекунды"), ({"anim": "glitch"}, "неизвестная анимация")):
+        try:
+            timeline.merge_text(ut, change, 4.0, 1080, 1920)
+            report.check(False, f"кривой текст на кадре не проходит: {why}", "прошёл")
+        except timeline.EditError as e:
+            report.check(True, f"кривой текст на кадре не проходит: {why}", str(e)[:60])
+    # айфон: несколько записей метаданных, поворот — во второй; пустая третья его не затирает
+    import studio_api
+    dims = studio_api.stream_dims({"width": 3840, "height": 2160, "side_data_list": [{}, {"rotation": -90}, {}]})
+    report.check(dims == (2160, 3840), "студия видит вертикальное видео айфона вертикальным (поворот из метаданных)",
+                 f"{dims[0]}×{dims[1]}")
+    # индикатор «ИИ монтирует»: сервер говорит, какой ролик и что агент делает сейчас; закончившийся ход не виден
+    saved_runs = dict(studio_api.runs)
+    studio_api.runs.clear()
+    studio_api.runs.update({
+        "a": {"events": [{"type": "tool", "name": "Read", "summary": "x"}, {"type": "tool", "name": "Bash", "summary": "render_reel"}],
+              "done": False, "started": time.time() - 65, "stem": "IMG_0001"},
+        "b": {"events": [], "done": True, "started": time.time(), "stem": "IMG_0002"}})
+    try:
+        view = studio_api.brain_view()
+    finally:
+        studio_api.runs.clear(); studio_api.runs.update(saved_runs)
+    report.check(len(view) == 1 and view[0]["stem"] == "IMG_0001" and view[0]["doing"]["summary"] == "render_reel"
+                 and view[0]["actions"] == 2 and 64 <= view[0]["elapsed"] <= 70,
+                 "студия видит идущий ИИ-монтаж: ролик, время, текущее действие", str(view))
+    good = timeline.merge_caption_style({}, {"font": "Unbounded-ExtraBold", "color": "#ffffff", "scale": 1.2})
+    layer = timeline.merge_item_style({"dx": 10}, {"dx": None, "scale": 1, "color": "#f0352c"})
+    report.check(good == {"font": "Unbounded-ExtraBold", "color": "#FFFFFF", "scale": 1.2} and layer == {"color": "#F0352C"},
+                 "правка вида принимается; пустое значение и масштаб 1 снимают свойство",
+                 json.dumps([good, layer], ensure_ascii=False))
+    for merge, change, why in ((timeline.merge_caption_style, {"color": "red"}, "цвет субтитров не #RRGGBB"),
+                               (timeline.merge_caption_style, {"font": "Comic-Sans"}, "шрифта субтитров нет"),
+                               (timeline.merge_item_style, {"scale": 9}, "масштаб слоя 9"),
+                               (timeline.merge_item_style, {"blur": 3}, "неизвестное свойство слоя")):
+        try:
+            merge({}, change)
+            report.check(False, f"кривая правка вида не проходит: {why}", "прошла")
+        except timeline.EditError as e:
+            report.check(True, f"кривая правка вида не проходит: {why}", str(e)[:60])
 
 
 def check_face_memory(report: Report, tmp: Path):
@@ -1512,6 +1705,8 @@ def check_batch(report: Report, tmp: Path):
     Правило Валеры (11.10.2026): если монтировать всю пачку в одном разговоре, контекст
     кончается и каждый следующий ролик выходит хуже. Здесь вместо агента — подставной скрипт:
     на первый ход он ставит задачу в очередь («ЖДУ ОЧЕРЕДЬ»), на второй — «ГОТОВО».
+    С 16.10.2026 ролики идут разом (parallel=2): ходы обоих идут одновременно, а задачи очереди
+    каждый получает свои — по имени ролика. Ролик проекта без анкеты не монтируется — «нужен человек».
     """
     from fastapi.testclient import TestClient
     import brain
@@ -1531,7 +1726,7 @@ def check_batch(report: Report, tmp: Path):
             text = "Поставил подготовку в очередь. СТАТУС: ЖДУ ОЧЕРЕДЬ"
         event = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}},
                            ensure_ascii=False)
-        return [sys.executable, "-c", f"print({event!r})"]
+        return [sys.executable, "-c", f"import time; print({event!r}, flush=True); time.sleep(0.6)"]
 
     def fake_runner():                    # «обработчик»: всё, что ждёт, сразу выполнено
         (queue / "done").mkdir(parents=True, exist_ok=True)
@@ -1543,16 +1738,21 @@ def check_batch(report: Report, tmp: Path):
     brain.THREADS, brain.command = tmp / "batch_threads", fake_agent
     studio_api.QUEUE, studio_api.ensure_runner = queue, fake_runner
     studio_api.batch.update(running=False, items=[])
-    items, threads = [], []
+    items, threads, together = [], [], 0
     try:
-        with temp_projects(tmp / "batch_projects", "main") as made, \
+        with temp_projects(tmp / "batch_projects", "main", "fresh") as made, \
                 TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            projects_mod = sys.modules["projects"]
+            projects_mod.save_setup(made["main"], READY_ANSWERS)    # «fresh» — без анкеты
             for stem in ("РОЛИК_А", "РОЛИК_Б"):        # ролик вне проектов пачка не берёт — громко
                 (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
-            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б"], "engine": "claude"},
+            (made["fresh"].input / "РОЛИК_В.MOV").write_bytes(b"v")
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_В"], "engine": "claude",
+                                                "parallel": 2},
                       headers={"X-Studio-Token": TOKEN})
-            for _ in range(150):
-                time.sleep(0.1)
+            for _ in range(200):
+                time.sleep(0.05)
+                together = max(together, len(studio_api.running_threads()))
                 if not studio_api.batch["running"]:
                     break
             items = [dict(i) for i in studio_api.batch["items"]]
@@ -1566,10 +1766,228 @@ def check_batch(report: Report, tmp: Path):
     ids = {t["id"] for t in threads}
     resumed = all(sum(m["role"] == "user" for m in t["messages"]) == 2
                   and "Очередь отработала" in t["messages"][2]["text"] for t in threads)
-    report.check([i["status"] for i in items] == ["done", "done"] and len(ids) == 2 and resumed
+    own = all(f"20-prep-{t['stem']}" in t["messages"][2]["text"] and
+              not any(f"20-prep-{o['stem']}" in t["messages"][2]["text"] for o in threads if o is not t)
+              for t in threads if len(t["messages"]) > 2)
+    report.check([i["status"] for i in items[:2]] == ["done", "done"] and len(ids) == 2 and resumed
                  and all(t["stem"] == i["stem"] for t, i in zip(threads, items)),
                  "пачка: у каждого ролика своя сессия, после очереди разговор продолжается сам",
                  "; ".join(f"{i['stem']}: {i['status']}" for i in items) or "пачка не прошла")
+    report.check(together == 2 and own, "пачка разом: два ролика монтируются одновременно, задачи очереди — каждому свои",
+                 f"одновременно {together}, свои задачи: {'да' if own else 'НЕТ — перепутались'}")
+    report.check(len(items) == 3 and items[2]["status"] == "needs_human" and "не настроен" in items[2]["note"]
+                 and not items[2].get("thread"),
+                 "ролик проекта без анкеты пачка не монтирует — «нужен человек», сессия не тратится",
+                 f"{items[2]['status']}: {items[2]['note'][:60]}" if len(items) > 2 else "нет третьего ролика")
+
+
+def check_ai_workflow(report: Report, tmp: Path):
+    """ИИ-монтаж, 16.10.2026: тяжёлое агентом — только через очередь; дописанное по ходу доходит до агента;
+    разросшийся разговор ролика продолжается свежей сессией; проект без анкеты не монтируется; материалы
+    ролика видны с происхождением; оценки времени шагов берутся из замеров очереди."""
+    from fastapi.testclient import TestClient
+    import brain
+    import jobqueue
+    import kit
+    import materials
+    import projects
+    import studio_api
+    from server import TOKEN, app
+
+    print("\nИИ-монтаж: очередь, дописанное, свежая сессия, анкета, материалы")
+
+    # 1. тяжёлый шаг агентом студии мимо очереди — громкий отказ; из очереди — можно
+    env = {k: v for k, v in os.environ.items() if k != "REELS_QUEUE_STEP"}
+    env["REELS_STUDIO_CHILD"] = "1"
+    probe_code = ("import sys; sys.path.insert(0, 'scripts'); from common import require_queue; "
+                  "require_queue('проверка'); print('прошло')")
+    blocked = subprocess.run([sys.executable, "-c", probe_code], cwd=ROOT, env=env, capture_output=True,
+                             encoding="utf-8", errors="replace")
+    allowed = subprocess.run([sys.executable, "-c", probe_code], cwd=ROOT, env=dict(env, REELS_QUEUE_STEP="1"),
+                             capture_output=True, encoding="utf-8", errors="replace")
+    unguarded = [f for f in ("transcribe", "prep", "track", "matte", "reframe", "render_reel", "reels")
+                 if "require_queue(" not in (ROOT / "scripts" / f"{f}.py").read_text(encoding="utf-8")]
+    queue_marks = 'env["REELS_QUEUE_STEP"] = "1"' in (ROOT / "scripts" / "jobqueue.py").read_text(encoding="utf-8")
+    report.check(blocked.returncode != 0 and "через очередь" in blocked.stderr and "прошло" in allowed.stdout
+                 and not unguarded and queue_marks,
+                 "тяжёлый шаг агент студии запускает только через очередь (роликов разом много, тяжёлый процесс один)",
+                 f"без очереди: {'отказ' if blocked.returncode else 'ПРОШЛО'}; без защиты: {', '.join(unguarded) or 'нет'}")
+
+    # 2. дописанное по ходу: хук отдаёт агенту и помечает доставленным; без разговора студии — молчит
+    tid = f"selfcheck-{os.getpid()}"
+    node = shutil.which("node")
+    try:
+        brain.inbox_add(tid, "кодовое слово ГРУША")
+        before = brain.inbox_state(tid)
+        hook = [node, str(ROOT / "scripts" / "inbox_hook.mjs")] if node else None
+        out = subprocess.run(hook, env=dict(os.environ, REELS_THREAD=tid), input="{}", capture_output=True,
+                             encoding="utf-8", errors="replace", timeout=30) if hook else None
+        ctx = json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"] if out and out.stdout.strip() else ""
+        after = brain.inbox_state(tid)
+        quiet = subprocess.run(hook, env={k: v for k, v in os.environ.items() if k != "REELS_THREAD"}, input="{}",
+                               capture_output=True, encoding="utf-8", errors="replace", timeout=30) if hook else None
+        brain.inbox_add(tid, "второе")
+        taken, again = brain.inbox_take(tid), brain.inbox_take(tid)
+    finally:
+        shutil.rmtree(brain.INBOX / tid, ignore_errors=True)
+    saved_find = brain.find_binary
+    brain.find_binary = lambda name: name
+    try:
+        cmd = brain.command("claude", "x", thread_id=tid)
+        plain = brain.command("claude", "x")
+    finally:
+        brain.find_binary = saved_find
+    settings = cmd[cmd.index("--settings") + 1] if "--settings" in cmd else ""
+    report.check("ГРУША" in ctx and list(before.values()) == [False] and list(after.values()) == [True]
+                 and quiet is not None and not quiet.stdout.strip() and taken == ["второе"] and not again
+                 and "inbox_hook.mjs" in settings and "--settings" not in plain,
+                 "дописанное посреди монтажа: хук отдаёт его агенту и помечает, недоставленное уходит следующим ходом",
+                 f"хук: {'отдал' if 'ГРУША' in ctx else 'НЕ отдал'}{'' if node else ' (нет node)'}; дальше: {taken}")
+
+    # 3. свежая сессия ролика: разросшийся разговор продолжается новым, с передачей дел
+    thread = {"id": "x", "stem": "S", "session": "abc", "messages": [
+        {"role": "user", "text": "сделай динамичнее"},
+        {"role": "assistant", "events": [{"type": "text", "text": "сделал быстрее"}, {"type": "result", "context": 50_000}]}]}
+    small = brain.needs_fresh(thread)
+    thread["messages"][1]["events"][1]["context"] = brain.FRESH_CONTEXT + 1
+    big = brain.needs_fresh(thread)
+    many = {"session": "a", "messages": [{"role": "user", "text": str(i)} for i in range(brain.FRESH_REQUESTS)]}
+    autos = {"session": "a", "messages": [{"role": "user", "text": "x", "auto": True}] * 20}
+    handed = brain.handoff(thread)
+    report.check(small is None and big and brain.needs_fresh(many) and brain.needs_fresh(autos) is None
+                 and "сделай динамичнее" in handed and "сделал быстрее" in handed and "work/S/" in handed,
+                 "разговор ролика разросся (контекст или число просьб) — свежая сессия с передачей дел",
+                 f"мал: {small}; велик: {big}")
+
+    # то же через студию: отправка в разросшийся разговор открывает новый; проект без анкеты — отказ
+    prompts = []
+
+    def fake_agent(engine, prompt, *args, **kwargs):
+        prompts.append(prompt)
+        return [sys.executable, "-c", "print('{}')"]
+
+    saved = (brain.THREADS, brain.command)
+    brain.THREADS, brain.command = tmp / "fresh_threads", fake_agent
+    sent, gate, inbox_late, fresh_thread = {}, None, None, {}
+    try:
+        with temp_projects(tmp / "fresh_projects", "main", "neo") as made, \
+                TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            projects.save_setup(made["main"], READY_ANSWERS)
+            (made["main"].input / "РОЛИК_С.MOV").write_bytes(b"v")
+            (made["neo"].input / "РОЛИК_Н.MOV").write_bytes(b"v")
+            old = brain.new_thread("claude", "старый", "РОЛИК_С")
+            old.update(session="s1", messages=thread["messages"])
+            brain.save_thread(old)
+            key = {"X-Studio-Token": TOKEN}
+            sent = live.post("/api/brain/send", json={"thread": old["id"], "text": "ещё правка", "stem": "РОЛИК_С"},
+                             headers=key).json()
+            for _ in range(100):
+                if not studio_api.running_threads():
+                    break
+                time.sleep(0.05)
+            if sent.get("thread") and sent["thread"] != old["id"]:
+                fresh_thread = brain.load_thread(sent["thread"])
+            neo = brain.new_thread("claude", "", "РОЛИК_Н")
+            gate = live.post("/api/brain/send", json={"thread": neo["id"], "text": "смонтируй", "stem": "РОЛИК_Н"},
+                             headers=key)
+            inbox_late = live.post(f"/api/brain/inbox/{old['id']}", json={"text": "поздно"}, headers=key)
+    finally:
+        brain.THREADS, brain.command = saved
+        for t in list(studio_api.runs):
+            if not studio_api.runs[t]["done"]:
+                continue
+            studio_api.runs.pop(t, None)
+    report.check(sent.get("fresh") and fresh_thread.get("fresh_of") == old["id"] and prompts
+                 and prompts[0].startswith("Это продолжение работы") and "ещё правка" in prompts[0]
+                 and fresh_thread.get("messages", [{}])[0].get("text") == "ещё правка",
+                 "студия сама продолжает разросшийся разговор ролика свежей сессией и передаёт ей дела",
+                 f"{sent.get('fresh') or 'не начала свежую'}")
+    report.check(gate is not None and gate.status_code == 409 and "не настроен" in gate.text
+                 and inbox_late is not None and inbox_late.status_code == 409,
+                 "ролик проекта без анкеты ИИ не монтирует — отказ с тем, что ответить; дописать в законченный ход нельзя",
+                 f"{gate.status_code if gate is not None else '—'}: {gate.json().get('detail', '')[:60] if gate is not None else ''}")
+
+    # 4. анкета: обязательное без ответа видно; блок в rules.md один, ручные правила не теряются; умолчания проекта
+    with temp_projects(tmp / "setup_projects", "neo", "old") as made:
+        neo = made["neo"]
+        required = [q["id"] for q in projects.SETUP_QUESTIONS if q.get("required")]
+        fresh_missing = [q["id"] for q in projects.missing_setup(neo)]
+        left = projects.save_setup(neo, {"about": "x", "language": "en", "platforms": ["YouTube 16:9", "TikTok"],
+                                         "cta": "без призыва"})
+        cfg = json.loads((neo.root / "project.json").read_text(encoding="utf-8"))
+        neo.rules.write_text(neo.rules_text() + "\n## Своё\n- правило руками\n", encoding="utf-8")
+        left2 = projects.save_setup(projects.get("neo"), dict(READY_ANSWERS, about="новое"))
+        rules2 = projects.get("neo").rules_text()
+        try:
+            projects.save_setup(neo, {"zzz": 1})
+            unknown = False
+        except projects.ProjectError:
+            unknown = True
+        made["old"].rules.write_text("# Правила\n1. Написаны руками до анкеты.\n", encoding="utf-8")
+        legacy = projects.missing_setup(projects.get("old"))
+    report.check(fresh_missing == required and "audience" in [q["id"] for q in left] and not left2
+                 and rules2.count(projects.SETUP_BEGIN) == 1 and "правило руками" in rules2 and "новое" in rules2
+                 and unknown and legacy == [],
+                 "анкета проекта: без ответов — видно чего нет, блок в правилах один и ручные правила целы",
+                 f"не хватало: {len(fresh_missing)}, после ответов: {len(left2)}")
+    report.check(cfg.get("language") == "en" and cfg.get("brief", {}).get("formats") == ["9:16", "16:9"]
+                 and cfg.get("cta") is False,
+                 "ответы анкеты становятся умолчаниями проекта: язык, форматы площадок, призыв",
+                 f"{cfg.get('language')}, {cfg.get('brief', {}).get('formats')}, cta={cfg.get('cta')}")
+
+    # 5. материалы: свой файл с замером, отказ не-медиа, происхождение того, что в странице, звук по норме
+    saved_m = (materials.WORK_DIR, materials.ROOT)
+    materials.WORK_DIR, materials.ROOT = tmp / "m_work", tmp / "m_root"
+    try:
+        beep, photo, junk = tmp / "beep.mp3", tmp / "photo.png", tmp / "junk.png"
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", str(beep)], check=True)
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=orange:s=200x300", "-frames:v", "1", str(photo)], check=True)
+        junk.write_text("не картинка", encoding="utf-8")
+        a = materials.add("M", "мой звук.mp3", beep)
+        i1, i2 = materials.add("M", "photo.png", photo), materials.add("M", "photo.png", photo)
+        refused = []
+        for name, src in (("doc.pdf", photo), ("x.png", junk)):
+            try:
+                materials.add("M", name, src)
+            except materials.MaterialError as e:
+                refused.append(str(e)[:40])
+        tag = kit.material_audio("m1", "M", a["name"], 1.0)
+        gain = float(re.search(r'data-volume="([\d.]+)"', tag).group(1))
+        level = a["loudness_m"] + 20 * math.log10(gain)
+        page = materials.ROOT / "studio" / "M" / "index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text('<div id="bg-a" class="g bg"><img src="assets/img/photo.png" alt=""></div>\n' + tag
+                        + '\n<audio id="sfx-x" src="assets/sfx/pop.mp3" data-start="1"></audio>', encoding="utf-8")
+        lst = materials.listing("M")
+        used = {x["name"]: (x["code"], x["blocks"]) for x in lst["used"]}
+        unused = [x["name"] for x in lst["unused"]]
+        line = materials.context_line("M")
+    finally:
+        materials.WORK_DIR, materials.ROOT = saved_m
+    report.check(a["name"] == "мой_звук.mp3" and i1["width"] == 200 and i2["name"] == "photo_2.png" and len(refused) == 2
+                 and used.get("photo.png") == ("mine", ["bg-a"]) and used.get("мой_звук.mp3") == ("mine", ["sfx-m1"])
+                 and used.get("pop.mp3", ("",))[0] == "library" and unused == ["photo_2.png"] and "photo_2.png" in line,
+                 "материалы ролика: свой файл с замером, не-медиа — отказ, в ролике видно что и откуда",
+                 f"в ролике: {', '.join(f'{k} ({v[0]})' for k, v in used.items())}; отказов {len(refused)}")
+    report.check(level <= kit.SFX_TARGET + 0.5 and 'src="assets/materials/мой_звук.mp3"' in tag,
+                 "звук из материалов ставится по замеру громкости, как библиотечный — не громче нормы",
+                 f"{level:.1f} LUFS при норме {kit.SFX_TARGET:g}")
+
+    # 6. оценки времени: замеры очереди этой машины важнее умолчаний
+    saved_t = (jobqueue.TIMINGS, studio_api.quick_probe)
+    jobqueue.TIMINGS = tmp / "timings.jsonl"
+    studio_api.quick_probe = lambda path: {"duration": 60}
+    try:
+        jobqueue.note_timing(["python", "scripts/prep.py", "projects/x/input/IMG_1.MOV"], 200)
+        jobqueue.note_timing(["python", "scripts/prep.py", "projects/x/input/IMG_1.MOV", "--hq"], 240)
+        est = studio_api.step_estimates([(None, Path("IMG_1.MOV"))])
+        rec = json.loads(jobqueue.TIMINGS.read_text(encoding="utf-8").splitlines()[-1])
+    finally:
+        jobqueue.TIMINGS, studio_api.quick_probe = saved_t
+    report.check(est["prepped"] == {"per_min": 240, "measured": 2} and est["tracked"]["measured"] == 0
+                 and rec["stem"] == "IMG_1" and rec["hq"] is True,
+                 "время шагов: по замерам очереди на этой машине, пока их нет — по прошлым прогонам",
+                 f"подготовка ≈ {est['prepped']['per_min']} с на минуту по {est['prepped']['measured']} замерам")
 
 
 def check_viz(report: Report, tmp: Path):
@@ -1605,6 +2023,7 @@ def check_viz(report: Report, tmp: Path):
     shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
     (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n",
                                        encoding="utf-8")
+    stage_page_assets(project)
     (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
     parts = [viz.mount("count-up", "stat", at=0.3, dur=2.0, values={"end": 182000, "suffix": " ₽"}),
              viz.formula("disc", r"D = b^2 - 4ac", at=1.0, dur=1.6),
@@ -1641,6 +2060,11 @@ def check_viz(report: Report, tmp: Path):
     report.check(bool(bad.get("pageErrors")) or not bad.get("ok"),
                  "опечатка в формуле ловится проверкой страницы, до рендера",
                  (bad.get("pageErrors") or [bad.get("crash", "ничего не поймано")])[0][:80])
+
+
+# ответы на все обязательные вопросы анкеты — проект «настроен» (projects.missing_setup пуст)
+READY_ANSWERS = {"about": "проверка", "audience": "проверка", "platforms": ["Instagram Reels"], "language": "ru",
+                 "tone": ["динамичный, вирусный"], "never": "нет табу"}
 
 
 @contextlib.contextmanager
@@ -2361,6 +2785,7 @@ def check_style_captions(report: Report, tmp: Path):
     (project / "assets").mkdir(parents=True)
     shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
     (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    stage_page_assets(project)
     caps = [{"t0": 0.50, "t1": 1.20, "text": "обычная", "accent": False,
              "words": [{"text": "обычная", "t0": 0.5}]},
             {"t0": 1.807, "t1": 1.847, "text": "мы", "accent": False, "words": [{"text": "мы", "t0": 1.807}]}]
@@ -2688,6 +3113,7 @@ def main():
         section(report, check_atomic_outputs, preset, tmp)
         section(report, check_transcript_source, tmp)
         section(report, check_page_timeline, tmp)
+        section(report, check_timeline, tmp)
         section(report, check_grey_zones, tmp)
         section(report, check_plan, tmp)
         section(report, check_board, tmp)
@@ -2710,6 +3136,7 @@ def main():
         section(report, check_approve, tmp)
         section(report, check_projects, tmp)
         section(report, check_batch, tmp)
+        section(report, check_ai_workflow, tmp)
         section(report, check_viz, tmp)
         section(report, check_render, preset, 200 if args.long else 60, tmp)
 

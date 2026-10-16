@@ -20,6 +20,7 @@ import formats
 import projects
 import styles
 from common import WORK_DIR, detect_silence, has_libass, load_preset, measure_noise_floor, probe
+from common import require_queue
 from cut import plan_cut
 from reframe import reframe
 from render import render
@@ -166,6 +167,7 @@ def process(video: Path, args) -> Path:
 
 
 def main():
+    require_queue("автомонтаж")
     parser = argparse.ArgumentParser(description="Автомонтаж вертикальных Reels")
     parser.add_argument("video", nargs="*", help="файлы; без аргументов — всё из input/ проекта")
     parser.add_argument("--project", help=f"проект, чей input/ монтировать без аргументов (по умолчанию {projects.DEFAULT})")

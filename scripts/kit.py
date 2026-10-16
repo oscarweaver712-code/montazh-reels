@@ -74,6 +74,25 @@ def audio(sid: str, name: str, start: float, level: float = 1.0,
             f'{extra} data-volume="{gain:.3f}"></audio>')
 
 
+def material_audio(sid: str, stem: str, name: str, start: float, level: float = 1.0,
+                   duration: float | None = None, fade_out: float | None = None) -> str:
+    """Звук, который человек положил в материалы ролика (work/<имя>/materials/, студия → «Материалы»).
+
+    Громкость — по замеру файла, как у библиотеки: level 1 — норма (на ~11 дБ тише голоса), громче нельзя.
+    Музыку под голос обычно ставят тише — level 0.4–0.6.
+    """
+    import materials
+    if not 0 < level <= 1:
+        raise ValueError(f"уровень звука «{name}» = {level}: бывает от 0 до 1 (1 — норма, громче нельзя)")
+    if materials.kind_of(name) != "audio":
+        raise ValueError(f"«{name}» — не звук: material_audio берёт mp3, wav, m4a, aac, ogg из материалов")
+    gain = min(1.0, level * 10 ** ((SFX_TARGET - materials.loudness(stem, name)) / 20))
+    extra = (f' data-duration="{duration}"' if duration else "") + \
+            (f' data-fade-out="{fade_out}"' if fade_out else "")
+    return (f'      <audio id="sfx-{sid}" src="assets/materials/{name}" data-start="{start:.2f}"'
+            f'{extra} data-volume="{gain:.3f}"></audio>')
+
+
 def check_sounds(sounds: list) -> None:
     """Звуки ролика: одно семейство не звучит дважды подряд, файл — не чаще двух раз, между
     звуками — не меньше секунды. Ошибка — при сборке страницы, до рендера, со всеми нарушениями.
@@ -304,6 +323,8 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
     <script src="assets/gsap.min.js"></script>
     <script src="camera.js"></script>
     <script src="captions.js"></script>
+    <script src="layers.js"></script>
+    <script src="edits.js"></script>
     <style>{style_css}{extra_css}
     </style>
   </head>
@@ -336,6 +357,7 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
 
 {helpers}{beats}
 {cta_js}
+      try {{ REELS_EDITS(tl); }} catch (e) {{ throw new Error(`правки студии: ${{e.message}}`); }}
       window.__timelines["main"] = tl;
     </script>
   </body>

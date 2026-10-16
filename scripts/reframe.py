@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import formats
 import host
 from common import WORK_DIR, decode_threads, ffmpeg_bin, probe
+from common import require_queue
 from look import hdr_to_sdr
 from track import coverage_violations, detect_faces, solve_camera
 
@@ -134,6 +135,7 @@ def reframe(video: Path, fmt: str, force: bool = False) -> Path:
 
 
 def main():
+    require_queue("перекадрирование")
     ap = argparse.ArgumentParser(description="Перекадрирование исходника по лицу под другой формат")
     ap.add_argument("video")
     ap.add_argument("--format", default=formats.DEFAULT, help=", ".join(formats.FORMATS))

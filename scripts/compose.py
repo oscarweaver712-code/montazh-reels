@@ -31,6 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import formats
+import materials
 import styles
 import viz
 from common import FONT_DIR, ROOT, WORK_DIR
@@ -41,11 +42,6 @@ VENDOR = STUDIO / "_vendor"
 SFX_DIR = ROOT / "presets" / "sfx"
 HYPERFRAMES = "hyperframes@0.8.141"     # версия прибита: ролик пересоберётся так же
 
-# Шрифты, которые графика ролика подключает через @font-face (все OFL, с кириллицей)
-FONTS = ["Oswald-Bold.ttf", "Manrope-ExtraBold.ttf", "Montserrat-ExtraBold.ttf",
-         "AlumniSans-Black.ttf", "CormorantGaramond.ttf", "CormorantGaramond-Italic.ttf",
-         "JetBrainsMono.ttf", "Unbounded-ExtraBold.ttf", "Rubik-Black.ttf", "GolosText-Black.ttf",
-         "InterDisplay-Light.ttf", "InterDisplay-ExtraBold.ttf"]
 
 # Слова, которые в субтитрах не стоят отдельно: цепляются к следующему
 CLINGY = {"в", "во", "на", "по", "до", "из", "из-за", "и", "а", "не", "ни", "у", "с", "со",
@@ -258,20 +254,36 @@ def ruling_style(stem: str, variant: str | None = None) -> dict | None:
     return styles.effective(styles.load_style(brief["style"]), brief.get("overrides"))
 
 
-def compose(stem: str, seconds: float | None = None, fresh: bool = False,
-            variant: str | None = None) -> Path:
+class SceneError(ValueError):
+    """Сцену не собрать: нет подготовки, битый director.json или камера вылезла за кадр."""
+
+
+def scene(stem: str, variant: str | None = None, seconds: float | None = None) -> dict:
+    """Камера и субтитры ролика с решениями режиссёра и ручными правками студии.
+
+    Ручные правки (work/<имя>/timeline.json, timeline.py) ложатся поверх director.json
+    последними: page.py агента director.json перезаписывает, а правки человека живут отдельно
+    и не теряются. Тем же расчётом пользуется предпросмотр студии — то, что видно на дорожках,
+    и то, что уйдёт в рендер, считается одной функцией.
+    """
+    import timeline
     work = WORK_DIR / stem
     aroll = work / "aroll.mp4"
     faces_path = work / "aroll.faces.json"
     for need, hint in ((aroll, "scripts/prep.py"), (faces_path, "scripts/track.py")):
         if not need.exists():
-            sys.exit(f"Нет {need.relative_to(ROOT)} — сначала {hint}")
+            raise SceneError(f"Нет {need.relative_to(ROOT)} — сначала {hint}")
 
     meta = load_json(work / "aroll.json")
     faces = load_json(faces_path)
     director = load_json(work / "director.json", {})
     if variant and (work / f"director.{variant}.json").exists():
         director = load_json(work / f"director.{variant}.json")
+    try:
+        edits = timeline.load_edits(stem) if not variant else {}
+    except timeline.EditError as e:
+        raise SceneError(f"✗ {e}")
+    director = timeline.apply_director(director, edits)
     words = (load_json(work / "aroll.words.json", {}) or {}).get("words", [])
     width, height, fps = faces["width"], faces["height"], faces["fps"]
     duration = meta["duration"] if seconds is None else min(seconds, meta["duration"])
@@ -279,7 +291,7 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
     try:
         style = ruling_style(stem, variant)
     except styles.StyleError as e:
-        sys.exit(f"✗ {e}")
+        raise SceneError(f"✗ {e}")
     caps = styles.kit_captions(style) if style else {"mode": "words", "case": "lower"}
 
     # камера пересчитывается с акцентами режиссёра; полный кадр проверяется ещё раз
@@ -292,10 +304,32 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
         camera = solve_camera(faces, cfg=styles.camera_cfg(style) if style else None,
                               punches=director.get("punches"), cuts=cuts)
     except ValueError as e:
-        sys.exit(f"✗ director.json: {e}")
+        raise SceneError(f"✗ director.json: {e}")
     if coverage_violations(camera, width, height):
-        sys.exit("Камера вылезла за край кадра — сборка остановлена (так быть не должно)")
+        raise SceneError("Камера вылезла за край кадра — сборка остановлена (так быть не должно)")
     frames = camera[:int(round(duration * fps)) + 1]
+    transforms = [[round(v, 3) for v in css_transform(z, cx, cy, width, height)]
+                  for z, cx, cy in frames]
+    chunks = caption_chunks(words, director, duration, caps["mode"], caps["case"])
+    return {"meta": meta, "director": director, "edits": edits, "words": words, "style": style,
+            "caps": caps, "fmt": fmt, "width": width, "height": height, "fps": fps,
+            "duration": duration, "frames": frames, "chunks": chunks,
+            "camera_js": f"window.CAMERA_FPS = {fps:g};\nwindow.CAMERA = {json.dumps(transforms)};\n",
+            "captions_js": "window.CAPTIONS = " + json.dumps(chunks, ensure_ascii=False) + ";\n"}
+
+
+def compose(stem: str, seconds: float | None = None, fresh: bool = False,
+            variant: str | None = None) -> Path:
+    import timeline
+    try:
+        sc = scene(stem, variant, seconds)
+    except SceneError as e:
+        sys.exit(str(e))
+    work = WORK_DIR / stem
+    aroll = work / "aroll.mp4"
+    meta, style, caps, fmt = sc["meta"], sc["style"], sc["caps"], sc["fmt"]
+    width, height, fps, duration, frames, chunks = (sc["width"], sc["height"], sc["fps"],
+                                                    sc["duration"], sc["frames"], sc["chunks"])
 
     project = STUDIO / project_name(stem, variant)
     assets = project / "assets"
@@ -314,33 +348,48 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
     if cutout.exists():
         copy_if_newer(cutout, assets / "cutout.webm")
     copy_if_newer(VENDOR / "gsap.min.js", assets / "gsap.min.js")
-    for name in FONTS:
-        src = FONT_DIR / name
-        if src.exists():
-            copy_if_newer(src, assets / "fonts" / name)
+    # все шрифты presets/fonts — жёсткими ссылками, места не занимают: в монтажной шрифт слоя
+    # или субтитров меняется на любой из них, и страница должна найти его без пересборки
+    for src in sorted(FONT_DIR.glob("*.ttf")):
+        copy_if_newer(src, assets / "fonts" / src.name)
     for src in (work / "downloads").glob("*"):
         if src.suffix.lower() in (".jpg", ".jpeg", ".png", ".svg", ".webp"):
             copy_if_newer(src, assets / "img" / src.name)
     for src in SFX_DIR.glob("*.mp3"):
         copy_if_newer(src, assets / "sfx" / src.name)
+    # материалы человека (work/<имя>/materials/, студия → «Материалы»): всё — в assets/materials/,
+    # картинки ещё и в assets/img/, рядом с найденными ИИ: helpers kit берут картинку по имени оттуда
+    for src in sorted((work / "materials").glob("*")):
+        if src.name.startswith(".") or not materials.kind_of(src.name):
+            continue
+        (assets / "materials").mkdir(exist_ok=True)
+        copy_if_newer(src, assets / "materials" / src.name)
+        if materials.kind_of(src.name) == "image":
+            copy_if_newer(src, assets / "img" / src.name)
     for src in (work / "manim").glob("*.mp4"):                  # «доска»: клипы ManimGX (manim_clip.py)
         (assets / "manim").mkdir(exist_ok=True)
         copy_if_newer(src, assets / "manim" / src.name)
 
-    transforms = [[round(v, 3) for v in css_transform(z, cx, cy, width, height)]
-                  for z, cx, cy in frames]
-    (project / "camera.js").write_text(
-        f"window.CAMERA_FPS = {fps:g};\nwindow.CAMERA = {json.dumps(transforms)};\n",
-        encoding="utf-8")
-    chunks = caption_chunks(words, director, duration, caps["mode"], caps["case"])
-    (project / "captions.js").write_text(
-        "window.CAPTIONS = " + json.dumps(chunks, ensure_ascii=False) + ";\n", encoding="utf-8")
+    (project / "camera.js").write_text(sc["camera_js"], encoding="utf-8")
+    (project / "captions.js").write_text(sc["captions_js"], encoding="utf-8")
 
     page = project / "index.html"
     if fresh or not page.exists():
         page.write_text(PAGE.format(width=width, height=height, duration=f"{duration:.3f}",
                                     resolution=formats.get(fmt)["resolution"]),
                         encoding="utf-8")
+    # ручные правки монтажной (layers.js + edits.js): страница подключает их сама, если её собрал
+    # свежий kit, а старую дополняет timeline.patch_page — без перезаписи графики
+    copy_if_newer(timeline.LAYERS_JS, project / "layers.js")
+    (project / "fx.js").unlink(missing_ok=True)       # эффекты света 16.10.2026 убраны
+    (project / "edits.js").write_text(timeline.edits_js(sc["edits"]), encoding="utf-8")
+    html = page.read_text(encoding="utf-8")
+    try:
+        patched = timeline.patch_page(html, sc["edits"], fps)
+    except ValueError as e:
+        sys.exit(f"✗ ручные правки студии (work/{stem}/timeline.json): {e}")
+    if patched != html:
+        page.write_text(patched, encoding="utf-8")
     # визуализации страницы (viz.py): элементы каталога, KaTeX, D3 и карта — ссылками, офлайн
     for rel, src in viz.assets_for(page.read_text(encoding="utf-8"), project).items():
         copy_if_newer(src, project / rel)

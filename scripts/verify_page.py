@@ -579,7 +579,11 @@ def missing_assets(project: Path, page: str) -> list:
     refs = set(re.findall(r'(?:src|href)="(assets/[^"]+)"', page))
     refs |= set(re.findall(r"""url\(["']?(assets/[^"')]+)""", page))
     refs |= set(re.findall(r'data-composition-src="([^"]+)"', page))      # визуализации каталога
-    return sorted(r for r in refs if not (project / r).exists())
+    # скрипты проекта (camera.js, captions.js, layers.js, edits.js) кладёт compose.py: страница из page.py
+    # без него падала «нет таймлайна» — теперь видно, какого файла нет и что запустить
+    scripts = {f"{r} (его кладёт compose.py)" for r in re.findall(r'<script src="([\w.-]+\.js)"', page)
+               if not (project / r).exists()}
+    return sorted(r for r in refs if not (project / r).exists()) + sorted(scripts)
 
 
 def stage_format(page: str) -> str | None:

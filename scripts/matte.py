@@ -57,6 +57,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import host
 import models
 from common import ffmpeg_bin, probe
+from common import require_queue
 
 
 PLATE_SAMPLES = 48      # кадров на пустую комнату — сколько бы ни шёл дубль: память постоянная
@@ -808,6 +809,7 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
 
 
 def main():
+    require_queue("маска человека")
     ap = argparse.ArgumentParser(description="Маска человека по кадрам")
     ap.add_argument("video")
     ap.add_argument("--backend", choices=["auto", *sorted(BACKENDS)], default="auto",

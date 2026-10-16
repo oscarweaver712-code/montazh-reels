@@ -90,6 +90,34 @@ def reveal(path: Path) -> None:
         subprocess.run(["xdg-open", str(path.parent if path.is_file() else path)])
 
 
+def open_file(path: Path) -> None:
+    """Открыть файл в программе по умолчанию (rules.md — в редакторе текста системы)."""
+    path = Path(path)
+    if IS_MAC:
+        subprocess.run(["open", str(path)])
+    elif IS_WINDOWS:
+        os.startfile(str(path))                       # noqa: только на Windows
+    else:
+        subprocess.run(["xdg-open", str(path)])
+
+
+def open_terminal(command: str) -> None:
+    """Открыть окно терминала и выполнить в нём команду (установка и вход в Claude/Codex из студии).
+
+    Mac — Терминал через AppleScript, Windows — новое окно PowerShell, остальные — x-terminal-emulator.
+    Окно остаётся открытым: человек видит, что произошло, и проходит вход по ссылке в браузере.
+    """
+    if IS_MAC:
+        script = command.replace("\\", "\\\\").replace('"', '\\"')
+        subprocess.run(["osascript", "-e", 'tell application "Terminal"', "-e", "activate",
+                        "-e", f'do script "{script}"', "-e", "end tell"], check=True, capture_output=True)
+    elif IS_WINDOWS:
+        subprocess.Popen(["powershell", "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+                         creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        subprocess.Popen(["x-terminal-emulator", "-e", "bash", "-lc", f"{command}; exec bash"])
+
+
 def try_lock(handle) -> bool:
     """Исключительный замок на открытый файл без ожидания. False — замок держит другой процесс.
 

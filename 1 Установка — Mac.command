@@ -74,6 +74,9 @@ ls presets/sfx/*.mp3 >/dev/null 2>&1 || fail "Нет звуков в presets/sfx
 step "Самопроверка (около минуты: честно кодирует видео)"
 .venv/bin/python scripts/selfcheck.py || fail "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."
 
+step "ИИ, который монтирует: Claude и Codex"
+.venv/bin/python scripts/brain.py --status || true
+
 printf '\n✓ Готово. Открой папку в терминале и запусти claude или codex — студия откроется в браузере сама.\n  Без агента: двойной клик по «2 Монтаж — Mac.command». Подробности в README.md\n'
 [ -t 0 ] && read -r -p "Enter — закрыть" _
 exit 0

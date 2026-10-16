@@ -31,9 +31,16 @@ work/*/*
 !work/*/brief.json
 !work/*/plan.md
 !work/*/approved.json
+!work/*/timeline.json
 !work/*/page.py
 !work/*/page.*.py
 !work/*/downloads/
+# материалы, которые человек положил к ролику (студия → «Материалы»): фото и звук — в git, видео — на машине
+!work/*/materials/
+work/*/materials/*.mp4
+work/*/materials/*.mov
+work/*/materials/*.m4v
+work/*/materials/*.webm
 !work/*/manim/
 work/*/manim/*.mp4
 work/*/manim/*.png
@@ -67,6 +74,9 @@ studio/*/node_modules/
 # их заново пишет compose.py на каждой сборке
 studio/*/camera.js
 studio/*/captions.js
+studio/*/edits.js
+studio/*/layers.js
+studio/*/fx.js
 studio/*/hyperframes.json
 studio/*/package.json
 

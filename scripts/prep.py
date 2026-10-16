@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import formats
 import styles
+from common import require_queue
 from common import (WORK_DIR, detect_silence, ffmpeg_bin, load_preset, measure_noise_floor, probe,
                     snap_segments)
 from cut import remap_words
@@ -89,6 +90,12 @@ def find_edges(words: list, silences: list, start_hint: float, end_hint: float,
     # тишины. Если whisper просто приклеил его начало к концу последнего — верим тишине.
     if following and (after is None or following["end"] <= after[0]):
         end = min(end, following["start"] - 0.05)
+    # Тихая запись (IMG_1816, 16.10): порог принял тихое последнее слово за паузу, она началась раньше
+    # него и выше пропущена — конец уехал в тишину за лишним словом, и в дубль попадало «это,». Если
+    # лишнее слово начинается ровно там, где кончилась тишина, его начало настоящее: режем до него.
+    if following and end > following["start"] and any(
+            s[1] - s[0] >= 0.1 and abs(s[1] - following["start"]) <= 0.08 for s in silences):
+        end = following["start"] - 0.05
     return max(0.0, start), end
 
 
@@ -237,6 +244,7 @@ def make_hq(video: Path, out_dir: Path, preset: dict, edit: dict, fmt: str) -> P
 
 
 def main():
+    require_queue("подготовка дубля")
     ap = argparse.ArgumentParser(description="Чистовой дубль: подрезка, цвет, голос")
     ap.add_argument("video")
     ap.add_argument("--preset", default="viral")

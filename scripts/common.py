@@ -19,6 +19,23 @@ PRESET_DIR = ROOT / "presets"
 FONT_DIR = PRESET_DIR / "fonts"
 MODEL_DIR = PRESET_DIR / "models"
 VENV_PY = host.venv_python(ROOT)
+# Агенты студии (мозг) идут с REELS_STUDIO_CHILD=1, шаги очереди — с REELS_QUEUE_STEP=1 (jobqueue.run_step)
+STUDIO_CHILD, QUEUE_STEP = "REELS_STUDIO_CHILD", "REELS_QUEUE_STEP"
+
+
+def require_queue(what: str) -> None:
+    """Тяжёлый шаг агент студии запускает только через очередь — громкий отказ, а не второй тяжёлый процесс.
+
+    Пока мозг в студии был один, правило «тяжёлое — в очередь» держалось словами в подсказке. С 16.10.2026
+    пачка монтирует несколько роликов разом, каждый в своей сессии: два агента, запустивших рендер сами,
+    сложили бы память двух рендеров (инвариант 2). Человек в терминале и сама очередь не ограничены.
+    """
+    import os
+    if os.environ.get(STUDIO_CHILD) == "1" and os.environ.get(QUEUE_STEP) != "1":
+        sys.exit(f"✗ {what} — тяжёлый шаг, агент студии запускает его только через очередь: "
+                 f"{'.venv/Scripts/python.exe' if host.IS_WINDOWS else '.venv/bin/python'} scripts/jobqueue.py add "
+                 f"<NN>-<шаг>-<имя ролика> \"python scripts/…\". Рядом могут монтироваться другие ролики, "
+                 f"а тяжёлый процесс на машине — один (AGENTS.md, инвариант 2)")
 
 
 def _find(name: str) -> str | None:

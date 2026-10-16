@@ -10,6 +10,8 @@
     <script src="assets/vendor/katex/katex.min.js"></script>
     <script src="camera.js"></script>
     <script src="captions.js"></script>
+    <script src="layers.js"></script>
+    <script src="edits.js"></script>
     <style>
       @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
       @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
@@ -561,6 +563,18 @@
       leave("#b-inf2", 62.72, { y: -60 });
       slam("#st-secret2", 62.97, { fromScale: 2.2, blur: 10 });
       leave("#st-secret2", 63.92, { scale: 0.6, y: 0, y: -30 });
+      whip(2.03);
+      whip(12.02);
+      whip(16.84);
+      whip(21.30);
+      whip(26.73);
+      whip(31.83);
+      whip(36.73);
+      whip(40.07);
+      whip(44.37);
+      whip(49.33);
+      whip(53.85);
+      whip(59.23);
 
       tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 63.99);
       tl.set("#cta-arrow", { opacity: 1 }, 64.34);
@@ -569,6 +583,7 @@
       tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 64.99);
 
 
+      try { REELS_EDITS(tl); } catch (e) { throw new Error(`правки студии: ${e.message}`); }
       window.__timelines["main"] = tl;
     </script>
   </body>
