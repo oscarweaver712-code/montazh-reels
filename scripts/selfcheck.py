@@ -951,7 +951,8 @@ def check_footage(report: Report, tmp: Path):
         except ValueError:
             kit_short = ""
         html, js = kit.footage("ft", "X", "a_shelf", 1.0, 2.0)
-        kit_ok = 'src="assets/footage/a_shelf.mp4"' in html and 'data-start="1.00"' in js + html and "opacity: 0 }, 3.00" in js
+        kit_ok = ('src="assets/footage/a_shelf.mp4"' in html and 'data-start="1.00"' in html
+                  and "splice(3.000)" in js and 'tl.to("#flash"' in js)          # вход вспышкой, выход — склейкой проекта
         report.check(not ok_missing and not ok_short and any("короче плана" in r for r in rows2)
                      and any("25 бонусов при одобренных 20" in r for r in rows2) and not kit_short and kit_ok,
                      "нет клипа, клип короче окна, перерасход бонусов — красные; kit не ставит короткий клип",
@@ -1017,6 +1018,94 @@ def check_fx(report: Report, tmp: Path):
     report.check({"ck", "toc", "w-0", "gl", "orb-b0", "orb-f0"} <= set(names) and not unnamed,
                  "монтажная видит слои приёмов и подписывает их по-человечески (чек-лист, орбита, стекло)",
                  f"слоёв {len(names)}, без подписи {unnamed or 'нет'}")
+
+
+def check_cutaway_rules(report: Report, tmp: Path):
+    """Правила после IMG_3303 v2 (Валера 16.10.2026): субтитры не на лице и не вплотную к подбородку; текст за спиной
+    не прячется за головой; на перебивке (футаж, серия картинок) нет человека поверх; линия субтитров — одна на ролик."""
+    import compose
+    import kit
+    from verify_page import run_timeline
+
+    print("\nСубтитры, текст за головой, перебивки")
+    project = tmp / "cutaway"
+    (project / "assets" / "img").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    stage_page_assets(project)
+    caps = [{"t0": 0.2, "t1": 1.0, "text": "на лице", "accent": False, "y": 1000},
+            {"t0": 1.0, "t1": 1.9, "text": "под подбородком", "accent": False, "y": 1180}]
+    (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n", encoding="utf-8")
+    face = [(round(0.25 * k, 2), 360.0, 600.0, 740.0, 1100.0) for k in range(8)]     # макушка ~520, подбородок 1100
+    behind = ('        <div id="o-head" class="g big" style="top: 560px; font-size: 140px;">за головой</div>\n'
+              '        <div id="o-top" class="g big" style="top: 300px; font-size: 140px;">над головой</div>')
+    beats = ('      tl.set("#o-head", { opacity: 1 }, 0.2); tl.set("#o-top", { opacity: 1 }, 0.2);\n')
+    (project / "index.html").write_text(build_page_safe(kit, behind, "", beats, [(0.1, 1.9)]), encoding="utf-8")
+    res = run_timeline(project / "index.html", faces=face)
+    capf = {h["el"] for h in res.get("faceHits", [])}
+    hidden = {o["el"] for o in res.get("occluded", [])}
+    report.check(capf == {"субтитр «на лице»"}, "субтитр на лице ловится, под подбородком с отступом — нет",
+                 ", ".join(sorted(capf)) or "ничего не поймано")
+    report.check(hidden == {"#o-head"}, "текст за спиной, закрытый головой, ловится; над головой — нет",
+                 ", ".join(sorted(hidden)) or "ничего не поймано")
+
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "img" / "a.jpg")
+    html, js = kit.slides("sl", ["a.jpg", "a.jpg"], 0.4, [0.7, 0.7])
+    bad = build_page_safe(kit, html, "", js, [(0.2, 1.0)])          # окно вырезки заходит на перебивку
+    good = build_page_safe(kit, html, "", js, [(0.05, 0.3)])
+    (project / "index.html").write_text(bad, encoding="utf-8")
+    over_bad = run_timeline(project / "index.html").get("fgOverCut", [])
+    (project / "index.html").write_text(good, encoding="utf-8")
+    over_good = run_timeline(project / "index.html").get("fgOverCut", [])
+    report.check(over_bad and not over_good, "человек поверх перебивки ловится; окно вырезки до неё — нет",
+                 f"поверх: {len(over_bad)} замеров, без него: {len(over_good)}")
+
+    # линия субтитров одна на ролик: подбородок низко → над головой, обычно → под подбородком
+    sc = {"fmt": "9:16", "caps": {"mode": "words", "position": "chest"}, "director": {},
+          "chunks": [{"t0": 0.2, "t1": 1.0}, {"t0": 1.0, "t1": 1.8}]}
+    import verify_page
+    saved = verify_page.face_track
+    try:
+        verify_page.face_track = lambda p: [(0.25 * k, 360, 600, 740, 1100) for k in range(8)]
+        low = compose.caption_lane(project, sc) and {c["y"] for c in sc["chunks"]}
+        verify_page.face_track = lambda p: [(0.25 * k, 300, 700, 780, 1330) for k in range(8)]
+        high = compose.caption_lane(project, sc) and {c["y"] for c in sc["chunks"]}
+    finally:
+        verify_page.face_track = saved
+    report.check(low == {1150} and len(high) == 1 and next(iter(high)) < 700,
+                 "линия субтитров одна на ролик: под подбородком с отступом, а если низ занят — над головой",
+                 f"обычно {low}, лицо низко {high}")
+
+    # субтитры не двоятся с текстом и не пропадают надолго (Валера 16.10, IMG_3303 v3: «дублировались… надолго пропали»)
+    caps = [{"t0": 0.2, "t1": 1.0, "text": "что соты", "accent": False, "y": 1150},
+            {"t0": 1.0, "t1": 1.9, "text": "у пчел", "accent": False, "y": 1150}]
+    (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n", encoding="utf-8")
+    behind = ('        <div id="d-lead" class="g big" style="top: 300px; font-size: 60px;">соты у пчёл</div>\n'
+              '        <div id="d-other" class="g big" style="top: 420px; font-size: 60px;">шестиугольные</div>')
+    beats = '      tl.set("#d-lead", { opacity: 1 }, 0.2); tl.set("#d-other", { opacity: 1 }, 0.2);\n'
+    (project / "index.html").write_text(build_page_safe(kit, behind, "", beats, [(0.1, 1.9)]), encoding="utf-8")
+    dupes = {d["el"] for d in run_timeline(project / "index.html").get("dupes", [])}
+    report.check(dupes == {"#d-lead"}, "субтитр и текст на экране с одними словами ловятся; другие слова — нет",
+                 ", ".join(sorted(dupes)) or "ничего не поймано")
+    words = [{"word": w, "start": 0.5 * k, "end": 0.5 * k + 0.45} for k, w in enumerate(
+        ["ячейки", "должны", "стоять", "вплотную", "без", "щелей", "круглые", "так", "не", "встанут", "а", "потерянное"])]
+    (project / "aroll.words.json").write_text(json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8")
+    saved = verify_page.take_dir
+    try:
+        verify_page.take_dir = lambda p: project
+        long_gap = verify_page.caption_gaps(project)            # субтитры есть только на 0.2–1.9 — дальше 4 с речи без них
+        caps.append({"t0": 3.4, "t1": 6.0, "text": "встанут", "accent": False, "y": 1150})
+        (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n", encoding="utf-8")
+        short_gap = verify_page.caption_gaps(project)           # провал 2.0–3.4 — короче 3 с
+    finally:
+        verify_page.take_dir = saved
+    report.check(len(long_gap) == 1 and not short_gap, "речь без субтитров дольше 3 с ловится, короткий провал — нет",
+                 f"долгий: {long_gap}, короткий: {short_gap}")
+
+
+def build_page_safe(kit, behind: str, front: str, beats: str, windows: list) -> str:
+    return kit.build_page("проверка", 2.0, behind, front, beats, [], windows, cta_at=5.0, cta=False)
 
 
 def check_gen_image(report: Report, tmp: Path):
@@ -1241,6 +1330,18 @@ def check_grey_zones(report: Report, tmp: Path):
     hit = {h["el"] for h in res.get("faceHits", [])}
     report.check(hit == {"#f-over"}, "карточка поверх лица ловится, ниже подбородка — нет (лицо по кадрам)",
                  ", ".join(sorted(hit)) or "ничего не поймано")
+    # ИИ-футаж во весь кадр (kit.footage, 16.10.2026): пока он виден, лица на экране нет — надпись поверх
+    # футажа не «на лице». Но футаж не прячет карточку, которая висит на лице и после него
+    front4 = ('        <div id="f-cut" class="g footage" style="left: 0; top: 0; width: 1080px; height: 1920px; background: #333;"></div>\n'
+              '        <div id="f-on" class="g doc" style="left: 245px; top: 950px; width: 590px; height: 200px;">поверх футажа</div>\n'
+              '        <div id="f-after" class="g doc" style="left: 245px; top: 950px; width: 590px; height: 200px;">после футажа</div>')
+    beats4 = ('      tl.set("#f-cut", { opacity: 1 }, 0.2); tl.set("#f-cut", { opacity: 0 }, 1.1);\n'
+              '      tl.set("#f-on", { opacity: 1 }, 0.2); tl.set("#f-on", { opacity: 0 }, 1.0);\n'
+              '      tl.set("#f-after", { opacity: 1 }, 0.2);\n')
+    (project / "index.html").write_text(build_page("футаж", 2.0, "", front4, beats4, [], [], cta_at=5.0), encoding="utf-8")
+    hit4 = {h["el"] for h in run_timeline(project / "index.html", faces=face).get("faceHits", [])}
+    report.check(hit4 == {"#f-after"}, "футаж во весь кадр сменяет план: надпись поверх него не на лице, карточка после — на лице",
+                 ", ".join(sorted(hit4)) or "ничего не поймано")
     # вариант для A/B (studio/<имя>--<стиль>/) собран из того же дубля: лицо — из его work/<имя>/. Искалось
     # в work/<имя>--<стиль>/, не находилось — и проверка лица у вариантов молча не делалась
     from verify_page import take_dir
@@ -3258,6 +3359,7 @@ def main():
         section(report, check_gen_image, tmp)
         section(report, check_footage, tmp)
         section(report, check_fx, tmp)
+        section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)
         section(report, check_transcript_source, tmp)
         section(report, check_page_timeline, tmp)

@@ -3,7 +3,7 @@
 Не ролик: страница собирается в studio/_fx_gallery (подчёркивание — verify_page --all её пропускает), дубль,
 вырезка и камера берутся у IMG_1799 жёсткими ссылками. Снимки — hyperframes snapshot в той папке.
 
-  .venv/bin/python scripts/fx_gallery.py && .venv/bin/python scripts/verify_page.py _fx_gallery
+  .venv/bin/python scripts/fx_gallery.py [antishkola] && .venv/bin/python scripts/verify_page.py _fx_gallery
 """
 import os
 import shutil
@@ -40,6 +40,8 @@ def stage():
 
 
 def main():
+    theme = sys.argv[1] if len(sys.argv) > 1 else "default"     # fx_gallery.py antishkola — в стиле проекта
+    fx.use(theme)
     stage()
     S = 3.2                                       # приём на экране
     at = [0.6 + i * S for i in range(17)]

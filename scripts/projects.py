@@ -47,10 +47,13 @@ CONFIG = {
     "cta": True,                              # финальная плашка «смотри у меня в профиле»
     "face_max": 165,                          # лицо светлее — засвет (verify_render); null — не мерить
     "long_matte": False,                      # владелец согласен на долгую маску BiRefNet (matte.py без --yes)
+    "fx_theme": "default",                    # тема приёмов fx.py (fx.THEMES): цвета и шрифты под стиль проекта
+    "footage_style": "",                      # хвост стиля ИИ-перебивок (footage.py), один на проект
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
-                "long_matte": (bool, "true или false")}
+                "long_matte": (bool, "true или false"), "fx_theme": (str, "строкой — имя темы из fx.THEMES"),
+                "footage_style": (str, "строкой — стиль генерации перебивок")}
 
 
 class ProjectError(Exception):

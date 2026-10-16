@@ -379,6 +379,7 @@
         } else {
           inner.textContent = c.text;
         }
+        if (c.y !== undefined) el.style.top = c.y + "px";   // линия ролика по лицу (compose.caption_lane)
         caps.appendChild(el);
         // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
         const d = Math.min(0.09, c.t1 - c.t0);

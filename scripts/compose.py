@@ -94,6 +94,51 @@ def load_json(path: Path, default=None):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+CHIN_GAP = 50           # отступ субтитров от подбородка, px сцены (Валера 16.10: «сабы ниже подбородка, с отступом»)
+LANE_LOW = 1370         # ниже — ник и подпись Instagram (formats.GREY_ZONES)
+LANE_HIGH = 270         # выше — вкладки TikTok
+
+
+def caption_lane(project: Path, sc: dict) -> str:
+    """Одна высота субтитров на ролик — по тому, где в этом ролике бывает лицо (16.10.2026).
+
+    Валера: «субтитры не должны залезать в лицо… могут быть и надо мной, и подо мной, как в IMG_1799», «не в каждой
+    фразе, а выбрал, как удачнее преимущественно располагать, чтобы текст не летал вверх-вниз». Поэтому: подбородок
+    по слежению с камерой (90-й процентиль за ролик) + CHIN_GAP; не помещается над ником — линия над головой.
+    Редкие окна, где линию нужно сменить, режиссёр задаёт сам: director.json → caption_lanes [[от, до, top], …].
+    Где субтитр всё же лёг на лицо — краснеет verify_page. Вернёт строку для вывода или "".
+    """
+    import numpy as np
+    from kit import CAPTION_BOX, CAPTION_SIZE
+    if sc["fmt"] != "9:16":
+        return ""
+    import verify_page
+    faces = verify_page.face_track(project)
+    left, _, base = CAPTION_BOX["9:16"][sc["caps"].get("position", "chest")]
+    size = round(CAPTION_SIZE.get(sc["caps"]["mode"], 52) * float(sc["caps"].get("size", 1.0)))
+    cap_h = round(size * 1.15 * (1 if sc["caps"]["mode"] in ("words", "karaoke") else 2)) + 10
+    lane, why = base, "по стилю"
+    if faces:
+        chin = float(np.percentile([f[4] for f in faces], 90))
+        crown = float(np.percentile([f[2] for f in faces], 10))
+        below = max(base, round(chin + CHIN_GAP))
+        above = round(crown - CHIN_GAP - cap_h)
+        if below + cap_h <= LANE_LOW:
+            lane, why = below, f"под подбородком (он до y {chin:.0f})"
+        elif above >= LANE_HIGH:
+            lane, why = above, f"над головой: под подбородком (y {chin:.0f}) не помещается до ника"
+        else:
+            lane, why = LANE_LOW - cap_h, f"⚠ лицо крупное (подбородок y {chin:.0f}, макушка {crown:.0f}) — линия у ника"
+    windows = sc["director"].get("caption_lanes") or []
+    for c in sc["chunks"]:
+        c["y"] = lane
+        for a, b, top in windows:
+            if a <= c["t0"] < b:
+                c["y"] = int(top)
+    extra = f", своих окон {len(windows)}" if windows else ""
+    return f"субтитры на y {lane} — {why}{extra}"
+
+
 def caption_chunks(words: list, director: dict, duration: float, mode: str = "words",
                    case: str = "lower") -> list:
     """Бегущие субтитры как в референсах: по слову-два, без знаков, предлоги не висят.
@@ -374,7 +419,11 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
         copy_if_newer(src, assets / "manim" / src.name)
 
     (project / "camera.js").write_text(sc["camera_js"], encoding="utf-8")
-    (project / "captions.js").write_text(sc["captions_js"], encoding="utf-8")
+    lane = caption_lane(project, sc)
+    if lane:
+        print(f"  → {lane}")
+    (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(sc["chunks"], ensure_ascii=False) + ";\n",
+                                         encoding="utf-8")
 
     page = project / "index.html"
     if fresh or not page.exists():

@@ -7,6 +7,8 @@
 слоя behind). Блоки — класса .g прямо в #behind/#front: их видят проверки страницы и монтажная студии (сдвиг,
 выключение, текст). Несколько приёмов складывает merge(), в страницу — так же, как остальное:
 
+    import fx
+    fx.use_for(STEM)                   # тема проекта ролика (project.json → fx_theme), до сборки приёмов
     from fx import merge, checklist, wall, vertigo
     parts = merge(checklist("ck", "Всё, что нужно", ["Скинь дубль", "Нажми кнопку"], [t(3.1), t(4.0)], t(6.0)),
                   vertigo(t(12.0), t(13.2)))
@@ -22,16 +24,69 @@ import html as html_lib
 import math
 
 W, H = 1080, 1920
-YELLOW = "#F5E15A"
+# Темы: приёмы референса в его стиле (default — жёлтый, Inter, тёмное стекло) или в стиле проекта. В CSS — метки
+# @ИМЯ@, их значения даёт тема; цвета в таймлайне берутся из неё же (T()). Тему ставит fx.use() ДО сборки приёмов.
+THEMES = {
+    "default": {
+        "ACCENT": "#F5E15A", "ACCENT_INK": "#141210", "ACCENT_GLOW": "rgba(245,225,90,0.6)",
+        "SANS": '"InterX", "Manrope", sans-serif', "HEAD": '"InterX", "Manrope", sans-serif', "HEAD_CASE": "none",
+        "MAST": '"Cormorant", serif', "MAST_WEIGHT": "500",
+        "PLATE_BG": "rgba(18,18,20,0.62)", "PLATE_BORDER": "1.5px solid rgba(255,255,255,0.14)", "PLATE_RADIUS": "28px",
+        "PLATE_TEXT": "#FFFFFF", "PLATE_MUTED": "rgba(255,255,255,0.4)", "PLATE_LINE": "rgba(255,255,255,0.08)",
+        "LIGHT": "#FFFFFF", "LIGHT_MUTED": "rgba(255,255,255,0.75)", "PAPER": "#FBF8F0", "INK": "#1A1714",
+        "PIN": "#C8291F", "TAPE": "rgba(245,225,90,0.85)", "SCRIBBLE": "#2B4BD8", "OK": "#3FB950",
+        "SCENE": "linear-gradient(160deg, #6A3DF0 0%, #3A1FB8 45%, #1A1050 100%)",
+        "RANSOM": [("#1F3FA8", "#fff", "'InterX'"), ("#fff", "#141210", "'Cormorant'"), ("#141210", "#fff", "'JBMono'"),
+                   ("#F5E15A", "#141210", "'InterX'"), ("#C8291F", "#fff", "'Cormorant'")],
+        "MARKS": ["#fff", "#FF8FB1", "#F5E15A", "#fff"],
+    },
+    # стиль проекта antishkola (projects/antishkola/rules.md п.14, IMG_3303 v4): крем #F2EBDD и красный #F0352C, жёлтого
+    # нет; крупное — Oswald заглавными, подвод и мелкое — Manrope, цитаты и номера — Cormorant; без тёмных плашек —
+    # плашка = бумага, как карточки-портреты
+    "antishkola": {
+        "ACCENT": "#F0352C", "ACCENT_INK": "#F2EBDD", "ACCENT_GLOW": "rgba(240,53,44,0.45)",
+        "SANS": '"Manrope", sans-serif', "HEAD": '"Oswald", sans-serif', "HEAD_CASE": "uppercase",
+        "MAST": '"Oswald", sans-serif', "MAST_WEIGHT": "700",
+        "PLATE_BG": "#F1E9D8", "PLATE_BORDER": "none", "PLATE_RADIUS": "6px",
+        "PLATE_TEXT": "#141210", "PLATE_MUTED": "rgba(20,18,16,0.42)", "PLATE_LINE": "rgba(20,18,16,0.12)",
+        "LIGHT": "#F2EBDD", "LIGHT_MUTED": "rgba(242,235,221,0.8)", "PAPER": "#F1E9D8", "INK": "#141210",
+        "PIN": "#F0352C", "TAPE": "rgba(242,235,221,0.88)", "SCRIBBLE": "#F0352C", "OK": "#F0352C",
+        "SCENE": "radial-gradient(ellipse at 50% 35%, #F2EBDD 0%, #E3D6BC 55%, #B9A988 100%)",
+        "RANSOM": [("#F0352C", "#F2EBDD", "'Oswald'"), ("#F2EBDD", "#141210", "'Cormorant'"), ("#141210", "#F2EBDD", "'Oswald'"),
+                   ("#F2EBDD", "#F0352C", "'Manrope'"), ("#141210", "#F0352C", "'Cormorant'")],
+        "MARKS": ["#F2EBDD", "#F0352C", "#F2EBDD", "#F0352C"],
+    },
+}
+_theme = {"name": "default"}
+
+
+def use(name: str) -> None:
+    """Тема приёмов на эту страницу. Неизвестная — громкая ошибка, а не стиль референса молча."""
+    if name not in THEMES:
+        raise ValueError(f"fx: темы «{name}» нет — есть {', '.join(THEMES)}")
+    _theme["name"] = name
+
+
+def use_for(stem: str) -> str:
+    """Тема из project.json проекта ролика (поле fx_theme). page.py зовёт её первой строкой приёмов — так тема
+    не забывается: у antishkola без неё приёмы вышли бы жёлтыми, а жёлтого в стиле проекта нет (rules.md п.14)."""
+    import projects
+    name = projects.of_or_default(stem).config.get("fx_theme", "default")
+    use(name)
+    return name
+
+
+def T(key: str):
+    return THEMES[_theme["name"]][key]
+
 
 CSS = {
     "base": """
       @font-face { font-family: "InterX"; src: url("assets/fonts/InterDisplay-ExtraBold.ttf"); font-weight: 800; }
-      @font-face { font-family: "InterL"; src: url("assets/fonts/InterDisplay-Light.ttf"); font-weight: 300; }
       .fx { position: absolute; opacity: 0; }
-      .fx-sans { font-family: "InterX", "Manrope", sans-serif; font-weight: 800; letter-spacing: -0.02em; }
-      .fx-glass { background: rgba(18,18,20,0.62); border: 1.5px solid rgba(255,255,255,0.14); border-radius: 28px;
-                  box-shadow: 0 30px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.12); }
+      .fx-sans { font-family: @HEAD@; font-weight: 800; letter-spacing: -0.02em; text-transform: @HEAD_CASE@; }
+      .fx-glass { background: @PLATE_BG@; border: @PLATE_BORDER@; border-radius: @PLATE_RADIUS@;
+                  box-shadow: 0 30px 80px rgba(0,0,0,0.45); }
 """,
     "stage": """
       #stage { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; transform-origin: 0 0; }
@@ -39,23 +94,22 @@ CSS = {
     "toc": """
       .fx-toc { display: flex; gap: 26px; padding: 18px 22px; }
       .fx-toc ol { list-style: none; }
-      .fx-toc li { font-family: "InterX", sans-serif; font-weight: 800; font-size: 25px; line-height: 1.36;
-                   color: rgba(255,255,255,0.55); white-space: nowrap; }
-      .fx-toc li { position: relative; }
-      .fx-toc li b { display: inline-block; width: 38px; font-size: 17px; color: rgba(255,255,255,0.35); }
+      .fx-toc li { position: relative; font-family: @SANS@; font-weight: 800; font-size: 25px; line-height: 1.36;
+                   color: @PLATE_MUTED@; white-space: nowrap; }
+      .fx-toc li b { display: inline-block; width: 38px; font-size: 17px; opacity: 0.7; }
       .fx-toc li u { position: absolute; left: -14px; top: 9px; width: 6px; height: 18px; border-radius: 3px;
-                     background: #F5E15A; opacity: 0; }
+                     background: @ACCENT@; opacity: 0; }
 """,
     "check": """
       .fx-check { padding: 26px 30px; width: 700px; }
-      .fx-check h4 { font-family: "InterX", sans-serif; font-size: 22px; letter-spacing: 0.16em; text-transform: uppercase;
-                     color: rgba(255,255,255,0.5); margin-bottom: 14px; display: flex; justify-content: space-between; }
-      .fx-check .row { display: flex; align-items: center; gap: 22px; padding: 12px 0; font-family: "InterX", sans-serif;
-                       font-size: 40px; color: rgba(255,255,255,0.38); }
-      .fx-check .row + .row { border-top: 1.5px solid rgba(255,255,255,0.08); }
+      .fx-check h4 { font-family: @SANS@; font-size: 22px; letter-spacing: 0.16em; text-transform: uppercase;
+                     color: @PLATE_MUTED@; margin-bottom: 14px; display: flex; justify-content: space-between; }
+      .fx-check .row { display: flex; align-items: center; gap: 22px; padding: 12px 0; font-family: @SANS@; font-weight: 800;
+                       font-size: 40px; color: @PLATE_MUTED@; }
+      .fx-check .row + .row { border-top: 1.5px solid @PLATE_LINE@; }
       .fx-check .box { position: relative; width: 50px; height: 50px; flex: none; border-radius: 25px;
-                       border: 3px solid rgba(255,255,255,0.35); }
-      .fx-check .fill { position: absolute; inset: -3px; border-radius: 25px; background: #F5E15A; }
+                       border: 3px solid @PLATE_MUTED@; }
+      .fx-check .fill { position: absolute; inset: -3px; border-radius: 25px; background: @ACCENT@; }
       .fx-check svg { position: absolute; inset: 0; }
 """,
     "phone": """
@@ -65,84 +119,99 @@ CSS = {
                        background: linear-gradient(180deg, #17181C, #0F1013); padding: 70px 18px 18px; }
       .fx-phone .notch { position: absolute; left: 50%; top: 14px; width: 110px; height: 30px; margin-left: -55px;
                          border-radius: 16px; background: #000; }
-      .fx-phone .who { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-family: "InterX";
+      .fx-phone .who { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-family: @SANS@;
                        font-size: 17px; color: rgba(255,255,255,0.55); }
-      .fx-phone .msg { margin-top: 12px; max-width: 86%; padding: 12px 16px; border-radius: 20px; font-family: "InterX";
-                       font-size: 21px; line-height: 1.25; opacity: 0; }
-      .fx-phone .me { margin-left: auto; background: #F5E15A; color: #141210; border-bottom-right-radius: 6px; }
+      .fx-phone .msg { margin-top: 12px; max-width: 86%; padding: 12px 16px; border-radius: 20px; font-family: @SANS@;
+                       font-weight: 800; font-size: 21px; line-height: 1.25; opacity: 0; }
+      .fx-phone .me { margin-left: auto; background: @ACCENT@; color: @ACCENT_INK@; border-bottom-right-radius: 6px; }
       .fx-phone .ai { background: #24262C; color: #EDEDED; border-bottom-left-radius: 6px; }
 """,
     "chat": """
-      .fx-chat { width: 900px; padding: 24px 26px 22px; border-radius: 30px; background: #FAF8F3;
-                 box-shadow: 0 30px 80px rgba(0,0,0,0.45); font-family: "InterX", sans-serif; color: #1D1B18; }
+      .fx-chat { width: 900px; padding: 24px 26px 22px; border-radius: 30px; background: @PAPER@;
+                 box-shadow: 0 30px 80px rgba(0,0,0,0.45); font-family: @SANS@; font-weight: 800; color: @INK@; }
       .fx-chat .hd { display: flex; align-items: center; gap: 10px; font-size: 24px; margin-bottom: 18px; }
       .fx-chat .hd i { width: 22px; height: 22px; border-radius: 11px; background: #D97757; }
-      .fx-chat .drop { position: relative; height: 170px; border: 2.5px dashed #CFC8BA; border-radius: 20px;
+      .fx-chat .drop { position: relative; height: 170px; border: 2.5px dashed rgba(0,0,0,0.2); border-radius: 20px;
                        display: flex; align-items: center; justify-content: center; gap: 14px; }
-      .fx-chat .drop span { position: absolute; font-size: 22px; color: #9B9385; }
+      .fx-chat .drop span { position: absolute; font-size: 22px; color: rgba(0,0,0,0.4); }
       .fx-chat .th { width: 96px; height: 140px; border-radius: 12px; background-size: cover; background-position: center;
                      box-shadow: 0 8px 20px rgba(0,0,0,0.25); opacity: 0; }
-      .fx-chat .tag { position: absolute; right: 16px; top: 14px; padding: 6px 14px; border-radius: 10px; background: #F5E15A;
-                      font-size: 18px; letter-spacing: 0.08em; opacity: 0; }
-      .fx-chat .inp { margin-top: 16px; padding: 16px 20px; border-radius: 16px; border: 2px solid #E5DFD3;
-                      font-family: "JBMono", monospace; font-size: 26px; color: #1D1B18; min-height: 64px; }
+      .fx-chat .tag { position: absolute; right: 16px; top: 14px; padding: 6px 14px; border-radius: 10px; background: @ACCENT@;
+                      color: @ACCENT_INK@; font-size: 18px; letter-spacing: 0.08em; opacity: 0; }
+      .fx-chat .inp { margin-top: 16px; padding: 16px 20px; border-radius: 16px; border: 2px solid rgba(0,0,0,0.1);
+                      font-family: "JBMono", monospace; font-size: 26px; color: @INK@; min-height: 64px; }
       .fx-chat .inp span { opacity: 0; }
 """,
     "wall": """
-      .fx-note { width: 250px; padding: 18px 18px 22px; background: #FBF8F0; border-radius: 4px; font-family: "InterX";
-                 font-size: 27px; line-height: 1.12; color: #1A1714; box-shadow: 0 16px 34px rgba(0,0,0,0.42); }
+      .fx-note { width: 250px; padding: 18px 18px 22px; background: @PAPER@; border-radius: 4px; font-family: @SANS@;
+                 font-weight: 800; font-size: 27px; line-height: 1.12; color: @INK@; box-shadow: 0 16px 34px rgba(0,0,0,0.42); }
       .fx-note::before { content: ""; position: absolute; left: 50%; top: -12px; width: 22px; height: 22px; margin-left: -11px;
-                         border-radius: 11px; background: radial-gradient(circle at 35% 35%, #FF7A6E, #C8291F); }
-      .fx-shot { width: 230px; height: 300px; border-radius: 14px; background-size: cover; background-position: center;
-                 border: 6px solid #fff; box-shadow: 0 16px 34px rgba(0,0,0,0.45); }
+                         border-radius: 11px; background: @PIN@; box-shadow: inset -3px -3px 6px rgba(0,0,0,0.3); }
+      .fx-shot { width: 230px; height: 300px; border-radius: 6px; background-size: cover; background-position: center;
+                 border: 10px solid @PAPER@; box-shadow: 0 16px 34px rgba(0,0,0,0.45); }
 """,
     "orbit": """
-      .fx-orb { width: 150px; height: 266px; border-radius: 20px; overflow: hidden; background-size: cover;
-                background-position: center; border: 4px solid rgba(255,255,255,0.9);
+      .fx-orb { width: 150px; height: 266px; border-radius: 12px; overflow: hidden; background-size: cover;
+                background-position: center; border: 6px solid @PAPER@;
                 box-shadow: 0 20px 40px rgba(0,0,0,0.45); display: flex; align-items: flex-end; padding: 14px;
-                font-family: "InterX"; font-size: 22px; line-height: 1.1; color: #fff; }
+                font-family: @SANS@; font-weight: 800; font-size: 22px; line-height: 1.1; color: #fff; }
 """,
     "chart": """
-      .fx-days { display: flex; justify-content: space-between; width: 840px; font-family: "InterX"; font-size: 30px;
-                 color: rgba(255,255,255,0.75); }
-      .fx-pill { padding: 10px 22px; border-radius: 30px; background: #F5E15A; color: #141210; font-family: "InterX";
-                 font-size: 30px; letter-spacing: 0.06em; box-shadow: 0 0 40px rgba(245,225,90,0.6); }
+      .fx-days { display: flex; justify-content: space-between; width: 840px; font-family: @SANS@; font-weight: 800;
+                 font-size: 30px; color: @LIGHT_MUTED@; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .fx-pill { padding: 10px 22px; border-radius: 30px; background: @ACCENT@; color: @ACCENT_INK@; font-family: @HEAD@;
+                 font-weight: 800; text-transform: @HEAD_CASE@; font-size: 30px; letter-spacing: 0.06em;
+                 box-shadow: 0 0 40px @ACCENT_GLOW@; }
 """,
     "pull": """
-      .fx-side { width: 300px; padding: 22px; border-radius: 22px; background: #FFFFFF; font-family: "InterX";
-                 box-shadow: 0 20px 50px rgba(30,25,15,0.12); }
-      .fx-side .t { font-size: 18px; letter-spacing: 0.14em; color: #A39C8F; text-transform: uppercase; margin-bottom: 10px; }
-      .fx-side .r { display: flex; gap: 12px; align-items: center; font-size: 23px; color: #2A2620; padding: 8px 0; opacity: 0.25; }
-      .fx-side .r i { width: 24px; height: 24px; border-radius: 12px; background: #3FB950; flex: none; }
-      .fx-bar { height: 22px; border-radius: 11px; background: #E7E1D5; overflow: hidden; }
-      .fx-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3FB950, #7EE08F);
-                  transform-origin: 0 50%; }
-      .fx-count { font-family: "Cormorant"; font-weight: 600; font-size: 180px; color: #1A1714; line-height: 1;
+      .fx-side { width: 300px; padding: 22px; border-radius: @PLATE_RADIUS@; background: @PAPER@; font-family: @SANS@;
+                 font-weight: 800; box-shadow: 0 20px 50px rgba(30,25,15,0.18); }
+      .fx-side .t { font-size: 18px; letter-spacing: 0.14em; color: rgba(0,0,0,0.4); text-transform: uppercase; margin-bottom: 10px; }
+      .fx-side .r { display: flex; gap: 12px; align-items: center; font-size: 23px; color: @INK@; padding: 8px 0; opacity: 0.25; }
+      .fx-side .r i { width: 24px; height: 24px; border-radius: 12px; background: @OK@; flex: none; }
+      .fx-bar { height: 22px; border-radius: 11px; background: rgba(0,0,0,0.1); overflow: hidden; }
+      .fx-bar i { display: block; height: 100%; width: 100%; background: @OK@; transform-origin: 0 50%; }
+      .fx-count { font-family: "Cormorant"; font-weight: 600; font-size: 180px; color: @INK@; line-height: 1;
                   font-variant-numeric: lining-nums tabular-nums; }
 """,
     "paper": """
-      .fx-paper { left: 0; top: 0; width: 1080px; height: 1920px; background-color: #F3EEE3;
+      .fx-paper { left: 0; top: 0; width: 1080px; height: 1920px; background-color: @PAPER@;
                   background-image: radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1.4px),
                                     linear-gradient(rgba(120,140,190,0.18) 2px, transparent 2px);
                   background-size: 7px 7px, 100% 64px; }
-      .fx-tape { width: 240px; height: 70px; background: rgba(245,225,90,0.85); box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
+      .fx-tape { width: 240px; height: 70px; background: @TAPE@; box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
       .fx-rans { display: flex; gap: 8px; }
       .fx-rans span { display: inline-block; padding: 4px 14px; font-size: 120px; line-height: 1; box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
 """,
     "cover": """
-      .fx-mast { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 500; color: #fff;
-                 letter-spacing: 0.08em; line-height: 0.8; text-shadow: 0 10px 40px rgba(0,0,0,0.35); }
-      .fx-kick { font-family: "InterX"; font-size: 24px; letter-spacing: 0.32em; text-transform: uppercase; color: #fff; }
-      .fx-cline { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 44px; color: #fff; line-height: 1.05;
+      .fx-mast { left: 0; width: 1080px; text-align: center; font-family: @MAST@; font-weight: @MAST_WEIGHT@; color: @LIGHT@;
+                 text-transform: @HEAD_CASE@; letter-spacing: 0.08em; line-height: 0.8; text-shadow: 0 10px 40px rgba(0,0,0,0.35); }
+      .fx-kick { font-family: @SANS@; font-weight: 800; font-size: 24px; letter-spacing: 0.32em; text-transform: uppercase;
+                 color: @LIGHT@; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .fx-cline { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 44px; color: @LIGHT@; line-height: 1.05;
                   text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
 """,
     "glass": """
-      .fx-glassw { left: 0; width: 1080px; text-align: center; font-family: "InterX"; font-weight: 800; line-height: 0.9;
-                   color: rgba(255,255,255,0.16); -webkit-text-stroke: 3px rgba(255,255,255,0.75);
-                   text-shadow: 0 1px 0 rgba(255,255,255,0.6), 0 18px 50px rgba(0,0,0,0.35), 0 0 30px rgba(190,220,255,0.35);
-                   }
+      .fx-glassw { left: 0; width: 1080px; text-align: center; font-family: @HEAD@; font-weight: 800; line-height: 0.9;
+                   text-transform: @HEAD_CASE@; color: rgba(255,255,255,0.16); -webkit-text-stroke: 3px @LIGHT@;
+                   text-shadow: 0 1px 0 rgba(255,255,255,0.6), 0 18px 50px rgba(0,0,0,0.35), 0 0 30px @ACCENT_GLOW@; }
 """,
 }
+
+
+def _css(block: str) -> str:
+    """Метки @ИМЯ@ → значения текущей темы. Метка без значения — громкая ошибка (иначе CSS молча сломан)."""
+    import re as _re
+
+    def sub(m):
+        value = T(m.group(1))
+        if not isinstance(value, str):
+            raise ValueError(f"fx: метка @{m.group(1)}@ — не строка в теме {_theme['name']}")
+        return value
+    out = _re.sub(r"@([A-Z_]+)@", sub, block)
+    if "@" in out.replace("@font-face", ""):
+        raise ValueError("fx: в стилях осталась неразобранная метка")
+    return out
 
 
 class FX(dict):
@@ -159,7 +228,7 @@ class FX(dict):
     @property
     def css(self) -> str:
         keys = list(dict.fromkeys(["base", *(["stage"] if self["stage"] else []), *self["css"]]))
-        return "".join(CSS[k] for k in keys)
+        return "".join(_css(CSS[k]) for k in keys)
 
     def finalize(self, page: str) -> str:
         """Обёртка #stage (вся картинка, кроме передней графики) — для отъезда и пролёта сквозь кадр."""
@@ -211,7 +280,7 @@ def checklist(fid: str, title: str, items: list, times: list, until: float, left
     _need(times, len(items), "checklist")
     rows = "".join(
         f'<div class="row" id="{fid}-r{i}"><div class="box"><div class="fill"></div>'
-        f'<svg viewBox="0 0 50 50"><path d="M14 26 L22 34 L37 17" fill="none" stroke="#141210" stroke-width="5" '
+        f'<svg viewBox="0 0 50 50"><path d="M14 26 L22 34 L37 17" fill="none" stroke="{T("ACCENT_INK")}" stroke-width="5" '
         f'stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></svg>'
         f'</div><span>{_e(x)}</span></div>' for i, x in enumerate(items))
     count = f'<span id="{fid}-n">0 из {len(items)}</span>' if counter else ""
@@ -223,7 +292,7 @@ def checklist(fid: str, title: str, items: list, times: list, until: float, left
         r = f"#{fid}-r{i}"
         js += [f'      tl.fromTo("{r} .fill", {{ scale: 0 }}, {{ scale: 1, duration: 0.18, ease: "back.out(2)" }}, {t:.2f});',
                f'      draw("{r} path", {t + 0.08:.2f}, 0.2);',
-               f'      tl.to("{r}", {{ color: "#FFFFFF", duration: 0.15 }}, {t:.2f});']
+               f'      tl.to("{r}", {{ color: "{T("PLATE_TEXT")}", duration: 0.15 }}, {t:.2f});']
         if counter:
             js.append(f'      tl.set("#{fid}-n", {{ textContent: "{i + 1} из {len(items)}" }}, {t:.2f});')
     js.append(_out(f"#{fid}", until))
@@ -248,9 +317,9 @@ def toc(fid: str, items: list, times: list, until: float, top: int = 300, title:
           f'{max(0.0, times[0] - 0.4):.2f});']
     for i, t in enumerate(times):
         if i:
-            js.append(f'      tl.to("#{fid}-i{i - 1}", {{ color: "rgba(255,255,255,0.9)", x: 0, duration: 0.12 }}, {t:.2f});')
+            js.append(f'      tl.to("#{fid}-i{i - 1}", {{ color: "{T("PLATE_TEXT")}", x: 0, duration: 0.12 }}, {t:.2f});')
             js.append(f'      tl.set("#{fid}-i{i - 1} u", {{ opacity: 0 }}, {t:.2f});')
-        js.append(f'      tl.to("#{fid}-i{i}", {{ color: "{YELLOW}", x: 10, duration: 0.12 }}, {t:.2f});')
+        js.append(f'      tl.to("#{fid}-i{i}", {{ color: "{T("ACCENT")}", x: 10, duration: 0.12 }}, {t:.2f});')
         js.append(f'      tl.set("#{fid}-i{i} u", {{ opacity: 1 }}, {t:.2f});')
     js.append(f'      tl.fromTo("#{fid}", {{ y: 0, xPercent: -50 }}, {{ opacity: 0, y: -30, xPercent: -50, duration: 0.25, '
               f'ease: "power2.in", immediateRender: false }}, {until:.2f});')
@@ -475,9 +544,9 @@ def chart_grow(fid: str, t0: float, t1: float, label: str = "РОСТ ↗", days
     behind = "\n".join([
         f'        <div id="{fid}-d" class="g fx fx-days" style="left: 120px; top: {top}px;">{labels}</div>',
         f'        <svg id="{fid}-c" class="g fx fx-line" style="left: 120px; top: {top + 80}px; overflow: visible;" width="840" height="340">'
-        f'<path d="{d}" fill="none" stroke="{YELLOW}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" '
-        f'pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" style="filter: drop-shadow(0 0 14px {YELLOW});"/>'
-        f'<circle cx="840" cy="0" r="16" fill="{YELLOW}" opacity="0" id="{fid}-dot"/></svg>',
+        f'<path d="{d}" fill="none" stroke="{T("ACCENT")}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" '
+        f'pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" style="filter: drop-shadow(0 0 14px {T("ACCENT_GLOW")});"/>'
+        f'<circle cx="840" cy="0" r="16" fill="{T("ACCENT")}" opacity="0" id="{fid}-dot"/></svg>',
         f'        <div id="{fid}-p" class="g fx fx-pill" style="left: 720px; top: {top - 62}px;">{_e(label)}</div>',
     ])
     grow = min(1.4, t1 - t0 - 0.6)
@@ -492,9 +561,9 @@ def chart_grow(fid: str, t0: float, t1: float, label: str = "РОСТ ↗", days
     return FX(behind=behind, js=js, css=["base", "chart"], windows=[(t0, t1 + 0.3)])
 
 
-def backdrop(fid: str, t0: float, t1: float, css_bg: str = "linear-gradient(160deg, #6A3DF0 0%, #3A1FB8 45%, #1A1050 100%)",
-             inner: str = "") -> FX:
-    """№12 green screen: человек стоит на нарисованном фоне (градиент, интерфейс) вместо комнаты."""
+def backdrop(fid: str, t0: float, t1: float, css_bg: str | None = None, inner: str = "") -> FX:
+    """№12 green screen: человек стоит на нарисованном фоне (градиент темы, интерфейс) вместо комнаты."""
+    css_bg = css_bg or T("SCENE")
     behind = (f'        <div id="{fid}" class="g fx fx-scene" style="left: 0; top: 0; width: 1080px; height: 1920px; background: {css_bg};">'
               f'{inner}</div>')
     js = "\n".join([f'      tl.set("#{fid}", {{ opacity: 1 }}, {t0:.2f});', f'      tl.set("#{fid}", {{ opacity: 0 }}, {t1:.2f});'])
@@ -524,8 +593,7 @@ def _outline(t0: float, t1: float, width: int, boil: bool, shadow: bool = False)
 def paper_cut(fid: str, t0: float, t1: float, word: str, top: int = 300) -> FX:
     """№13 paper cut: коллаж — бумага в клетку, человек вырезан с белым полем и тенью, слово из вырезанных букв,
     скотч и каракули маркером."""
-    palette = [("#1F3FA8", "#fff", "InterX"), ("#fff", "#141210", "Cormorant"), ("#141210", "#fff", "JBMono"),
-               ("#F5E15A", "#141210", "InterX"), ("#C8291F", "#fff", "Cormorant")]
+    palette = T("RANSOM")
     letters = "".join(f'<span id="{fid}-l{i}" style="background:{b}; color:{c}; font-family:{f};">'
                       f'{_e(ch)}</span>' for i, (ch, (b, c, f)) in enumerate(zip(word, palette * 10)))
     behind = "\n".join([
@@ -533,7 +601,7 @@ def paper_cut(fid: str, t0: float, t1: float, word: str, top: int = 300) -> FX:
         f'        <div id="{fid}-tp" class="g fx fx-tape" style="left: 700px; top: 980px; transform: rotate(-24deg);"></div>',
         f'        <svg id="{fid}-sc" class="g fx fx-scribble" style="left: 640px; top: 640px;" width="380" height="300"><path d="M10 40 C80 0 120 90 '
         f'180 40 S300 10 360 60 M20 140 C90 100 140 190 200 140 S310 110 370 160 M30 240 C100 200 150 290 210 240 S320 210 '
-        f'370 260" fill="none" stroke="#2B4BD8" stroke-width="9" stroke-linecap="round" pathLength="1" stroke-dasharray="1" '
+        f'370 260" fill="none" stroke="{T("SCRIBBLE")}" stroke-width="9" stroke-linecap="round" pathLength="1" stroke-dasharray="1" '
         f'stroke-dashoffset="1"/></svg>',
     ])
     front = f'        <div id="{fid}-w" class="g fx fx-rans" style="left: 540px; top: {top}px;">{letters}</div>'
@@ -564,8 +632,8 @@ def doodle(fid: str, t0: float, t1: float, marks: list | None = None) -> FX:
 
     marks — [(значок из DOODLES, x, y, цвет)]. Дрожь — смена шума фильтра 8 раз в секунду (feTurbulence seed).
     """
-    marks = marks or [("clapper", 150, 520, "#fff"), ("heart", 800, 470, "#FF8FB1"), ("star", 830, 1130, "#F5E15A"),
-                      ("spark", 120, 1050, "#fff")]
+    c = T("MARKS")
+    marks = marks or [("clapper", 150, 520, c[0]), ("heart", 800, 470, c[1]), ("star", 830, 1130, c[2]), ("spark", 120, 1050, c[3])]
     filt = (f'<svg width="0" height="0" style="position:absolute"><filter id="{fid}-boil"><feTurbulence id="{fid}-tu" '
             f'type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="1"/><feDisplacementMap in="SourceGraphic" '
             f'scale="5"/></filter></svg>')

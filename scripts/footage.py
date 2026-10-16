@@ -67,6 +67,9 @@ def load_brief(stem: str) -> dict:
         brief = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise FootageError(f"work/{stem}/footage.json не читается: {e}") from e
+    if not str(brief.get("style") or "").strip():          # стиль проекта (rules.md п.15), если у ролика нет своего
+        import projects
+        brief["style"] = projects.of_or_default(stem).config.get("footage_style", "")
     return validate(brief, stem)
 
 
@@ -122,7 +125,7 @@ def messages(brief: dict) -> tuple:
     так агент Flow понимает задачу целиком (ЖУРНАЛ коллеги: «exactly one image per prompt»)."""
     style = (brief.get("style") or "").strip()
     clips = brief["clips"]
-    imgs = [f"{i}. [{c['name']}] {c['image'].strip()} {style} {STYLE_TAIL}".replace("  ", " ")
+    imgs = [f"{i}. [{c['name']}] {c['image'].strip().rstrip('.')}. {style} {STYLE_TAIL}".replace("  ", " ")
             for i, c in enumerate(clips, 1)]
     refs = sorted({r for c in clips for r in c.get("refs", [])})
     head = (f"Create {len(clips)} images, exactly one image per prompt, aspect ratio 9:16, one variant each."

@@ -829,6 +829,10 @@ def main():
         print(f"  ⚠ {why}", flush=True)
     out = Path(args.out).resolve() if args.out else video.with_name(
         f"{video.stem}.matte_{backend}.mkv")
+    if out.suffix.lower() != ".mkv":
+        # 16.10: --out aroll.hq.cutout.webm — маску писали в webm, и счёт падал «Broken pipe» через минуту
+        sys.exit(f"  ✗ --out — файл маски .mkv (например work/<имя>/aroll.matte_birefnet.mkv), а не {out.name}. "
+                 f"Вырезка (.cutout.webm) кладётся рядом с видео сама")
     if out.exists() and args.cutout:
         print(f"  → маска уже есть: {out.name}")
     else:

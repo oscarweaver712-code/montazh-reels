@@ -45,6 +45,7 @@ CHROME_CACHE = Path.home() / ".cache" / "hyperframes" / "chrome" / "chrome-headl
 FPS = 30
 SPLICE_JUMP = 0.1    # на склейке крупность меняется хотя бы на столько (1.2 → 1.36 у Take.splice_punches)
 HOLD_MAX = 5.0      # с: дольше графика без изменений — динамика проседает (Валера 13.10, IMG_1803)
+CAP_GAP_MAX = 3.0   # с: дольше речь без субтитров не идёт (Валера 16.10, IMG_3303 v3: «надолго пропали»)
 
 # Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
 # без него страница падает на первой же строке) и сбор ошибок и предупреждений GSAP.
@@ -302,8 +303,24 @@ CHECK_JS = r"""
     // ---- лицо (правило Валеры 12.10.2026: «карточки никогда не должны перекрывать лицо»): рамка
     // каждого видимого элемента поверх человека (#front .g — карточки, таблицы, плашки) против
     // рамки лица в этот момент (C.faces: [t, x0, y0, x1, y1] — по слежению и движению камеры).
-    // Два замера подряд глубже 10 px — заезд; исключений нет.
+    // Два замера подряд глубже 10 px — заезд. Единственное «не заезд»: пока виден ИИ-футаж во весь кадр
+    // (kit.footage, класс .footage, 16.10.2026) — лица на экране нет вовсе: план сменили, а не закрыли.
     res.faceHits = [];
+    // перебивка (ИИ-футаж, серия картинок) идёт без человека поверх: вырезка на ней кривая (Валера 16.10).
+    // Окно вырезки, попавшее на перебивку, — ошибка: человек проступит поверх футажа
+    res.fgOverCut = [];
+    {
+      const cuts = [...document.querySelectorAll(".footage")];
+      const fg = document.getElementById("cam-fg");
+      if (cuts.length && fg) {
+        for (let t = 0; t <= duration + 1e-6; t += 0.25) {
+          tl.totalTime(0, false); tl.totalTime(t, false);
+          const shown = (el) => { for (let n = el; n && n !== document.body; n = n.parentElement)
+            if (parseFloat(getComputedStyle(n).opacity) < 0.5) return false; return true; };
+          if (cuts.some(shown) && parseFloat(getComputedStyle(fg).opacity) > 0.1) res.fgOverCut.push(+t.toFixed(2));
+        }
+      }
+    }
     const faces = C.faces || [];
     if (faces.length) {
       const fronts = [...document.querySelectorAll("#front .g")].filter((el) => el.id !== "flash");
@@ -315,14 +332,24 @@ CHECK_JS = r"""
         return true;
       };
       const open = new Map();
+      const root = document.getElementById("root").getBoundingClientRect();
+      const cutaways = [...document.querySelectorAll(".footage")];     // футаж и серия картинок — в любом слое
+      const cutaway = () => cutaways.some((el) => {
+        if (!el.classList.contains("footage") || !vis(el)) return false;
+        const r = el.getBoundingClientRect();
+        return r.width * r.height >= 0.95 * root.width * root.height;
+      });
       for (const [t, fx0, fy0, fx1, fy1] of faces) {
         tl.totalTime(0, false); tl.totalTime(t, false);
         const seen = new Set();
-        for (const el of fronts) {
+        if (cutaway()) continue;          // футаж во весь кадр: лица нет — замер пропускается, открытые заезды ждут
+        // субтитры — тоже: не на лице и не вплотную к подбородку (Валера 16.10: «сабы ниже подбородка, с отступом»)
+        for (const el of [...fronts, ...document.querySelectorAll("#caps .cap")]) {
           if (!vis(el)) continue;
+          const cap = el.classList.contains("cap");
           const r = el.getBoundingClientRect();
           const dx = Math.min(r.right, fx1) - Math.max(r.left, fx0);
-          const dy = Math.min(r.bottom, fy1) - Math.max(r.top, fy0);
+          const dy = Math.min(r.bottom, fy1 + (cap ? 30 : 0)) - Math.max(r.top, fy0);
           if (dx <= 10 || dy <= 10) continue;
           const key = label(el);
           seen.add(key);
@@ -335,6 +362,83 @@ CHECK_JS = r"""
         for (const [key, rec] of [...open]) if (!seen.has(key)) { if (rec.count >= 2) res.faceHits.push(rec); open.delete(key); }
       }
       for (const rec of open.values()) if (rec.count >= 2) res.faceHits.push(rec);
+
+      // текст за спиной не прячется за головой (Валера 16.10, IMG_3303 v2: «текст за головой нихуя не видно»):
+      // голова — рамка лица (YuNet с запасом уже берёт лоб) плюс волосы над ней (0,2 высоты, сверено по IMG_1799) и чуть шире; строки текста (Range) слоя behind, пока
+      // человек поверх (#cam-fg). Закрыта больше трети площади строк два замера подряд — провал; data-safe — нет
+      res.occluded = [];
+      const behinds = [...document.querySelectorAll("#behind .g")].filter((el) => el.textContent.trim());
+      const fgEl = document.getElementById("cam-fg");
+      const openO = new Map();
+      for (const [t, fx0, fy0, fx1, fy1] of faces) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        if (cutaway() || !fgEl || parseFloat(getComputedStyle(fgEl).opacity) < 0.5) continue;
+        const w = fx1 - fx0, h = fy1 - fy0;
+        const hx0 = fx0 - 0.15 * w, hx1 = fx1 + 0.15 * w, hy0 = fy0 - 0.2 * h, hy1 = fy1;
+        const seen = new Set();
+        for (const el of behinds) {
+          if (!vis(el) || el.closest("[data-safe]")) continue;
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          let area = 0, cov = 0;
+          for (const q of range.getClientRects()) {
+            if (q.width < 2 || q.height < 2) continue;
+            area += q.width * q.height;
+            const dx = Math.min(q.right, hx1) - Math.max(q.left, hx0), dy = Math.min(q.bottom, hy1) - Math.max(q.top, hy0);
+            if (dx > 0 && dy > 0) cov += dx * dy;
+          }
+          if (!area || cov / area <= 0.35) continue;
+          const key = label(el);
+          seen.add(key);
+          const rec = openO.get(key);
+          if (rec) { rec.last = t; rec.count++; rec.share = Math.max(rec.share, cov / area); }
+          else openO.set(key, { el: key, from: t, last: t, count: 1, share: cov / area });
+        }
+        for (const [k, rec] of [...openO]) if (!seen.has(k)) { if (rec.count >= 2) res.occluded.push(rec); openO.delete(k); }
+      }
+      for (const rec of openO.values()) if (rec.count >= 2) res.occluded.push(rec);
+    }
+
+    // ---- субтитры не двоятся (Валера 16.10.2026, IMG_3303 v3: «где-то дублировались субтитры»): «что соты у пчёл»
+    // бежало субтитром прямо под подводом «соты у пчёл». Видимый субтитр и видимый текст графики (кроме подписи
+    // портрета .card) не несут одно слово одновременно: слова от 4 букв — по первым пяти, числа — целиком.
+    // Два замера подряд — провал. Текст на экране повторяет речь — на его время субтитр прячет hide_captions
+    res.dupes = [];
+    {
+      const caps = [...document.querySelectorAll("#caps .cap")];
+      const texts = [...document.querySelectorAll("#front .g, #behind .g")]
+        .filter((el) => !el.classList.contains("cap") && !el.closest(".card") && el.textContent.trim());
+      const shown = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.5) return false;
+        }
+        return true;
+      };
+      const stems = (s) => (s.toLowerCase().replace(/ё/g, "е").match(/[a-zа-я]+|\d+/g) || [])
+        .filter((w) => /\d/.test(w) || w.length >= 4).map((w) => (/\d/.test(w) ? w : w.slice(0, 5)));
+      const open = new Map();
+      if (caps.length && texts.length) {
+        for (let t = 0; t <= duration + 1e-6; t += 0.25) {
+          tl.totalTime(0, false); tl.totalTime(t, false);
+          const said = new Map();
+          for (const c of caps) if (shown(c)) for (const s of stems(c.textContent)) said.set(s, c.textContent.trim());
+          const seen = new Set();
+          if (said.size) for (const el of texts) {
+            if (!shown(el)) continue;
+            const hit = stems(el.textContent).find((s) => said.has(s));
+            if (!hit) continue;
+            const key = label(el);
+            seen.add(key);
+            const rec = open.get(key);
+            if (rec) { rec.last = t; rec.count++; }
+            else open.set(key, { el: key, from: t, last: t, count: 1, cap: said.get(hit),
+                                 text: el.textContent.trim().replace(/\s+/g, " ").slice(0, 40) });
+          }
+          for (const [k, rec] of [...open]) if (!seen.has(k)) { if (rec.count >= 2) res.dupes.push(rec); open.delete(k); }
+        }
+        for (const rec of open.values()) if (rec.count >= 2) res.dupes.push(rec);
+      }
     }
 
     // ---- текст вылез (Валера 15.10.2026: «в конце фраза "Больше математики" — текст за рамки вылетал»):
@@ -676,6 +780,38 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     return json.loads(html.unescape(found.group(1)))
 
 
+def caption_gaps(project: Path, limit: float = CAP_GAP_MAX) -> list:
+    """Где речь идёт без субтитров дольше limit с (Валера 16.10.2026, IMG_3303 v3: «где-то слишком надолго пропали»).
+
+    В v3 субтитры прятались на всё время схем на груди: круги вплотную — 6 с речи без текста, периметры — 6 с.
+    Слово «с субтитром», если на его середине виден кусок из captions.js; подряд идущие слова без субтитра —
+    один провал, пауза дольше секунды его рвёт. Возвращает [(от, до)] на шкале дубля.
+    """
+    caps_js, words_json = project / "captions.js", take_dir(project) / "aroll.words.json"
+    if not caps_js.exists() or not words_json.exists():
+        return []
+    found = re.search(r"window\.CAPTIONS\s*=\s*(\[.*\]);", caps_js.read_text(encoding="utf-8"), re.S)
+    chunks = json.loads(found.group(1)) if found else []
+    if not chunks:
+        return []                                   # стиль без субтитров — не про это
+    words = json.loads(words_json.read_text(encoding="utf-8"))
+    words = words["words"] if isinstance(words, dict) else words
+    gaps, run = [], None
+    for w in words:
+        if not str(w.get("word", "")).strip(" -.,!?"):
+            continue
+        mid = (w["start"] + w["end"]) / 2
+        if any(c["t0"] <= mid < c["t1"] for c in chunks):
+            run = None
+            continue
+        if run and w["start"] - run[1] <= 1.0:
+            run[1] = w["end"]
+        else:
+            run = [w["start"], w["end"]]
+            gaps.append(run)
+    return [(round(a, 2), round(b, 2)) for a, b in gaps if b - a > limit]
+
+
 def take_splices(project: Path) -> list:
     """Секунды склеек на шкале дубля (по вырезам drop в aroll.json); нет дубля — пусто."""
     meta = take_dir(project) / "aroll.json"
@@ -796,7 +932,25 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
             check(not hits, "карточки и графика не закрывают лицо (лицо — по кадрам, с движением камеры)", hits)
         elif hits:
             print(f"  · графика поверх лица: {len(hits)} (при правке ролика — опустить или убрать)")
-    elif strict and (take_dir(project) / "aroll.faces.json").exists():
+    hidden = [f"{o['el']} за головой {o['from']:.2f}–{o['last'] + 0.25:.2f} с: голова закрывает {o['share'] * 100:.0f}% "
+              f"строки — выше, мельче, сбоку или на грудь" for o in res.get("occluded", [])]
+    if strict:
+        check(not hidden, "текст за спиной не прячется за головой (закрыто не больше трети)", hidden)
+    elif hidden:
+        print(f"  · текст за головой закрыт: {len(hidden)}")
+    dupes = [f"{d['el']} «{d['text']}» и субтитр «{d['cap']}» вместе {d['from']:.2f}–{d['last'] + 0.25:.2f} с — "
+             f"на время текста субтитр прячет hide_captions, или текст не повторяет речь" for d in res.get("dupes", [])]
+    gaps = [f"{a:.2f}–{b:.2f} с: {b - a:.1f} с речи без субтитров — схема, картинка и футаж их не прячут, "
+            f"hide_captions — только пока текст на экране повторяет сказанное" for a, b in caption_gaps(project)]
+    if strict:
+        check(not dupes, "субтитры не двоятся с текстом на экране", dupes)
+        check(not gaps, f"субтитры не пропадают дольше {CAP_GAP_MAX:g} с, пока идёт речь", gaps)
+    elif dupes or gaps:
+        print(f"  · субтитры двоятся: {len(dupes)}, пропадают дольше {CAP_GAP_MAX:g} с: {len(gaps)} (при правке ролика — hide_captions)")
+    over = res.get("fgOverCut", [])
+    check(not over, "на перебивке (футаж, серия картинок) нет человека поверх — окна вырезки до и после",
+          [f"вырезка видна поверх перебивки на {over[0]:.2f}–{over[-1]:.2f} с ({len(over)} замеров)"] if over else [])
+    if not faces and strict and (take_dir(project) / "aroll.faces.json").exists():
         check(False, "лицо по кадрам не прочитано — проверка «не закрывает лицо» не сделана")
     soft = [f"{b['el']} размыт на {b['blur']:.1f} px {b['from']:.2f}–{b['last'] + 0.25:.2f} с — размытие только в "
             f"наплыве и уходе, на показе фон резкий" for b in res.get("softBg", []) if not b.get("allowed")]
