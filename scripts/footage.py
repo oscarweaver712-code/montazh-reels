@@ -129,7 +129,7 @@ def messages(brief: dict) -> tuple:
             + (" Use the uploaded reference images as exact references for the products/objects they show:"
                " keep their real packaging, colours and logos unchanged." if refs else ""))
     first = head + "\n\n" + "\n\n".join(imgs)
-    moves = [f"{i}. [{c['name']}] {c['motion'].strip()} {MOTION_TAIL}" for i, c in enumerate(clips, 1)]
+    moves = [f"{i}. [{c['name']}] {c['motion'].strip().rstrip('.')}. {MOTION_TAIL}" for i, c in enumerate(clips, 1)]
     second = ("Animate each of these images into a video, using the image as the first frame, 9:16, no sound needed. "
               "One video per image, in the same order:\n\n" + "\n\n".join(moves))
     return first, second, refs
@@ -142,11 +142,15 @@ def write_prompts(stem: str, brief: dict) -> Path:
     budget = brief.get("budget")
     lines = [f"# Футажи {stem} — сообщения для Google Flow", "",
              f"Клипов: {len(brief['clips'])}. Бонусы: одобрено {budget if budget is not None else 'не задано'}, "
-             f"потрачено {spent(stem)}. Цена видео — Flow называет сам перед генерацией (12.10: 6 с — 10, 8 с — 12, "
-             "10 с Omni Flash — 15); больше одобренного — спросить Валеру.", ""]
+             f"потрачено {spent(stem)}. Цена видео — Flow называет сам перед генерацией (16.10: 8 с Omni 1.1 Flash — 12); "
+             "больше одобренного — спросить Валеру. План AI Plus — 50 бонусов в день.", ""]
     if refs:
         lines += ["Загрузить в проект Flow перед первым сообщением (референсы):", ""] + [f"- `{r}`" for r in refs] + [""]
-    lines += ["## Сообщение 1 — кадры", "", "```", first, "```", "", "## Сообщение 2 — оживить", "", "```", second, "```", ""]
+    frames = [f"- `{c['name']}` — `work/{stem}/footage/frames/{c['name']}.png`" for c in brief["clips"]]
+    lines += ["## Кадры — через GPT (правило Валеры, 16.10.2026)", "",
+              f"`footage.py {stem} --frame <клип>` на каждый клип, потом загрузить в проект Flow по порядку:", "",
+              *frames, "", "## Сообщение — оживить загруженные кадры", "", "```", second, "```", "",
+              "## Запасное — кадры в самом Flow (Nano Banana), только если Валера попросил", "", "```", first, "```", ""]
     out.write_text("\n".join(lines), encoding="utf-8")
     return out
 
