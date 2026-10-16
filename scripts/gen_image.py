@@ -10,8 +10,8 @@
 
 Кладёт work/<имя>/downloads/<файл>.png и рядом <файл>.md: что, когда, с каким описанием —
 это не фото, в ролике оно фон-иллюстрация, а не документ. Правила для запроса (без людей, без
-надписей, спокойный центр под человека, вертикаль) добавляются сами. Реальных людей, логотипы
-и «документы» не генерировать.
+надписей, спокойный центр под человека, вертикаль) добавляются сами. Реальных людей и «документы» не
+генерировать. Логотип или упаковка бренда — можно, если назван в описании (Валера, 16.10.2026: запрет снят).
 
 Картинка сразу готовится под кадр (frame_ready): imagegen отдаёт 941×1672, а кадр — 1080×1920, и
 медленный наезд тянет её ещё на 8% — растянутая браузером, она выглядела мылом (Валера, 12.10:
@@ -35,7 +35,8 @@ from common import ROOT, WORK_DIR, ffmpeg_bin, ffprobe_bin
 
 FRAME = (1080, 1920)
 HEADROOM = 1.1          # запас под медленный наезд: браузер картинку сжимает, а не растягивает
-RULES = ("вертикальный кадр 9:16; без людей и без лиц; без надписей, букв, цифр и логотипов; "
+RULES = ("вертикальный кадр 9:16; без людей и без лиц; без случайных надписей, букв и цифр (логотип или упаковку "
+         "бренда — только если они названы в описании); "
          "центр кадра спокойный, без мелких деталей — там будет стоять человек; мягкий свет, без пересвета")
 TIMEOUT = 360
 
@@ -60,10 +61,10 @@ def collect(out: Path, started: float, folder: Path | None = None) -> bool:
     return True
 
 
-def build_prompt(description: str, out: Path) -> str:
+def build_prompt(description: str, out: Path, rules: str = RULES) -> str:
     rel = out.relative_to(ROOT).as_posix()
     return (f"Сгенерируй ОДНУ картинку инструментом генерации изображений: {description}. "
-            f"Обязательно: {RULES}. Сохрани файл в {rel} и в конце напиши только путь к файлу.")
+            f"Обязательно: {rules}. Сохрани файл в {rel} и в конце напиши только путь к файлу.")
 
 
 def check_image(path: Path) -> tuple:
@@ -106,6 +107,42 @@ def refit(out: Path, fresh: bool = False) -> str:
     return frame_ready(original, out)
 
 
+def generate(out: Path, description: str, rules: str = RULES) -> tuple:
+    """Одна картинка через Codex в out (под кадр, оригинал — .codex.png, рядом .md). Вернёт (размер, оригинал).
+
+    Отдельно от main: первый кадр ИИ-футажа (footage.py --frame) идёт тем же путём, со своими правилами.
+    Не вышло — громкий выход с выводом Codex, а не пустой файл.
+    """
+    codex = find_binary("codex")
+    if not codex:
+        sys.exit("✗ Codex не найден: поставь его и войди (codex login) — или возьми свободное фото "
+                 "(Wikimedia Commons, Pexels)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    with tempfile.TemporaryFile() as err:
+        try:
+            done = subprocess.run([codex, "exec", "--skip-git-repo-check", "--sandbox", "workspace-write",
+                                   build_prompt(description, out, rules)],
+                                  cwd=ROOT, env=host.utf8_env(clean_env()), stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=err, timeout=TIMEOUT)
+            code = done.returncode
+        except subprocess.TimeoutExpired:
+            code = None
+        err.seek(0)
+        tail = err.read().decode("utf-8", "replace").strip().splitlines()[-6:]
+    ok, detail = check_image(out) if collect(out, started) else (False, "картинки нет ни по пути, ни у Codex")
+    if code != 0 or not ok:
+        why = "не уложился в 6 минут" if code is None else f"код {code}" if code else detail
+        sys.exit(f"✗ картинка не получилась ({why}). Вывод Codex:\n" + "\n".join(tail))
+    size = refit(out, fresh=True)
+    out.with_suffix(".md").write_text(
+        f"# {out.name}\n\nСгенерировано Codex (imagegen, через ChatGPT) {time.strftime('%d.%m.%Y %H:%M')}.\n"
+        f"Описание: {description}\nПравила запроса: {rules}\n"
+        f"Оригинал Codex — {out.stem}.codex.png ({detail}); {out.name} — он же под кадр ({size}).\n\n"
+        "Это не фото: в ролике — иллюстрация, а не документ.\n", encoding="utf-8")
+    return size, detail
+
+
 def main():
     ap = argparse.ArgumentParser(description="Фон для ролика через Codex (imagegen)")
     ap.add_argument("stem", help="ролик: IMG_1803")
@@ -123,34 +160,9 @@ def main():
         ap.error("нужно описание фона")
     if out.exists() and not args.force:
         sys.exit(f"✗ {out.relative_to(ROOT)} уже есть — возьми его или запусти с --force")
-    codex = find_binary("codex")
-    if not codex:
-        sys.exit("✗ Codex не найден: поставь его и войди (codex login) — или возьми свободное фото "
-                 "(Wikimedia Commons, Pexels)")
-    out.parent.mkdir(parents=True, exist_ok=True)
     print(f"  → генерирую фон «{args.description}» через Codex (около полутора минут)", flush=True)
     started = time.time()
-    with tempfile.TemporaryFile() as err:
-        try:
-            done = subprocess.run([codex, "exec", "--skip-git-repo-check", "--sandbox", "workspace-write",
-                                   build_prompt(args.description, out)],
-                                  cwd=ROOT, env=host.utf8_env(clean_env()), stdin=subprocess.DEVNULL,
-                                  stdout=subprocess.DEVNULL, stderr=err, timeout=TIMEOUT)
-            code = done.returncode
-        except subprocess.TimeoutExpired:
-            code = None
-        err.seek(0)
-        tail = err.read().decode("utf-8", "replace").strip().splitlines()[-6:]
-    ok, detail = check_image(out) if collect(out, started) else (False, "картинки нет ни по пути, ни у Codex")
-    if code != 0 or not ok:
-        why = "не уложился в 6 минут" if code is None else f"код {code}" if code else detail
-        sys.exit(f"✗ фон не получился ({why}). Вывод Codex:\n" + "\n".join(tail))
-    size = refit(out, fresh=True)
-    out.with_suffix(".md").write_text(
-        f"# {out.name}\n\nСгенерировано Codex (imagegen, через ChatGPT) {time.strftime('%d.%m.%Y %H:%M')}.\n"
-        f"Описание: {args.description}\nПравила запроса: {RULES}\n"
-        f"Оригинал Codex — {out.stem}.codex.png ({detail}); {out.name} — он же под кадр ({size}).\n\n"
-        "Это не фото: в ролике — фон-иллюстрация, а не документ.\n", encoding="utf-8")
+    size, detail = generate(out, args.description)
     print(f"  ✓ {out.relative_to(ROOT)} ({size}, оригинал {detail}) за {time.time() - started:.0f} с")
 
 

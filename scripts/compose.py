@@ -366,6 +366,9 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
         copy_if_newer(src, assets / "materials" / src.name)
         if materials.kind_of(src.name) == "image":
             copy_if_newer(src, assets / "img" / src.name)
+    for src in (work / "footage").glob("*.mp4"):                # ИИ-футажи Flow (footage.py), без оригиналов
+        (assets / "footage").mkdir(exist_ok=True)
+        copy_if_newer(src, assets / "footage" / src.name)
     for src in (work / "manim").glob("*.mp4"):                  # «доска»: клипы ManimGX (manim_clip.py)
         (assets / "manim").mkdir(exist_ok=True)
         copy_if_newer(src, assets / "manim" / src.name)

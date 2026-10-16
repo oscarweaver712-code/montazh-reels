@@ -81,3 +81,6 @@ studio/*/hyperframes.json
 studio/*/package.json
 
 .DS_Store
+
+# галерея приёмов fx — собирается scripts/fx_gallery.py из IMG_1799
+studio/_fx_gallery/

@@ -182,10 +182,16 @@ def origin(stem: str, area: str, name: str) -> dict:
         return {"code": "library", "label": "библиотека звуков"}
     if area == "manim":
         return {"code": "anim", "label": "анимация (ManimGX)"}
+    if area == "footage":
+        note = WORK_DIR / stem / "footage" / f"{Path(name).stem}.md"
+        lines = ([x.strip() for x in note.read_text(encoding="utf-8", errors="replace").splitlines() if x.strip()]
+                 if note.exists() else [])
+        return {"code": "gen", "label": "сгенерировано (Google Flow)",
+                "detail": next((x for x in lines if x.startswith("Фраза:")), "")[:200]}
     return {"code": "other", "label": area}
 
 
-_REF = re.compile(r'(?:src|href)="assets/(img|sfx|materials|manim)/([^"]+)"')
+_REF = re.compile(r'(?:src|href)="assets/(img|sfx|materials|manim|footage)/([^"]+)"')
 _BLOCK = re.compile(r'<(?:div|audio|video|img)\b[^>]*\bid="([\w\-]+)"')
 
 
@@ -239,7 +245,8 @@ def file_path(stem: str, area: str, name: str) -> Path:
     name = Path(name).name
     places = {"materials": [folder(stem)], "img": [folder(stem), WORK_DIR / stem / "downloads",
                                                    ROOT / "studio" / stem / "assets" / "img"],
-              "sfx": [ROOT / "presets" / "sfx"], "manim": [WORK_DIR / stem / "manim"]}
+              "sfx": [ROOT / "presets" / "sfx"], "manim": [WORK_DIR / stem / "manim"],
+              "footage": [WORK_DIR / stem / "footage"]}
     for base in places.get(area, []):
         if (base / name).is_file():
             return base / name

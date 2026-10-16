@@ -118,6 +118,38 @@ def card(cid: str, img: str, name: str, sub: str, side: str = "right") -> str:
             f'          <div class="card-sub">{sub}</div>\n        </div>')
 
 
+def footage(fid: str, stem: str, name: str, at: float, dur: float, fmt: str = "9:16", push: float = 1.06,
+            track: int = 2) -> tuple:
+    """ИИ-футаж (scripts/footage.py, Google Flow) во весь кадр поверх спикера — (html, js) для build_page.
+
+    Время по шкале дубля, окно [at, at+dur]: склейка в футаж и обратно — жёсткая, на движении (96% моментов у
+    профи — жёсткие склейки), внутри — медленный наезд push. Клип короче окна или не принят — громкая ошибка,
+    а не чёрный хвост: сначала footage.py --take. Субтитры и графику ставь поверх (front) сам.
+    """
+    from common import WORK_DIR
+    path = WORK_DIR / stem / "footage" / f"{name}.mp4"
+    took = (_json.loads((path.parent / "takes.json").read_text(encoding="utf-8")).get(name)
+            if (path.parent / "takes.json").exists() else None)
+    if not path.exists() or not took:
+        raise FileNotFoundError(f"нет футажа work/{stem}/footage/{name}.mp4 — сначала footage.py {stem} --take {name}")
+    if took["duration"] + 1e-3 < dur:
+        raise ValueError(f"футаж {name}: {took['duration']} с, а окно {dur:.2f} с — меньше --speed или короче окно")
+    width, height = formats.size(fmt)
+    html = (f'        <div id="{fid}" class="g footage" style="left: 0; top: 0; width: {width}px; height: {height}px; '
+            f'overflow: hidden; background: #000;">\n'
+            f'          <video id="{fid}-clip" class="clip" src="assets/footage/{name}.mp4" muted playsinline '
+            f'data-start="{at:.2f}" data-duration="{dur:.2f}" data-track-index="{track}"\n'
+            f'                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;"></video>\n'
+            f'        </div>')
+    js = (f'      tl.set("#{fid}", {{ opacity: 1 }}, {at:.2f});\n'
+          f'      tl.fromTo("#{fid}-clip", {{ scale: 1 }}, {{ scale: {push}, duration: {dur:.2f}, ease: "none", '
+          f'immediateRender: false }}, {at:.2f});\n'
+          f'      tl.fromTo("#{fid}-clip", {{ filter: BLUR(8) }}, {{ filter: BLUR(0), duration: 0.12, ease: "power2.out", '
+          f'immediateRender: false }}, {at:.2f});\n'
+          f'      tl.set("#{fid}", {{ opacity: 0 }}, {at + dur:.2f});')
+    return html, js
+
+
 def doc_img(did: str, img: str, caption: str, left: int = 300, top: int = 1060, width: int = 480,
             height: int = 520, position: str = "50% 30%") -> str:
     inner = width - 32

@@ -873,6 +873,152 @@ def check_sfx(report: Report):
                  "проверка страницы ловит звук громче нормы (удар 0.36 из старых роликов)")
 
 
+def check_footage(report: Report, tmp: Path):
+    """ИИ-футажи из Google Flow (footage.py, 16.10.2026): бриф, сообщения для Flow, приём клипа под кадр.
+
+    Flow и браузер не зовутся — самопроверка не тратит бонусы и не зависит от сети. Проверяется то, что
+    сломалось бы тихо: клип Flow (720×1280, 24 к/с, со звуком) должен лечь в кадр 1080×1920, 30 к/с, без
+    звука, на сетку кадров; из «Загрузок» берётся свежий и ещё не принятый файл, а не старый; короткий клип
+    и перерасход бонусов — красные, а не чёрный хвост в ролике.
+    """
+    import common
+    import footage
+    import kit
+
+    print("\nИИ-футажи (Google Flow)")
+    work = tmp / "footage_work"
+    brief = {"budget": 20, "style": "warm kitchen light",
+             "clips": [{"name": "a_shelf", "at": [1.0, 3.0], "say": "полка", "image": "a supermarket shelf",
+                        "motion": "walk forward", "refs": ["materials/pack.png"]},
+                       {"name": "b_tea", "at": [4.0, 9.0], "say": "чай", "image": "tea on a table",
+                        "motion": "steam rises"}]}
+    bad = []
+    for broken in ({**brief, "clips": [{**brief["clips"][0], "name": "Полка"}]},
+                   {**brief, "clips": [{**brief["clips"][0], "motion": ""}]},
+                   {**brief, "clips": [{**brief["clips"][0], "at": [3, 1]}]}):
+        try:
+            footage.validate(broken)
+            bad.append(broken["clips"][0])
+        except footage.FootageError:
+            pass
+    first, second, refs = footage.messages(footage.validate(brief))
+    msg_ok = ("exactly one image per prompt" in first and "9:16" in first and "[b_tea]" in first
+              and "first frame" in second and "[a_shelf]" in second and refs == ["materials/pack.png"]
+              and "reference" in first and "top 20%" in first)
+    report.check(not bad and msg_ok, "бриф без дыр; сообщения для Flow — все клипы, вертикаль, референсы, спокойный верх",
+                 f"пропущено битых {len(bad)}, сообщения {'полные' if msg_ok else 'неполные'}")
+
+    saved = footage.WORK_DIR, common.WORK_DIR
+    footage.WORK_DIR = common.WORK_DIR = work
+    try:
+        (work / "X").mkdir(parents=True)
+        (work / "X" / "footage.json").write_text(json.dumps(brief), encoding="utf-8")
+        dl = tmp / "Downloads"
+        dl.mkdir()
+        # как отдаёт Flow: 720×1280, 24 к/с, 4 с, со звуком; плюс старый файл и двойное расширение
+        for name, age in (("old.mp4", 5 * 3600), ("flow_clip.mp4.mp4", 0)):
+            subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=720x1280:rate=24:duration=4",
+                            "-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-shortest", *source_codec(), "-c:a", "aac",
+                            "-f", "mp4", str(dl / name)], check=True, capture_output=True)
+            os.utime(dl / name, (time.time() - age, time.time() - age))
+        picked = footage.newest_download("X", dl).name
+        got = footage.take("X", "a_shelf", None, start=0.5, speed=1.5, credits=15, where=dl)
+        out = work / "X" / "footage" / "a_shelf.mp4"
+        size = probe_value(out, "stream=width,height", "v:0")
+        rate = probe_value(out, "stream=r_frame_rate", "v:0")
+        frames = int(probe_value(out, "stream=nb_frames", "v:0") or 0)
+        audio = probe_value(out, "stream=codec_type", "a")
+        expect = int((4 - 0.5) / 1.5 * 30)
+        report.check(picked == "flow_clip.mp4.mp4" and size == "1080,1920" and rate == "30/1" and not audio
+                     and abs(frames - expect) <= 1 and abs(got["duration"] - expect / 30) < 1e-3
+                     and (work / "X" / "footage" / "orig" / "a_shelf.mp4").exists()
+                     and (work / "X" / "footage" / "a_shelf.md").exists(),
+                     "клип Flow ложится в кадр: 1080×1920, 30 к/с, без звука, подрезка и ускорение на сетке кадров",
+                     f"взят {picked}, {size} {rate} кадров {frames} (ждали {expect}), звук {'есть' if audio else 'нет'}")
+        try:
+            footage.newest_download("X", dl)
+            again = "взят повторно"
+        except footage.FootageError:
+            again = ""
+        report.check(not again, "принятый клип и старый (5 ч) из «Загрузок» второй раз не берутся", again or "не берутся")
+
+        rows, ok_missing = footage.status("X")                 # b_tea нет — красное
+        footage.take("X", "b_tea", dl / "flow_clip.mp4.mp4", speed=1.0, credits=10)   # 4 с при окне 5 с
+        rows2, ok_short = footage.status("X")                  # короткий и 25 бонусов при 20 — красное
+        try:
+            kit.footage("ft", "X", "b_tea", 4.0, 5.0)
+            kit_short = "kit поставил короткий клип"
+        except ValueError:
+            kit_short = ""
+        html, js = kit.footage("ft", "X", "a_shelf", 1.0, 2.0)
+        kit_ok = 'src="assets/footage/a_shelf.mp4"' in html and 'data-start="1.00"' in js + html and "opacity: 0 }, 3.00" in js
+        report.check(not ok_missing and not ok_short and any("короче плана" in r for r in rows2)
+                     and any("25 бонусов при одобренных 20" in r for r in rows2) and not kit_short and kit_ok,
+                     "нет клипа, клип короче окна, перерасход бонусов — красные; kit не ставит короткий клип",
+                     kit_short or ("всё ловится" if kit_ok else "kit.footage собрал не то"))
+    finally:
+        footage.WORK_DIR, common.WORK_DIR = saved
+
+
+def check_fx(report: Report, tmp: Path):
+    """Приёмы из рилса @tenfoldmarc (fx.py, 16.10.2026): складываются в страницу kit и не залипают.
+
+    Ловится то, на что наступили при сборке галереи (work/_fx/gallery.py): ключи орбиты кончались ровно на
+    скрытии — на сдвиге в кадр карточка висела до конца ролика; CSS-transform на элементе, которому GSAP
+    двигает y, затирался; координаты рамки брались мимо камеры. Плюс громкие отказы на кривой вызов.
+    """
+    import re as _re
+
+    import fx
+    import kit
+
+    print("\nПриёмы fx (17 эффектов)")
+    parts = fx.merge(fx.checklist("ck", "Шаги", ["а", "б"], [1.0, 2.0], 3.0), fx.orbit("orb", ["a.jpg", "b.jpg"], 1.0, 3.0),
+                     fx.zoom_through(4.0), fx.wall("w", ["x"], [5.0], 6.0), fx.frame_break("fb", 7.0, 9.0),
+                     fx.vertigo(10.0, 11.0), fx.glass_word("gl", 12.0, 13.0, "СЛОВО"), fx.toc("toc", ["а", "б"], [1.0, 2.0], 9.0))
+    page = kit.build_page("fx", 14.0, parts.behind, parts.front, parts.js, [], parts.windows, cta_at=13.0,
+                          extra_css=parts.css, cta=False)
+    done = parts.finalize(page)
+    stage_ok = done.count('<div id="stage">') == 1 and parts.css.count("#stage {") == 1 and parts.css.count(".fx {") == 1
+    try:
+        fx.FX(stage=True).finalize("<html></html>")
+        stage_ok = False
+    except ValueError:
+        pass
+    ends = []
+    for m in _re.finditer(r'tl\.to\("#(orb-[bf]\d)", \{ keyframes: \[(.*?)\] \}, ([\d.]+)\);', parts.js):
+        total = sum(float(x) for x in _re.findall(r"duration: ([\d.]+)", m.group(2)))
+        hide = float(_re.search(rf'tl\.set\("#{m.group(1)}", \{{ opacity: 0 \}}, ([\d.]+)\)', parts.js).group(1))
+        ends.append(hide - (float(m.group(3)) + total))
+    css_conflict = [k for k, v in fx.CSS.items() if _re.search(r"transform:\s*(translate|scale|rotate)", v)]
+    camera = "cam[Math.min" in parts.js and parts.js.count("window.CAMERA_FPS") >= 2
+    report.check(stage_ok and ends and min(ends) >= 0.066 and not css_conflict and camera
+                 and sum(w[0] <= 5.0 <= w[1] for w in parts.windows) >= 1,
+                 "приёмы складываются в страницу: #stage один раз, орбита гаснет после своих ключей, без CSS-transform, "
+                 "рамка и вертиго — по камере",
+                 f"stage {'да' if stage_ok else 'нет'}, запас орбиты {min(ends) if ends else '—'} с, "
+                 f"CSS-transform {css_conflict or 'нет'}, камера {'да' if camera else 'нет'}")
+    loud = 0
+    for bad in (lambda: fx.checklist("x", "t", ["a", "b"], [1.0], 2.0), lambda: fx.wall("x", ["a"] * 9, [1.0] * 9, 2.0),
+                lambda: fx.vertigo(1, 2, amount=0.5), lambda: fx.doodle("x", 1, 2, [("dragon", 0, 0, "#fff")]),
+                lambda: fx.toc("x", ["a", "b"], [2.0, 1.0], 3.0), lambda: fx.orbit("x", [], 1, 2)):
+        try:
+            bad()
+        except ValueError:
+            loud += 1
+    report.check(loud == 6, "кривой вызов приёма — громкая ошибка, а не молча кривая графика", f"{loud} из 6")
+
+    # блоки приёмов — .g прямо в #behind/#front: иначе их не видят ни проверки страницы (серые зоны, динамика,
+    # лицо), ни монтажная студии (на галерее 16.10 проверки молчали, пока класс был только .fx)
+    import timeline
+    items = timeline.parse_page(done)["items"]
+    names = {x["id"]: timeline._kind_label(x) for x in items}
+    unnamed = [k for k, v in names.items() if v.startswith("рисунок")]
+    report.check({"ck", "toc", "w-0", "gl", "orb-b0", "orb-f0"} <= set(names) and not unnamed,
+                 "монтажная видит слои приёмов и подписывает их по-человечески (чек-лист, орбита, стекло)",
+                 f"слоёв {len(names)}, без подписи {unnamed or 'нет'}")
+
+
 def check_gen_image(report: Report, tmp: Path):
     """Фон через Codex (gen_image.py, 12.10.2026): правила в запросе, отбор картинки, подхват результата.
 
@@ -884,7 +1030,7 @@ def check_gen_image(report: Report, tmp: Path):
 
     print("\nФон через Codex")
     prompt = gen_image.build_prompt("ворота Иштар", ROOT / "work" / "X" / "downloads" / "bg.png")
-    rules_in = all(w in prompt for w in ("без людей", "без надписей", "9:16", "work/X/downloads/bg.png"))
+    rules_in = all(w in prompt for w in ("без людей", "без случайных надписей", "9:16", "work/X/downloads/bg.png"))
     pics = {}
     for name, size in (("vertical", "941x1672"), ("landscape", "1672x941"), ("tiny", "300x533")):
         pics[name] = tmp / f"gen_{name}.png"
@@ -3110,6 +3256,8 @@ def main():
         tmp = Path(tmpdir)
         section(report, check_skill_links, tmp)
         section(report, check_gen_image, tmp)
+        section(report, check_footage, tmp)
+        section(report, check_fx, tmp)
         section(report, check_atomic_outputs, preset, tmp)
         section(report, check_transcript_source, tmp)
         section(report, check_page_timeline, tmp)
