@@ -61,6 +61,14 @@ async def local_only(request: Request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(Exception)
+async def loud_error(request: Request, exc: Exception):
+    """Необработанная ошибка — страница получает её текст, а не голое «Internal Server Error»:
+    иначе студия пишет «сервер не отвечает», а причина видна только в логе (17.10.2026)."""
+    return JSONResponse({"error": f"Ошибка студии: {exc} — подробности в work/_studio/server.log"},
+                        status_code=500)
+
+
 def page(name: str) -> str:
     """Страница с ключом студии: без него её запросы на изменения не пройдут."""
     html = (WEB_DIR / name).read_text(encoding="utf-8")

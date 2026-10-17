@@ -6,11 +6,16 @@
 вторая не открывается. Агенты, которых запускает сама студия (мозг), хук пропускают:
 иначе каждый ответ мозга открывал бы новую вкладку.
 
+Сервер, поднятый на старом коде (git pull, правка агента), хук перезапускает: старый процесс
+держит в памяти старые модули, и 17.10.2026 он сутки отдавал 500 на новое поле project.json —
+в монтажной пропали все проекты. Посреди хода ИИ или пачки не перезапускает — только предупреждает.
+
 Хук никогда не роняет сессию агента: при любой беде он пишет одну строку и выходит с 0.
 
   .venv/bin/python scripts/studio_up.py            # поднять и открыть
   .venv/bin/python scripts/studio_up.py --no-open  # только поднять
   .venv/bin/python scripts/studio_up.py --stop     # погасить сервер студии
+  .venv/bin/python scripts/studio_up.py --restart  # перезапустить (подхватить новый код)
 
 Отключить автозапуск: переменная REELS_NO_STUDIO=1 (например, в ~/.zshrc).
 """
@@ -33,6 +38,13 @@ ROOT = Path(__file__).resolve().parent.parent
 PORT = int(os.environ.get("REELS_STUDIO_PORT", "8765"))
 URL = f"http://127.0.0.1:{PORT}"
 LOG = ROOT / "work" / "_studio" / "server.log"
+
+
+def code_stamp() -> int:
+    """Отпечаток кода сервера: самое свежее время правки питона в scripts/. Страницы web/ сервер
+    читает с диска на каждый запрос — их правка перезапуска не требует."""
+    return max((p.stat().st_mtime_ns for p in (ROOT / "scripts").rglob("*.py")
+                if "__pycache__" not in p.parts), default=0)
 
 
 def ping(timeout: float = 0.6) -> dict | None:
@@ -94,14 +106,19 @@ def main():
     ap = argparse.ArgumentParser(description="Поднять студию монтажа и открыть вкладку")
     ap.add_argument("--no-open", action="store_true", help="не открывать браузер")
     ap.add_argument("--stop", action="store_true", help="погасить сервер студии")
+    ap.add_argument("--restart", action="store_true", help="перезапустить сервер студии (новый код)")
     args = ap.parse_args()
 
     # stdin не читаем: JSON события хука нам не нужен, а чтение из чужого открытого канала
     # (запуск не из терминала) висло бы вечно. Маленький JSON и так помещается в буфер канала.
 
-    if args.stop:
-        stop_server()
+    if args.restart and os.environ.get("REELS_STUDIO_CHILD") == "1":
+        print("Мозг студии живёт в её сервере — перезапустить его изнутри нельзя, попроси человека")
         return
+    if args.stop or args.restart:
+        stop_server()
+        if args.stop:
+            return
     # git на Windows кладёт вместо ссылок на скиллы текстовые файлы — чиним при каждом старте:
     # скилл, пришедший с git pull, тоже должен стать виден Claude
     try:
@@ -118,6 +135,14 @@ def main():
         print(f"Порт {PORT} занят чужой программой — студия не запущена. "
               f"Освободи порт или задай REELS_STUDIO_PORT.")
         return
+    if state and state.get("code") != code_stamp():
+        if state.get("busy"):
+            print(f"⚠ Студия работает на старом коде, но сейчас {state['busy']} — перезапусти её после: "
+                  f"{'.venv/Scripts/python.exe' if host.IS_WINDOWS else '.venv/bin/python'} scripts/studio_up.py --restart")
+        else:
+            print("Код студии обновился — перезапускаю сервер, вкладку обнови")
+            stop_server()
+            state = None
     if not state:
         if not start_server():
             return

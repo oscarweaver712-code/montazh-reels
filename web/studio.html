@@ -841,7 +841,7 @@ function renderProjects() {
   $("pmenu-name").textContent = cur ? cur.title.split(" — ")[0] : "—";
   const count = (name) => S.videos.filter((v) => v.project === name).length;
   $("pmenu-pop").innerHTML = `<div class="pop-h">Проекты</div>` + S.projects.map((p) =>
-    `<button type="button" class="item" data-project="${esc(p.name)}" aria-current="${p.name === S.project}">${esc(p.title)}<small>${count(p.name)} видео</small></button>`).join("")
+    `<button type="button" class="item" data-project="${esc(p.name)}" aria-current="${p.name === S.project}">${esc(p.title)}<small>${p.error ? `<b style="color:var(--rec)">● ${esc(p.error)}</b>` : `${count(p.name)} видео`}</small></button>`).join("")
     + `<button type="button" class="item" data-setup="${esc(S.project)}">⚙ Настроить проект${cur && cur.setup_missing ? ` <b style="color:var(--rec)">● не настроен</b>` : ""}<small>анкета: для кого, где, характер, чего нельзя, референсы</small></button>`
     + `<button type="button" class="item" data-rules>📋 Правила проекта<small>что можно, чего нельзя — ИИ читает перед монтажом</small></button>`
     + `<div class="pop-h">Новый проект</div><form id="newproj" class="rowbtn" style="flex-wrap:nowrap"><input type="text" id="newproj-title" placeholder="Название, например «Клиент Анна»" maxlength="60"><button class="btn" type="submit">＋</button></form>
@@ -2967,6 +2967,11 @@ async function poll() {
     const cur = current(), hadPage = cur && cur.steps.page, outs = cur ? cur.outputs.length : 0;
     const outsBefore = Object.fromEntries(S.videos.map((v) => [v.stem, v.outputs.length]));
     S.videos = st.videos; S.problem = st.problem || null;
+    // сервер перезапущен (новый код): ключ этой вкладки устарел, правки не пройдут — сказать сразу
+    if (S.boot && st.boot && st.boot !== S.boot && !$("boot-note")) {
+      $("q-state").insertAdjacentHTML("afterend", `<span id="boot-note" style="color:var(--rec)"> · студия перезапущена — обнови страницу (⌘R)</span>`);
+    }
+    S.boot = S.boot || st.boot;
     for (const v of S.videos) {
       if (outsBefore[v.stem] != null && v.outputs.length > outsBefore[v.stem]) notifyReady(v);
     }
@@ -2985,7 +2990,12 @@ async function poll() {
     S.brainRuns = (st.brain || []).map((r) => ({ ...r, at: Date.now() }));
     renderQueue(st.queue); renderBatch(st.batch); renderAiLive();
     if (JSON.stringify(S.brainRuns.map((r) => [r.stem, r.doing, r.actions])) !== wasBusy) { renderAiStart(); renderReels(); }
-  } catch (e) { $("q-state").textContent = "сервер студии не отвечает — запусти его снова"; }
+  } catch (e) {
+    // не дошли до сервера — он лежит; дошли, а он упал — показать его причину, а не «не отвечает»
+    const down = e instanceof TypeError;
+    $("q-state").textContent = down ? "сервер студии не отвечает — запусти его снова" : "студия не может прочитать состояние — причина в списке роликов";
+    if (!down && S.problem !== e.message) { S.problem = e.message; renderReels(); }
+  }
 }
 
 (async function start() {

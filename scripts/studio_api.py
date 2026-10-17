@@ -31,6 +31,7 @@ import styles
 import common
 from common import ROOT, WORK_DIR, ffprobe_bin
 from jobqueue import CURRENT, QUEUE, runner_alive
+from studio_up import code_stamp
 
 router = APIRouter()
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
@@ -38,6 +39,8 @@ STEM_RE = re.compile(r"^[\w.\-]+$", re.UNICODE)
 _probe_cache: dict = {}
 runs: dict = {}            # thread_id → состояние текущего хода мозга
 seen = {"at": 0.0}         # когда открытая вкладка студии последний раз спрашивала состояние
+# код, с которым поднят этот процесс: хук старта сверяет его с диском; id — чтобы вкладка заметила перезапуск
+BOOT = {"code": code_stamp(), "id": f"{os.getpid()}-{time.time():.0f}"}
 
 
 def safe_stem(stem: str) -> str:
@@ -147,8 +150,19 @@ def video_state(path: Path, project: "projects.Project") -> dict:
 @router.get("/api/ping")
 def ping():
     # вкладка студии опрашивает состояние раз в 3 с: если она открыта, вторую не открываем
+    # code и busy — для хука старта: сервер на старом коде он перезапускает, но не посреди работы
     return {"app": "montazh-reels", "studio": True, "pid": os.getpid(),
-            "tab_open": time.time() - seen["at"] < 12}
+            "tab_open": time.time() - seen["at"] < 12, "code": BOOT["code"], "busy": busy()}
+
+
+def busy() -> str | None:
+    """Что оборвёт перезапуск сервера: ход мозга или пачка живут в его процессе. Очередь — нет:
+    её обработчик — отдельный процесс, он переживёт сервер."""
+    if any(not run["done"] for run in list(runs.values())):
+        return "ИИ монтирует"
+    if batch.get("running"):
+        return "идёт пачка"
+    return None
 
 
 def project_view(p) -> dict:
@@ -160,22 +174,37 @@ def project_view(p) -> dict:
     return {"name": p.name, "title": p.title, "setup_missing": missing}
 
 
+def projects_view() -> tuple:
+    """([проекты для студии], ошибка или None). Битый project.json помечает свой проект, а не
+    роняет список: 17.10.2026 одно новое поле в нём давало 500 на всё состояние — студия
+    показывала «проектов нет» и молчала о причине."""
+    out, errors = [], []
+    for name in projects.names():
+        try:
+            out.append(project_view(projects.Project(name)))
+        except projects.ProjectError as e:
+            out.append({"name": name, "title": name, "setup_missing": 1, "error": str(e)})
+            errors.append(str(e))
+    return out, ("\n".join(errors) or None)
+
+
 @router.get("/api/studio/state")
 def studio_state():
     seen["at"] = time.time()
     # исходники всех проектов (скрытые — недописанные загрузки и «._имя» macOS — Project.sources
     # не отдаёт). Одно имя в двух проектах — ошибка на весь список: у них общий work/<имя>/
+    listed, problem = projects_view()
     try:
-        inputs, problem = projects.sources(), None
+        inputs = projects.sources()
     except projects.ProjectError as e:
-        inputs, problem = [], str(e)
+        inputs, problem = [], problem or str(e)
     queue = queue_state()
     if queue["pending"] and not queue["alive"]:
         # задачи мозг кладёт в очередь файлами; выполняет их студия — сама, без кнопки
         ensure_runner()
         queue = queue_state()
     return {"videos": [video_state(path, project) for project, path in inputs], "problem": problem,
-            "projects": [project_view(p) for p in projects.all_projects()],
+            "projects": listed, "boot": BOOT["id"],
             "default_project": projects.DEFAULT, "queue": queue, "batch": batch_view(), "brain": brain_view(),
             "max_brains": MAX_BRAINS, "estimates": step_estimates(inputs),
             "formats": {k: dict(v, id=k) for k, v in formats.FORMATS.items()},

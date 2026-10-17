@@ -31,6 +31,7 @@
 """
 import argparse
 import contextlib
+import io
 import json
 import math
 import os
@@ -3327,6 +3328,61 @@ def check_studio_failures(report: Report, tmp: Path):
     report.check(marked and rejected, "битый бриф помечает свой ролик, а не роняет студию; кривой не сохраняется",
                  why if not marked else ("кривой бриф отвергнут" if rejected else "кривой бриф сохранился"))
     report.check(bool(woke), "задачу, которую мозг положил в очередь, студия запускает сама, без кнопки")
+
+    # 17.10.2026: новое поле в project.json, старый сервер — 500 на всё состояние, в монтажной пропали
+    # все проекты, а страница писала «сервер не отвечает». Битый проект помечается сам, причина видна
+    with temp_projects(tmp / "studio_projects2", "main", "broken") as made:
+        (made["broken"].root / "project.json").write_text('{"nonsense_field": 1}', encoding="utf-8")
+        live = TestClient(app, base_url="http://127.0.0.1:8765", raise_server_exceptions=False)
+        got = live.get("/api/studio/state")
+        listed = {p["name"]: p for p in got.json().get("projects", [])} if got.status_code == 200 else {}
+    report.check(got.status_code == 200 and "error" not in listed.get("main", {"error": 1})
+                 and "nonsense_field" in listed.get("broken", {}).get("error", "")
+                 and "nonsense_field" in (got.json().get("problem") or ""),
+                 "битый project.json помечает свой проект и называет поле, остальные проекты на месте",
+                 f"{got.status_code}: {sorted(listed)}")
+    saved_view = studio_api.projects_view
+    studio_api.projects_view = lambda: 1 / 0
+    try:
+        got = TestClient(app, base_url="http://127.0.0.1:8765", raise_server_exceptions=False).get("/api/studio/state")
+    finally:
+        studio_api.projects_view = saved_view
+    try:
+        said = got.json().get("error", "")
+    except ValueError:
+        said = got.text
+    report.check(got.status_code == 500 and "division by zero" in said,
+                 "упавший запрос студии отдаёт странице причину, а не голое «Internal Server Error»", said[:70])
+
+    # хук старта перезапускает сервер на старом коде — но не посреди хода ИИ или пачки
+    import studio_up
+    calls = []
+    saved_up = (studio_up.ping, studio_up.stop_server, studio_up.start_server, studio_up.host.link_skills)
+    def hook(ping_state):
+        calls.clear()
+        studio_up.ping = lambda timeout=0.6: dict(ping_state, tab_open=True) if "start" not in calls else {"app": "x", "tab_open": True}
+        studio_up.stop_server = lambda: calls.append("stop")
+        studio_up.start_server = lambda: calls.append("start") or True
+        studio_up.host.link_skills = lambda: []
+        saved_argv, saved_env = sys.argv, {k: os.environ.pop(k, None) for k in ("REELS_STUDIO_CHILD", "REELS_NO_STUDIO")}
+        sys.argv = ["studio_up.py", "--no-open"]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                studio_up.main()
+        finally:
+            sys.argv = saved_argv
+            os.environ.update({k: v for k, v in saved_env.items() if v is not None})
+        return list(calls)
+    try:
+        now = studio_up.code_stamp()
+        fresh = hook({"app": "montazh-reels", "code": now, "busy": None})
+        stale = hook({"app": "montazh-reels", "code": now - 1, "busy": None})
+        working = hook({"app": "montazh-reels", "code": now - 1, "busy": "ИИ монтирует"})
+    finally:
+        studio_up.ping, studio_up.stop_server, studio_up.start_server, studio_up.host.link_skills = saved_up
+    report.check(fresh == [] and stale == ["stop", "start"] and working == [],
+                 "хук старта перезапускает студию на старом коде, но не посреди работы ИИ",
+                 f"свежий {fresh}, старый {stale}, занятый {working}")
 
     # одно непонятное событие агента не вешает мозг навсегда
     bad = json.dumps({"type": "assistant", "message": {"content": ["строка вместо блока"]}})
