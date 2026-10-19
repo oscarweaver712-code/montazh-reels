@@ -6,6 +6,7 @@
   • нет звука или он не той громкости;
   • по краю кадра пустая полоса — камера вылезла за исходник;
   • лицо засвечено — светлее, чем в принятых роликах серии;
+  • музыки не слышно — в паузах речи готовый ролик звучит, как голый дубль (проект просит музыку);
   • файл битый.
 
   .venv/bin/python scripts/verify_render.py studio/IMG_3279/renders/IMG_3279_v1.mp4 --stem IMG_3279
@@ -118,6 +119,46 @@ def face_brightness(path: Path, duration: float, frames: int = 12) -> tuple:
     return float(np.median(medians)), float(np.mean(hot)), len(medians)
 
 
+# Музыка в паузах речи (19.10.2026, замер на выпусках): медиана тихих окон ролика выше, чем у голого дубля, на 0,8–3,5 дБ
+# без музыки (IMG_3292 v2, IMG_3303 v4, IMG_1816 v1) и на 14–21 дБ с ней. Подложка относительно речи: v5 −26,9 дБ —
+# «музыка совсем не слышна», v6 −22 дБ — «вот как сейчас хорошо» (Валера 17.10).
+MUSIC_BED_DB = 8.0
+MUSIC_QUIETEST = -25.0
+
+
+def _pcm(path: Path):
+    import numpy as np
+    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+                         capture_output=True).stdout
+    return np.frombuffer(raw, np.int16).astype(np.float32) / 32768
+
+
+def music_bed(video: Path, stem: str) -> tuple | None:
+    """(насколько паузы ролика громче пауз голого дубля, подложка относительно речи), дБ — слышна ли музыка.
+
+    17.10.2026 IMG_3292 v2 ушла без музыки, и заметил это только Валера. Меряем готовый файл, а не страницу: тихий трек
+    или сбой микса страница не покажет. Тишина и речь — по голому дублю (тайминги whisper тянут слова через паузы,
+    инвариант 3); медиана, а не среднее: хвосты ударов и тихих звуков в паузах редки, музыка — всё время.
+    """
+    import numpy as np
+    aroll = WORK_DIR / stem / "aroll.mp4"
+    if not aroll.exists():
+        return None
+    final, dry = _pcm(video), _pcm(aroll)
+    n = min(len(final), len(dry)) // 400 * 400                    # окна по 50 мс
+    if not n:
+        return None
+    db = lambda x: 20 * np.log10(np.sqrt((x[:n].reshape(-1, 400) ** 2).mean(axis=1)) + 1e-9)    # noqa: E731
+    f_db, d_db = db(final), db(dry)
+    speech = d_db > np.percentile(d_db, 60)
+    quiet = d_db < np.percentile(d_db[speech], 50) - 30
+    if quiet.sum() < 40:                                          # меньше 2 с тишины — не по чему судить
+        return None
+    offset = np.median(f_db[speech]) - np.median(d_db[speech])    # мастеринг сдвинул громкость целиком
+    rise = float(np.median(f_db[quiet]) - np.median(d_db[quiet]) - offset)
+    return rise, float(np.median(f_db[quiet]) - np.median(f_db[speech]))
+
+
 def face_limit(stem: str | None) -> tuple:
     """(порог яркости лица или None, чей он) — из project.json проекта ролика.
 
@@ -172,6 +213,19 @@ def main():
     level = loudness(video) if has_audio else None
     check(level is not None and -15.5 <= level <= -12.5, "громкость около −14 LUFS",
           f"{level:.1f} LUFS" if level is not None else "не замерить")
+
+    if args.stem and has_audio:
+        import projects
+        try:
+            wants = projects.of(args.stem).config.get("music")
+        except projects.ProjectError:
+            wants = False
+        bed = music_bed(video, args.stem) if wants else None
+        if bed is not None:
+            rise, under = bed
+            check(rise >= MUSIC_BED_DB and under >= MUSIC_QUIETEST, "фоновая музыка слышна в паузах речи",
+                  f"паузы громче голого дубля на {rise:.1f} дБ (нужно ≥ {MUSIC_BED_DB:g}), подложка {under:.1f} дБ "
+                  f"от речи (не тише {MUSIC_QUIETEST:g})")
 
     worst = []
     for name, values in edge_lumas(video, width, height, step=1.0):

@@ -743,12 +743,16 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
     frame_bytes = width * height * 3 // 2
     expected = round(info["duration"] * info["fps"])
     threads = max(1, (os.cpu_count() or 4) - 5)
-    # цвет — как у дубля: кодеку отдаются сырые плоскости, метки цвета ставятся явно
-    tags = []
-    for flag, key, default in (("-colorspace", "matrix", "bt709"), ("-color_primaries", "primaries", "bt709"),
-                               ("-color_trc", "transfer", "bt709"), ("-color_range", "range", "tv")):
+    # цвет — как у дубля: кодеку отдаются сырые плоскости, метки ставятся на сами кадры (setparams). Метка
+    # «-colorspace bt709» на выходе при сырых кадрах без меток заставляла ffmpeg 8 пересчитать их как bt601 → bt709:
+    # вырезка темнее и холоднее дубля (Y −2,4…−3,5), и в окнах вырезки цвет на человеке скакал, а по краю шёл
+    # контур (19.10.2026, Валера: «то я одного цвета, то другого»). Проверка — selfcheck, «вырезка в цветах дубля»
+    params = []
+    for name, key, default in (("colorspace", "matrix", "bt709"), ("color_primaries", "primaries", "bt709"),
+                               ("color_trc", "transfer", "bt709"), ("range", "range", "tv")):
         value = info.get(key) or default
-        tags += [flag, default if value in ("unknown", "reserved") else value]
+        params.append(f"{name}={default if value in ('unknown', 'reserved') else value}")
+    tags = ["-vf", "setparams=" + ":".join(params)]
     part = out.with_name(f".{out.stem}.part{out.suffix}")     # на место — только целое
     errs = [tempfile.TemporaryFile() for _ in range(3)]
 

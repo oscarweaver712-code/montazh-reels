@@ -53,6 +53,13 @@ SAFE_TOOLS = [
 
 PY = ".venv/Scripts/python.exe" if host.IS_WINDOWS else ".venv/bin/python"
 
+# Модель и усилие режиссёра Claude — в проекте, а не в личных настройках того, кто запустил студию
+# (19.10.2026, Валера: «для анализа точно опус 5.5 на очень высоком уровне рассуждений»). До этого
+# `claude -p` брал их из ~/.claude/settings.json: на другой машине команды монтаж шёл бы чем угодно.
+# Поменять на машине — REELS_BRAIN_MODEL / REELS_BRAIN_EFFORT; на один ход — model из студии.
+CLAUDE_MODEL = os.environ.get("REELS_BRAIN_MODEL") or "claude-opus-5-5"
+CLAUDE_EFFORT = os.environ.get("REELS_BRAIN_EFFORT") or "xhigh"
+
 STUDIO_PROMPT = f"""Тебя вызывают из локальной студии монтажа (web/studio.html): человек видит твои
 ответы в чате студии, терминала он не видит. Работай по AGENTS.md и скиллу reels
 (.agents/skills/reels/SKILL.md). Один разговор — один ролик: другие ролики монтируются
@@ -216,8 +223,7 @@ def command(engine: str, prompt: str, session: str | None = None, mode: str = "s
             cmd += ["--dangerously-skip-permissions"]
         else:
             cmd += ["--permission-mode", "acceptEdits", "--allowedTools", *SAFE_TOOLS]
-        if model:
-            cmd += ["--model", model]
+        cmd += ["--model", model or CLAUDE_MODEL, "--effort", CLAUDE_EFFORT]
         if thread_id:
             cmd += ["--settings", json.dumps(INBOX_HOOK)]
         if session:

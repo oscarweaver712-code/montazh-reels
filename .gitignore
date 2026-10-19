@@ -43,6 +43,8 @@ work/*/materials/*.m4v
 work/*/materials/*.webm
 # музыка из фонотеки YouTube (yt-*): по её условиям треки не распространяются отдельно от роликов — не в git
 work/*/materials/yt-*
+projects/*/music/*
+!projects/*/music/.gitkeep
 !work/*/manim/
 work/*/manim/*.mp4
 work/*/manim/*.png
@@ -86,3 +88,4 @@ studio/*/package.json
 
 # галерея приёмов fx — собирается scripts/fx_gallery.py из IMG_1799
 studio/_fx_gallery/
+studio/_bp_gallery/

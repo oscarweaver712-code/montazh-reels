@@ -374,6 +374,14 @@ def wait(name: str, timeout: float, queue: Path | None = None, poll: float = 5) 
     queue = queue or QUEUE
     deadline = time.time() + timeout
     while True:
+        # задача ещё в очереди — ждём её, даже если в done/ лежит прошлая с тем же именем: 19.10.2026
+        # 05-render-IMG_3292 от v2 лежал в done/, и wait нового рендера сразу отдал старый итог
+        if any(p.stem == name for p in job_files(queue)):
+            if time.time() > deadline:
+                print(f"✗ {name} ещё идёт — не дождался за {timeout / 60:g} мин; позови wait снова")
+                return 2
+            time.sleep(poll)
+            continue
         for state, code in (("done", 0), ("failed", 1)):
             found = [p for p in job_files(queue / state) if p.stem == name]
             if found:
@@ -385,13 +393,8 @@ def wait(name: str, timeout: float, queue: Path | None = None, poll: float = 5) 
                 print("\n".join(tail))
                 print(f"{'✓' if code == 0 else '✗'} {name}: {'готово' if code == 0 else 'упала'} (лог — {log.relative_to(ROOT) if log.is_relative_to(ROOT) else log})")
                 return code
-        if not any(p.stem == name for p in job_files(queue)):
-            print(f"✗ задачи {name} нет ни в очереди, ни в done/, ни в failed/ — проверь имя")
-            return 2
-        if time.time() > deadline:
-            print(f"✗ {name} ещё идёт — не дождался за {timeout / 60:g} мин; позови wait снова")
-            return 2
-        time.sleep(poll)
+        print(f"✗ задачи {name} нет ни в очереди, ни в done/, ни в failed/ — проверь имя")
+        return 2
 
 
 def main():

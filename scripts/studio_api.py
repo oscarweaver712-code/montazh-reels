@@ -1204,8 +1204,9 @@ async def brain_stream(thread_id: str, request: Request, since: int = 0):
 BATCH_TURNS = 12
 BATCH_FIRST = """Смонтируй {stem} по брифу (work/{stem}/brief.json; нет брифа — умолчания проекта из project.json).
 Ролик из проекта {project}: прочитай projects/{project}/rules.md до плана — правила проекта важнее стиля.
-Сначала план: scripts/plan.py {stem} → заполни work/{stem}/plan.md (инструменты — docs/АРСЕНАЛ.md) →
-plan.py {stem} --check, и только потом страница; без годного плана рендер не пойдёт.
+До prep — scripts/events.py {stem}: сбивки, угар, мат, мусор, конец хука → решения в edit.json (rules.md проекта).
+Потом дубль глазами (plan.py {stem} --sheet) и план: scripts/plan.py {stem} → заполни work/{stem}/plan.md (инструменты —
+docs/АРСЕНАЛ.md) → plan.py {stem} --check, и только потом страница — через montage.Montage (обязательное ставит сборка).
 Это пачка: человек не отвечает по ходу — решай сам, каждое решение с откатом в отчёт.
 Тяжёлое — в очередь (scripts/jobqueue.py add …), в имени задачи — имя ролика: 20-prep-{stem}, 05-render-{stem}.
 Когда очередь отработает, студия сама напишет тебе сюда. Рядом в своих сессиях монтируются другие ролики:

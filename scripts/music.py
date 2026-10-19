@@ -8,15 +8,25 @@
       кладёт треки в work/<имя>/materials/ как yt-<название>.mp3 (не в git — условия фонотеки), меряет и советует
   .venv/bin/python scripts/music.py used
       какой трек в каком ролике уже стоит — один и тот же в двух роликах verify_page не пустит
+  .venv/bin/python scripts/music.py pool antishkola ~/Downloads/*.mp3 --yt-library
+      запас треков проекта (projects/<проект>/music/, не в git): montage.py берёт оттуда сам. --yt-library — подтверждение,
+      что каждый файл из фонотеки YouTube с пометкой «указывать автора не требуется» (Валера 19.10: «музыка без авторских
+      прав, на ютуб выкладываем»); без него запас файл не примет. Учёт — music/pool.json: откуда, когда, кто подтвердил
+
+Запас (19.10.2026): раньше трек скачивался в каждый ролик руками или агентом в Chrome — шаг, на котором монтаж без
+человека вставал (IMG_3292 v2 вышла без музыки). Теперь лоу-фай качается пачкой в запас проекта, а сборка
+(montage.Montage.build → pick) берёт трек, который подходит под голос и ещё не стоит ни в одном ролике.
 
 Замер — под голос, не под вкус: лучше трек тёмный (энергия ниже 250 Гц), с малой долей в полосе голоса 1–4 кГц и
 ровный по громкости (разброс по секундам). На IMG_3303 так выбран No Rush: 1 % в полосе голоса, разброс 3,4 дБ.
 В странице — kit.background_music(STEM, "yt-….mp3", DUR): уровень проекта сам.
 """
 import argparse
+import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +71,79 @@ def used() -> dict:
     return found
 
 
+def pool_dir(project: str) -> Path:
+    return ROOT / "projects" / project / "music"
+
+
+POOL_SOURCE = "фонотека YouTube, «указывать автора не требуется»"
+
+
+def pool_ledger(project: str) -> dict:
+    path = pool_dir(project) / "pool.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def pool_add(project: str, files: list, confirmed: bool) -> None:
+    if not confirmed:
+        raise SystemExit("✗ В запас кладётся только музыка без авторских прав — фонотека YouTube с пометкой «указывать "
+                         "автора не требуется» (ролики идут на YouTube: чужой трек — Content ID и блок). Если файлы оттуда — "
+                         "повтори с --yt-library")
+    box = pool_dir(project)
+    box.mkdir(parents=True, exist_ok=True)
+    ledger = pool_ledger(project)
+    for f in files:
+        src = Path(f).expanduser()
+        if not src.exists():
+            raise SystemExit(f"✗ нет файла {src}")
+        m = measure(src)
+        target = box / slug(src)
+        target.write_bytes(src.read_bytes())
+        ledger[target.name] = {"source": POOL_SOURCE, "file": src.name, "added": time.strftime("%Y-%m-%d %H:%M")}
+        (box / "pool.json").write_text(json.dumps(ledger, ensure_ascii=False, indent=1), encoding="utf-8")
+        fits = m["voice"] <= VOICE_BAND_MAX and m["spread"] <= SPREAD_MAX
+        print(f"  {'✓' if fits else '·'} {target.name:28s} голос 1–4 кГц {m['voice']:.1f}%, разброс {m['spread']:.1f} дБ"
+              + ("" if fits else " — под голос не годится, сборка его не возьмёт"))
+
+
+def pick(stem: str, project: str) -> str:
+    """Трек ролику: уже стоящий в его странице → из его материалов → из запаса проекта и чужих неиспользованных.
+
+    Возвращает имя yt-*.mp3 в материалах ролика (из запаса копирует). Ни один трек не годится — громкая ошибка:
+    ролик без музыки verify_page всё равно не пустит, а молча собранный без неё — то, что ломалось (IMG_3292 v2).
+    """
+    taken = used()
+    mine = [n for n, stems in taken.items() if any(s.split("--")[0] == stem for s in stems)]
+    busy = {n for n, stems in taken.items() if any(s.split("--")[0] != stem for s in stems)}
+    if mine and mine[0] not in busy and (materials.folder(stem) / mine[0]).exists():
+        return mine[0]
+    # только то, что точно из фонотеки YouTube без указания автора: yt-* в материалах кладёт music.py add (п.9 правил),
+    # из запаса — файлы с записью в pool.json (подтверждены при pool --yt-library); прочие mp3 в папке не берутся
+    ledger = pool_ledger(project)
+    candidates = sorted(materials.folder(stem).glob(f"{kit.BGM_PREFIX}*.mp3")) \
+        + [p for p in sorted(pool_dir(project).glob("*.mp3")) if p.name in ledger] \
+        + sorted((ROOT / "work").glob(f"*/materials/{kit.BGM_PREFIX}*.mp3"))
+    best, seen = None, set()
+    for path in candidates:
+        name = path.name if path.name.startswith(kit.BGM_PREFIX) else kit.BGM_PREFIX + path.name
+        name = re.sub(r"^(yt-)+", kit.BGM_PREFIX, name)
+        if name in busy or name in seen:
+            continue
+        seen.add(name)
+        m = measure(path)
+        if m["voice"] > VOICE_BAND_MAX or m["spread"] > SPREAD_MAX:
+            continue
+        if best is None or m["voice"] + m["spread"] < best[0]:
+            best = (m["voice"] + m["spread"], name, path)
+    if best is None:
+        raise RuntimeError(f"Для {stem} нет свободного лоу-фая под голос: запас projects/{project}/music/ кончился. "
+                           f"Скачай 3–5 спокойных лоу-фай из фонотеки YouTube (фильтр «указывать автора не требуется») и "
+                           f"положи: music.py pool {project} <файлы> --yt-library")
+    _, name, path = best
+    if not (materials.folder(stem) / name).exists():
+        materials.add(stem, name, path)
+    return name
+
+
 def add(stem: str, files: list) -> None:
     taken = used()
     rows = []
@@ -96,9 +179,16 @@ def main():
     a.add_argument("stem")
     a.add_argument("files", nargs="+")
     sub.add_parser("used", help="какой трек в каком ролике")
+    pool = sub.add_parser("pool", help="положить треки в запас проекта — сборка возьмёт сама")
+    pool.add_argument("project")
+    pool.add_argument("files", nargs="+")
+    pool.add_argument("--yt-library", action="store_true",
+                      help="подтверждаю: все файлы из фонотеки YouTube, «указывать автора не требуется»")
     args = ap.parse_args()
     if args.cmd == "add":
         add(args.stem, args.files)
+    elif args.cmd == "pool":
+        pool_add(args.project, args.files, args.yt_library)
     else:
         for name, stems in sorted(used().items()):
             print(f"  {name:28s} {', '.join(stems)}")

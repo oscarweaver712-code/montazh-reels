@@ -212,6 +212,11 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; backg
 .ver button:hover { color: var(--ink); }
 .ver.live { padding-right: 10px; }
 .ver.live .dot { margin-right: 2px; }
+/* версии — выпадающим списком (Валера 19.10.2026: «их там уже столько скопилось»): новые сверху,
+   действия — у выбранной */
+.ver select { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0 2px; max-width: 230px; }
+.ver select:focus-visible { outline: none; }
+.ver select option { background: var(--panel2); color: var(--ink); }
 
 /* ИИ-монтаж */
 .ai-start { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel2); padding: 12px; display: grid; gap: 10px; margin-bottom: 12px; }
@@ -1034,16 +1039,29 @@ function renderVersions() {
   if (!v) { box.innerHTML = ""; return; }
   const parts = [];
   if (v.steps.page) parts.push(`<span class="ver live" data-view="live" aria-pressed="${S.view === "live"}" title="Живой монтаж: страница с правками, без рендера"><span class="dot rec"></span>Монтаж</span>`);
-  for (const o of v.outputs) {
-    parts.push(`<span class="ver" data-view="out:${esc(o.name)}" aria-pressed="${S.view === `out:${o.name}`}" title="${esc(o.name)} · ${o.size_mb} МБ">${esc(o.name.replace(`${v.stem}_`, "").replace(".mp4", ""))}
-      ${o.approved ? `<span class="ok" title="Принят как финал">✓ финал</span>` : `<button type="button" data-approve="${esc(o.name)}" title="Принять как финал: черновые версии этого ролика удалятся">✓ принять</button>`}
-      <a href="/api/studio/file/output/${encodeURIComponent(o.name)}" download="${esc(o.name)}" title="Скачать ${esc(o.name)}" style="color:inherit;text-decoration:none;padding:0 4px">⬇</a>
-      ${o.sheet ? `<button type="button" data-sheet="${esc(o.name)}" title="Сетка кадров">кадры</button>` : ""}
-      <button type="button" data-reveal="output|${esc(o.name)}" title="Показать в Finder">⌕</button></span>`);
+  if (v.outputs.length) {
+    // готовые версии — одним списком, новые сверху; действия — у той, что открыта в плеере
+    const on = S.view.startsWith("out:") ? v.outputs.find((o) => `out:${o.name}` === S.view) : null;
+    const label = (o) => {
+      const tag = o.name.slice(v.stem.length).replace(/\.[^.]+$/, "").replace(/^[-_]+/, "").replace(/_/g, " · ") || o.name;
+      const d = new Date(o.mtime * 1000), two = (n) => String(n).padStart(2, "0");
+      return `${tag} — ${two(d.getDate())}.${two(d.getMonth() + 1)} ${two(d.getHours())}:${two(d.getMinutes())}${o.approved ? " ✓ финал" : ""}`;
+    };
+    const opts = (on ? "" : `<option value="" selected disabled>готовые · ${v.outputs.length}</option>`)
+      + v.outputs.map((o) => `<option value="${esc(o.name)}"${on === o ? " selected" : ""}>${esc(label(o))}</option>`).join("");
+    parts.push(`<span class="ver" aria-pressed="${!!on}" title="${on ? esc(`${on.name} · ${on.size_mb} МБ`) : "Готовые версии — новые сверху"}"><select id="ver-pick" aria-label="Готовая версия">${opts}</select>${on ? `
+      ${on.approved ? `<span class="ok" title="Принят как финал">✓ финал</span>` : `<button type="button" data-approve="${esc(on.name)}" title="Принять как финал: черновые версии этого ролика удалятся">✓ принять</button>`}
+      <a href="/api/studio/file/output/${encodeURIComponent(on.name)}" download="${esc(on.name)}" title="Скачать ${esc(on.name)}" style="color:inherit;text-decoration:none;padding:0 4px">⬇</a>
+      ${on.sheet ? `<button type="button" data-sheet="${esc(on.name)}" title="Сетка кадров">кадры</button>` : ""}
+      <button type="button" data-reveal="output|${esc(on.name)}" title="Показать в Finder">⌕</button>` : ""}</span>`);
   }
   parts.push(`<span class="ver" data-view="src" aria-pressed="${S.view === "src"}" title="Исходник">исходник</span>`);
   box.innerHTML = parts.join("");
 }
+$("versions").addEventListener("change", (e) => {
+  if (e.target.id !== "ver-pick" || !e.target.value) return;
+  stopPlayback(); S.view = `out:${e.target.value}`; renderVersions(); showView();
+});
 $("versions").addEventListener("click", async (e) => {
   const a = e.target.closest("[data-approve]"); if (a) { e.stopPropagation(); openApprove(a.dataset.approve); return; }
   const sh = e.target.closest("[data-sheet]"); if (sh) { e.stopPropagation(); window.open(`/api/studio/sheet/${encodeURIComponent(sh.dataset.sheet)}`, "_blank"); return; }

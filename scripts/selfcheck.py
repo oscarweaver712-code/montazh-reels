@@ -709,6 +709,15 @@ def check_captions(report: Report):
     texts = [c["text"] for c in quoted]
     report.check(texts == ["цифра", "сифр"], "кавычки не висят без пары", " · ".join(texts))
 
+    # слова режиссёра со знаками (19.10.2026, IMG_3292: «Индии.» в accent_words, «I.» в keep_case) — как без них:
+    # подсвечивалось одно ключевое слово из восьми, «Пётр I» шёл как «Пётр i»
+    marked = caption_chunks([{"word": "в", "start": 0.1, "end": 0.2}, {"word": "Индии.", "start": 0.25, "end": 0.7},
+                             {"word": "Пётр", "start": 0.9, "end": 1.2}, {"word": "I.", "start": 1.25, "end": 1.5}],
+                            {"accent_words": ["Индии."], "keep_case": ["Пётр", "I."]}, duration=2.0)
+    report.check([(c["text"], c["accent"]) for c in marked] == [("в индии", True), ("Пётр I", False)],
+                 "ключевые слова и регистр режиссёра — и со знаками препинания; «Пётр I» одной вспышкой",
+                 " · ".join(f'{c["text"]}{"*" if c["accent"] else ""}' for c in marked))
+
     # Whisper рвёт «по-индийски» на «по» + «-индийски», а «80+» на «80» + «+,»: на экране
     # выходило «по -индийски», отдельная вспышка «-чуть» и одинокое «—».
     torn = [("по", 0.1, 0.2), ("-индийски", 0.2, 0.7), ("—", 0.8, 0.9), ("чуть", 1.0, 1.2),
@@ -1136,15 +1145,35 @@ def check_cutaway_rules(report: Report, tmp: Path):
 
     # субтитры не двоятся с текстом и не пропадают надолго (Валера 16.10, IMG_3303 v3: «дублировались… надолго пропали»)
     caps = [{"t0": 0.2, "t1": 1.0, "text": "что соты", "accent": False, "y": 1150},
-            {"t0": 1.0, "t1": 1.9, "text": "у пчел", "accent": False, "y": 1150}]
+            {"t0": 1.0, "t1": 1.9, "text": "у пчел x", "accent": False, "y": 1150}]
     (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n", encoding="utf-8")
     behind = ('        <div id="d-lead" class="g big" style="top: 300px; font-size: 60px;">соты у пчёл</div>\n'
-              '        <div id="d-other" class="g big" style="top: 420px; font-size: 60px;">шестиугольные</div>')
-    beats = '      tl.set("#d-lead", { opacity: 1 }, 0.2); tl.set("#d-other", { opacity: 1 }, 0.2);\n'
+              '        <div id="d-other" class="g big" style="top: 420px; font-size: 60px;">шестиугольные</div>\n'
+              '        <div id="d-spell" class="g big" style="top: 540px; font-size: 60px;">XVIII</div>\n'
+              '        <div id="d-latin" class="g big" style="top: 660px; font-size: 60px;">ABC</div>')
+    beats = ('      tl.set("#d-lead", { opacity: 1 }, 0.2); tl.set("#d-other", { opacity: 1 }, 0.2);\n'
+             '      tl.set("#d-spell", { opacity: 1 }, 0.2); tl.set("#d-latin", { opacity: 1 }, 0.2);\n')
     (project / "index.html").write_text(build_page_safe(kit, behind, "", beats, [(0.1, 1.9)]), encoding="utf-8")
     dupes = {d["el"] for d in run_timeline(project / "index.html").get("dupes", [])}
-    report.check(dupes == {"#d-lead"}, "субтитр и текст на экране с одними словами ловятся; другие слова — нет",
+    report.check(dupes == {"#d-lead", "#d-spell"},
+                 "субтитр и текст на экране с одними словами ловятся, буквы по одной («x» под XVIII) — тоже; другие — нет",
                  ", ".join(sorted(dupes)) or "ничего не поймано")
+
+    # пустые места (19.10.2026, Валера на демо IMG_3292 v2: «в какой-то момент нет никаких вставок… динамика очень
+    # теряется» — 15 с без вставок): участок без единой графики меряется, сплошной показ — нет
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    bare_html = ('        <div id="e-a" class="g big" style="top: 300px; font-size: 60px;">раз</div>\n'
+                 '        <div id="e-b" class="g big" style="top: 420px; font-size: 60px;">два</div>')
+    holes = {}
+    for name, beats in (("дыра", '      tl.set("#e-a", { opacity: 1 }, 0.1); tl.set("#e-a", { opacity: 0 }, 0.3);\n'
+                                 '      tl.set("#e-b", { opacity: 1 }, 1.7);\n'),
+                        ("сплошь", '      tl.set("#e-a", { opacity: 1 }, 0.1); tl.set("#e-b", { opacity: 1 }, 0.9);\n')):
+        (project / "index.html").write_text(build_page_safe(kit, bare_html, "", beats, []), encoding="utf-8")
+        holes[name] = run_timeline(project / "index.html").get("bare", [])
+    report.check(len(holes["дыра"]) == 1 and holes["дыра"][0][1] - holes["дыра"][0][0] > 1 and not holes["сплошь"],
+                 "пустое место без вставок ловится, сплошной показ — нет",
+                 f"с дырой: {holes['дыра']}, сплошь: {holes['сплошь']}")
+    (project / "captions.js").write_text("window.CAPTIONS = " + json.dumps(caps, ensure_ascii=False) + ";\n", encoding="utf-8")
     words = [{"word": w, "start": 0.5 * k, "end": 0.5 * k + 0.45} for k, w in enumerate(
         ["ячейки", "должны", "стоять", "вплотную", "без", "щелей", "круглые", "так", "не", "встанут", "а", "потерянное"])]
     (project / "aroll.words.json").write_text(json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8")
@@ -1327,6 +1356,168 @@ def check_plan(report: Report, tmp: Path):
                  "план: годный проходит; пустой раздел, чужой инструмент, висящая плашка, дыра без смены "
                  "и дубль, который не смотрели глазами, — нет",
                  "; ".join(good) if good else ", ".join(k for k, v in caught.items() if not v) or "все шесть пойманы")
+
+
+def check_events(report: Report, tmp: Path):
+    """События дубля и обязательное сборки (19.10.2026, Валера: «где-то вспышку после хука, где-то вырезать неудачную часть
+    дубля, где запороли — серый фильтр, запикать маты, 3 секунды угара», «то звуки потеряются, то музыка»).
+
+    Сбивка с матом и с повтором режется от первой попытки до последней; цитата и объяснение с повтором — нет; мат
+    ловится по началу слова, «требует» и «хуже» — не мат; угар вне выреза — громкий отказ; движения страницы дают тихие
+    звуки; без подтверждения источника запас музыки файл не берёт; готовый ролик без музыки краснеет по звуку."""
+    import events
+    import montage
+    import music
+    import prep
+    import verify_page
+    import verify_render
+
+    print("\nСобытия дубля и обязательное сборки")
+
+    def said(text: str, t0: float = 0.0, step: float = 0.3, gaps: dict | None = None) -> list:
+        out, t = [], t0
+        for k, w in enumerate(text.split()):
+            t += (gaps or {}).get(k, 0.0)
+            out.append({"word": w, "start": round(t, 2), "end": round(t + step - 0.04, 2), "n": events.norm(w)})
+            t += step
+        return out
+
+    take = said("А в Америке пишут крестик. Блять. Не, не, ничего. А в Америке школьники пишут крестик. Дальше идём.")
+    cuts = events.retakes(take)
+    retake_ok = len(cuts) == 1 and take[cuts[0][0]]["word"] == "А" and " ".join(
+        w["word"] for w in take[cuts[0][1]:cuts[0][1] + 3]) == "А в Америке"
+    quote = said("Главный маячок слова хотя бы один. Видишь хотя бы один, считай наоборот.")
+    explain = said("Это 25 тридцать шестых. Значит одна шестерка это 1 минус 25 тридцать шестых.")
+    rhetoric = said("С первого класса и с первого класса ненавидят Запад.")
+    # возврат к хуку через 18 с без маркеров — развязка, а не сбивка (IMG_3292: «цифры… узбекские» в начале и в конце)
+    callback = said("Цифры на самом деле узбекские. " + "раз " * 58 + "Итак, цифры на самом деле узбекские.")
+    calm = not any(events.retakes(x) for x in (quote, explain, rhetoric, callback))
+    mats = [w for w in ("Блять,", "нихуя", "Пиздец", "хер", "заебал", "сука") if events.is_mat(w)]
+    clean = [w for w in ("требует", "хуже", "колебания", "употреблять", "херувим", "сукно") if events.is_mat(w)]
+    try:
+        prep.keep_bloopers([[10.0, 20.0]], [[30.0, 32.5]])
+        outside = False
+    except ValueError:
+        outside = True
+    kept = prep.keep_bloopers([[10.0, 20.0]], [[14.0, 16.5]]) == [(10.0, 14.0), (16.5, 20.0)]
+    report.check(retake_ok and calm and len(mats) == 6 and not clean and outside and kept,
+                 "события: сбивка с матом режется до последней попытки; цитата, объяснение и риторика — нет; мат по "
+                 "началу слова; угар — только внутри выреза",
+                 f"сбивка {'да' if retake_ok else 'НЕТ'}, ложных {'нет' if calm else 'ЕСТЬ'}, мат {len(mats)}/6, "
+                 f"не мат {clean or 'чисто'}, угар вне выреза {'отказ' if outside else 'ПРОШЁЛ'}, деление {'да' if kept else 'НЕТ'}")
+
+    js = ('      splice(12.500);\n      whip(4.20);\n      slam("#a", 2.00, { rot: -6 });\n      enter(["#b", "#c"], 3.10);\n'
+          '      draw("#line", 5.5, 0.3);\n      enter("#d", T + 1);\n'
+          '      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.5, duration: 0.033, ease: "none", immediateRender: false }, 8.967);\n')
+    found = montage.page_events(js)
+    want = [(2.0, "stamp"), (3.1, "text"), (4.2, "frame"), (5.5, "line"), (9.0, "cut"), (12.5, "cut")]
+    report.check(found == want, "тихие звуки монтажа — по движениям страницы (склейка, смена плана, штамп, влёт, линия, "
+                 "вход перебивки)", f"{found}")
+
+    with temp_projects(tmp / "ev_projects", "main") as made:
+        made["main"].root.joinpath("project.json").write_text(json.dumps(
+            {"music": True, "soft_sounds": True, "hook_flash": True}), encoding="utf-8")
+        (made["main"].input / "IMG_0700.MOV").write_bytes(b"a")
+        bare = '<div id="root" data-duration="60.000">' + verify_page.MONTAGE_MARK
+        soft = "".join(f'<audio id="sfx-soft{i}" src="assets/sfx/tap-1.mp3">' for i in range(11))
+        missing = verify_page.required_missing(bare, "IMG_0700")
+        full = verify_page.required_missing(bare + soft + '<div id="hook-flash">', "IMG_0700")
+        excused = verify_page.required_missing(bare + soft + '<meta name="reels-hook" content="без вспышки: x" />', "IMG_0700")
+        try:
+            music.pool_add("main", [__file__], confirmed=False)
+            refused = False
+        except SystemExit:
+            refused = True
+        refused = refused and not (music.pool_dir("main") / "pool.json").exists()
+    report.check(len(missing) == 2 and not full and not excused and refused,
+                 "обязательное проекта: без тихих звуков и вспышки хука страница красная; запас музыки без "
+                 "подтверждения «фонотека YouTube, без указания автора» файл не берёт",
+                 f"пустая: {len(missing)} провала, полная: {len(full)}, без вспышки с причиной: {len(excused)}, "
+                 f"запас {'отказал' if refused else 'ВЗЯЛ'}")
+
+    # готовый ролик без музыки краснеет по звуку, с подложкой — нет (IMG_3292 v2: музыки нет, заметил только Валера)
+    voice = "0.3*sin(2*PI*300*t)*lt(mod(t,2),1)"
+    stem = "IMG_0701"
+    (tmp / "ev_work" / stem).mkdir(parents=True)
+    def tone(path: Path, expr: str):
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", f"aevalsrc='{expr}':s=8000:d=12",
+                        "-c:a", "aac", "-b:a", "96k", str(path)], check=True)
+    tone(tmp / "ev_work" / stem / "aroll.mp4", voice)
+    tone(tmp / "ev_work" / "with.m4a", voice + "+0.02*sin(2*PI*110*t)")
+    tone(tmp / "ev_work" / "without.m4a", voice)
+    saved = verify_render.WORK_DIR
+    verify_render.WORK_DIR = tmp / "ev_work"
+    try:
+        with_bed = verify_render.music_bed(tmp / "ev_work" / "with.m4a", stem)
+        dry = verify_render.music_bed(tmp / "ev_work" / "without.m4a", stem)
+    finally:
+        verify_render.WORK_DIR = saved
+    heard = lambda b: b is not None and b[0] >= verify_render.MUSIC_BED_DB and b[1] >= verify_render.MUSIC_QUIETEST  # noqa: E731
+    report.check(heard(with_bed) and not heard(dry), "готовый ролик: музыка в паузах речи слышна — без неё красный",
+                 f"с подложкой {with_bed and round(with_bed[0], 1)} дБ, без — {dry and round(dry[0], 1)} дБ")
+
+
+def check_blueprint(report: Report, tmp: Path):
+    """«Чертёж» (scripts/blueprint.py, 19.10.2026): все приёмы складываются в страницу без ошибок и залипаний; в сплите
+    проверка лица видит человека в окне листа (движение #stage не выкидывается из прогона); лист во весь кадр — это
+    перебивка в доле лица; подпись за головой ловится по одной, а не в общей площади приёма; кривой вызов — отказ."""
+    import blueprint as bp
+    import fx
+    from kit import build_page
+    from verify_page import run_timeline
+
+    print("\n«Чертёж»")
+    project = tmp / "bp"
+    (project / "assets").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    stage_page_assets(project)
+    face = (330.0, 440.0, 750.0, 1060.0)
+    geo = bp.split_geometry(face)
+    pieces = [bp.route("r", [("а", 0.1, 0.9), ("б", 0.14, 0.3), ("в", 0.86, 0.5)], [0.5, 0.9, 1.3], 2.5, layout="behind"),
+              bp.timeline("tm", [("IX", "x"), ("XII", "y")], [3.5, 4.2], 5.5, layout="split"),
+              bp.write("w", "XVIII", 7.0, 8.5, layout="full", sub="= 18"),
+              bp.hexes("hx", 10.0, 11.5, cols=4, rows=2, red=3, label="соты", layout="chest"),
+              bp.cuboid("cb", 12.5, 14.0, layout="split"), bp.plot("pl", [0.1, 0.3, 0.8], 15.5, 17.0, mark=1, layout="full"),
+              bp.compass("cp", 18.0, 19.5, label="r", center=(0.85, 0.4)), bp.measure("ms", (300, 1250), (300, 1500), "12 см", 20.5, 21.8),
+              # подпись прямо за головой — проверка обязана её поймать
+              bp.route("hid", [("за головой", 0.5, 0.75), ("сбоку", 0.08, 0.2)], [23.0, 23.5], 25.0, layout="behind")]
+    behind, front, sheets, js, windows = [], [], [], [], []
+    for p in pieces:
+        if p.layout == "behind":
+            behind.append(p.html); js.append(p.js); windows.append((p.t0 - 0.05, p.t1 + 0.4))
+        elif p.layout == "chest":
+            front.append(p.html); js.append(p.js)
+        elif p.layout == "full":
+            html, j = bp.full_sheet(p, p.t0 - 0.25, p.t1 + 0.35); behind.append(html); js.append(j)
+        else:
+            html, j = bp.split_parts(p, geo); sheets.append(html); front.append(p.html); js.append(j)
+    page = build_page("чертёж", 26.0, "\n".join(behind), "\n".join(sheets + front), "\n".join(js), [], windows, cta_at=25.5,
+                      extra_css=bp.CSS + bp.SPLIT_CSS, cta=False)
+    page = fx.FX(stage=True).finalize(page)
+    (project / "index.html").write_text(page, encoding="utf-8")
+    faces = [[round(k * 0.25, 2), *face] for k in range(int(26 / 0.25))]
+    res = run_timeline(project / "index.html", faces=faces)
+    errors = res.get("pageErrors", []) + [w for w in res.get("warnings", []) if "not found" in w or "Invalid" in w]
+    stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", [])]
+    split_hits = [h["el"] for h in res.get("faceHits", []) if h["el"].startswith(("#tm", "#cb"))]
+    hidden = [o["el"] for o in res.get("occluded", [])]
+    share = res.get("cutawayShare", 0)
+    report.check(res.get("ok") and not errors and not stuck and not split_hits and "#hid-l0" in hidden
+                 and not any(h.startswith("#r-") for h in hidden) and 0.05 < share < 0.25,
+                 "«Чертёж»: восемь приёмов в четырёх раскладках без ошибок и залипаний; в сплите лицо — в окне листа; "
+                 "лист во весь кадр — перебивка; подпись за головой ловится по одной",
+                 f"ошибок {len(errors)}, залипает {stuck or 'ничего'}, сплит «на лице» {split_hits or 'нет'}, "
+                 f"за головой {hidden or 'никто'}, перебивок {share * 100:.0f}%")
+    loud = 0
+    for bad in (lambda: bp.route("x", [("а", 0, 0)], [1.0, 2.0], 3.0), lambda: bp.write("x", "1", 1.0, 1.3),
+                lambda: bp.hexes("x", 1.0, 3.0, layout="сбоку"), lambda: bp.timeline("x", [("a", ""), ("b", "")], [2.0, 1.0], 3.0)):
+        try:
+            bad()
+        except ValueError:
+            loud += 1
+    report.check(loud == 4, "кривой вызов «Чертежа» — громкая ошибка: времена, длина на экране, раскладка", f"{loud} из 4")
 
 
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
@@ -1973,6 +2164,29 @@ def check_cutout_video(report: Report, tmp: Path):
                  f"{stream.get('codec_name')}, альфа {stream.get('tags', {}).get('alpha_mode')}, "
                  f"кадров {stream.get('nb_read_frames')}, {stream.get('color_space')}; короткая маска — "
                  f"{'отказ' if refused else 'приняли'}, хвосты: {', '.join(leftovers) or 'нет'}")
+
+    # вырезка в цветах дубля (19.10.2026, Валера: «то я одного цвета, то другого»): метка bt709 на выходе при сырых
+    # кадрах без меток — и ffmpeg 8 пересчитывал их как bt601, кожа в вырезке темнела на 2–3 уровня. На сером
+    # источнике пересчёт не виден — поэтому цветной, тон кожи
+    skin = tmp / "cutout_skin.mp4"
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0xD29882:s=1080x1920:r=30:d=1",
+                    "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709",
+                    "-color_trc", "bt709", "-color_range", "tv", str(skin)], check=True, capture_output=True)
+    cut = matte.make_cutout(skin, mask, tmp / "cutout_skin.webm")
+
+    def planes(args: list, alpha: bool) -> np.ndarray:
+        n = 1080 * 1920
+        raw = subprocess.run([ffmpeg_bin(), "-v", "error", *args, "-frames:v", "1", "-pix_fmt",
+                              "yuva420p" if alpha else "yuv420p", "-f", "rawvideo", "-"], capture_output=True).stdout
+        return np.frombuffer(raw, np.uint8)[:n * 3 // 2].astype(float)
+
+    a, b = planes(["-c:v", "libvpx-vp9", "-i", str(cut)], True), planes(["-i", str(skin)], False)
+    n = 1080 * 1920
+    inside = (slice(900 * 1080 + 440, 900 * 1080 + 640), slice(n + 450 * 540 + 220, n + 450 * 540 + 320),
+              slice(n * 5 // 4 + 450 * 540 + 220, n * 5 // 4 + 450 * 540 + 320))      # Y, U, V в середине круга маски
+    shift = [round(float((a[s] - b[s]).mean()), 2) for s in inside]
+    report.check(all(abs(d) < 1 for d in shift), "вырезка в цветах дубля: на коже Y, U, V совпадают (без пересчёта матрицы)",
+                 f"сдвиг Y {shift[0]}, U {shift[1]}, V {shift[2]}")
 
 
 def check_portable(report: Report, tmp: Path):
@@ -3177,6 +3391,17 @@ def check_studio(report: Report, tmp: Path):
                  and "браузера нет" not in brain.STUDIO_PROMPT and "jobqueue.py wait" in brain.STUDIO_PROMPT,
                  "мозг студии с браузером, как агент в терминале, и ждёт очередь через wait")
     report.check(brain.child_env().get(brain.CHILD_ENV) == "1", "агент студии помечен для хука старта")
+    # 19.10.2026: модель и усилие мозга брались из личных настроек запустившего — закреплены в проекте
+    saved_find = brain.find_binary
+    brain.find_binary = lambda name: name
+    try:
+        pinned = brain.command("claude", "x")
+    finally:
+        brain.find_binary = saved_find
+    flag = lambda name: pinned[pinned.index(name) + 1] if name in pinned else None  # noqa: E731
+    report.check(flag("--model") == brain.CLAUDE_MODEL and flag("--effort") == brain.CLAUDE_EFFORT,
+                 "мозг студии идёт на модели и усилии проекта, а не на личных настройках",
+                 f"модель {flag('--model')}, усилие {flag('--effort')}")
 
     # цена хода (13.10.2026): total_cost_usd у Claude — нарастающий итог сессии, а студия показывала его
     # под каждым ходом как цену хода — у IMG_1803 сумма по ходам выходила $13,41 при настоящих $3,90
@@ -3378,10 +3603,13 @@ def check_studio_failures(report: Report, tmp: Path):
     (q / "logs" / "05-render-A.log").write_text("✓ A_v1.mp4 готов\n", encoding="utf-8")
     (q / "failed" / "05-render-B.json").write_text("[]", encoding="utf-8")
     (q / "20-prep-C.json").write_text("[]", encoding="utf-8")
+    # тот же рендер поставлен снова, а прошлый с этим именем лежит в done/ — ждать надо новый
+    (q / "done" / "05-render-D.json").write_text("[]", encoding="utf-8")
+    (q / "05-render-D.json").write_text("[]", encoding="utf-8")
     with contextlib.redirect_stdout(io.StringIO()):
-        codes = [jobqueue.wait(n, 0.3, queue=q, poll=0.1) for n in ("05-render-A", "05-render-B", "20-prep-C", "99-нет")]
-    report.check(codes == [0, 1, 2, 2], "ожидание задачи очереди: готово — 0, упала — 1, идёт дольше срока или нет — 2, без вечного цикла",
-                 str(codes))
+        codes = [jobqueue.wait(n, 0.3, queue=q, poll=0.1) for n in ("05-render-A", "05-render-B", "20-prep-C", "99-нет", "05-render-D")]
+    report.check(codes == [0, 1, 2, 2, 2], "ожидание задачи очереди: готово — 0, упала — 1, идёт дольше срока или нет — 2, "
+                 "повтор с тем же именем ждёт новую, а не прошлую из done/", str(codes))
 
     # 17.10.2026, IMG_3292 v2: трека не нашлось — ролик ушёл в рендер без музыки, сказано только в отчёте
     import verify_page
@@ -3528,6 +3756,8 @@ def main():
         section(report, check_timeline, tmp)
         section(report, check_grey_zones, tmp)
         section(report, check_plan, tmp)
+        section(report, check_events, tmp)
+        section(report, check_blueprint, tmp)
         section(report, check_board, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)

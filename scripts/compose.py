@@ -155,8 +155,11 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
     if mode not in ("words", *GROUPING):
         raise ValueError(f"Режим субтитров «{mode}» не знаю")
     fixes = {int(k): v for k, v in (director.get("text_fixes") or {}).items()}
-    keep_case = set(director.get("keep_case") or [])
-    accents = {w.lower() for w in director.get("accent_words") or []}
+    # слова режиссёра — без знаков по краям, как слова субтитров: «Индии.» в accent_words не совпадало с «индии»
+    # на экране, и из восьми ключевых слов IMG_3292 подсвечивалось одно; «I.» в keep_case — и «Пётр I» шёл как «i»
+    edge = lambda x: re.sub(r"^[«\"]+|[.,!?;:«»\"]+$", "", x.strip())      # noqa: E731
+    keep_case = {edge(w) for w in director.get("keep_case") or []}
+    accents = {edge(w).lower() for w in director.get("accent_words") or []}
 
     tokens = []
     for i, w in enumerate(words):
@@ -177,6 +180,11 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
         if tokens and (bare.startswith("-") or bare in ("+", "%")):
             tokens[-1]["text"] += bare
             tokens[-1]["end"] = w["end"]
+            continue
+        # «Пётр I», «Екатерина II» — номер одной вспышкой с именем, а не отдельной «I» (19.10.2026, IMG_3292)
+        if (tokens and re.fullmatch(r"[IVX]{1,4}", bare) and re.fullmatch(r"[А-ЯЁA-Z][а-яёa-z]{2,}", tokens[-1]["text"])
+                and not tokens[-1]["stop"]):
+            tokens[-1].update(text=f'{tokens[-1]["text"]} {bare}', end=w["end"], stop=stop, mark=pause_mark)
             continue
         tokens.append({"text": bare, "start": w["start"], "end": w["end"], "stop": stop,
                        "mark": pause_mark})
@@ -206,7 +214,7 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
         i += len(group)
         chunk = {"t0": round(group[0]["start"], 3), "end": group[-1]["end"],
                  "text": " ".join(t["text"] for t in group),
-                 "accent": any(t["text"].lower() in accents for t in group)}
+                 "accent": any(part in accents for t in group for part in t["text"].lower().split())}
         if mode == "karaoke":
             chunk["words"] = [{"text": t["text"], "t0": round(t["start"], 3)} for t in group]
         chunks.append(chunk)
@@ -291,7 +299,8 @@ def project_name(stem: str, variant: str | None = None) -> str:
 # work/<имя>/page.<вариант>.py → studio/<имя>--<вариант>/. Список закрытый — опечатка в имени стиля не должна
 # молча собрать ролик в стиле по умолчанию.
 TEST_VARIANTS = {"sfx": "тихие звуки на переходах и влётах текста — тест удержания (16.10.2026, rules.md п.9)",
-                 "music": "еле слышная фоновая музыка (лоу-фай из фонотеки YouTube) — тест удержания (17.10.2026, rules.md п.9)"}
+                 "music": "еле слышная фоновая музыка (лоу-фай из фонотеки YouTube) — тест удержания (17.10.2026, rules.md п.9)",
+                 "montage": "сборка montage.py: обязательное ставится само — вспышка хука, склейки, звуки, музыка (19.10.2026)"}
 
 
 def ruling_style(stem: str, variant: str | None = None) -> dict | None:

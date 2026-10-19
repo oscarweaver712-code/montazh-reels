@@ -47,7 +47,10 @@ FPS = 30
 SPLICE_JUMP = 0.1    # на склейке крупность меняется хотя бы на столько (1.2 → 1.36 у Take.splice_punches)
 HOLD_MAX = 5.0      # с: дольше графика без изменений — динамика проседает (Валера 13.10, IMG_1803)
 FOOTAGE_MAX = 2     # ИИ-видео на ролик (Валера 17.10: «генерации видео в одном видео 1-2 в самых топовых местах, не больше»)
+SOFT_EVERY = 6.0    # с: тихий звук монтажа не реже раза за это время (rules.md п.9; принятый IMG_3303 v5 — раз в 2,4 с)
+MONTAGE_MARK = '<meta name="reels-montage"'
 CAP_GAP_MAX = 3.0   # с: дольше речь без субтитров не идёт (Валера 16.10, IMG_3303 v3: «надолго пропали»)
+ACCENT_EVERY = 12.0  # с: дольше субтитры без ключевого слова — «одинаково скучно идут» (Валера 19.10, IMG_3292 v2)
 
 # Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
 # без него страница падает на первой же строке) и сбор ошибок и предупреждений GSAP.
@@ -92,7 +95,10 @@ CHECK_JS = r"""
         if (!touches(child.vars)) {
           // смаз кадра на склейке (splice) нужен проверке склеек — его не глушим
           const camBlur = child.vars && "filter" in child.vars && child.targets().some((el) => el.classList && el.classList.contains("cam"));
-          if (!camBlur) idle.push(child);
+          // движение сцены (#stage: сплит «Чертежа», отъезд, пролёт) двигает лицо — без него проверка лица видела
+          // человека на старом месте, а лист сплита — «на лице» (19.10.2026)
+          const stage = child.targets().some((el) => el.id === "stage");
+          if (!camBlur && !stage) idle.push(child);
           continue;
         }
         if (child.timeline) { walk(child.timeline, start); continue; }     // stagger, keyframes
@@ -323,6 +329,27 @@ CHECK_JS = r"""
         }
       }
     }
+    // доля ролика с человеком в кадре (Валера 19.10.2026: «хочу, чтобы в 50+% видео было моё лицо — личный бренд
+    // качаем»): сколько замеров видна перебивка во весь кадр (футаж, серия картинок, чертёж data-fullframe)
+    res.cutawayShare = 0;
+    {
+      const cuts = [...document.querySelectorAll(".footage, [data-fullframe]")];
+      if (cuts.length) {
+        const box = document.getElementById("root").getBoundingClientRect();
+        const full = (el) => {
+          for (let n = el; n && n !== document.body; n = n.parentElement)
+            if (parseFloat(getComputedStyle(n).opacity) < 0.5) return false;
+          const r = el.getBoundingClientRect();
+          return r.width * r.height >= 0.95 * box.width * box.height;
+        };
+        let all = 0, hit = 0;
+        for (let t = 0; t <= duration + 1e-6; t += 0.25, all++) {
+          tl.totalTime(0, false); tl.totalTime(t, false);
+          if (cuts.some(full)) hit++;
+        }
+        res.cutawayShare = hit / Math.max(1, all);
+      }
+    }
     const faces = C.faces || [];
     if (faces.length) {
       const fronts = [...document.querySelectorAll("#front .g")].filter((el) => el.id !== "flash");
@@ -335,14 +362,25 @@ CHECK_JS = r"""
       };
       const open = new Map();
       const root = document.getElementById("root").getBoundingClientRect();
+      // сцена в обёртке #stage (fx: отъезд, пролёт; «Чертёж» в сплите — человек в окне внизу листа, 19.10.2026):
+      // лицо по камере — в координатах сцены, на экран его переводит текущая матрица обёртки
+      const stageEl = document.getElementById("stage");
+      const onScreen = (x0, y0, x1, y1) => {
+        if (!stageEl) return [x0, y0, x1, y1];
+        const tf = getComputedStyle(stageEl).transform;
+        if (!tf || tf === "none") return [x0, y0, x1, y1];
+        const m = new DOMMatrixReadOnly(tf), a = m.transformPoint({ x: x0, y: y0 }), b = m.transformPoint({ x: x1, y: y1 });
+        return [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
+      };
       const cutaways = [...document.querySelectorAll(".footage")];     // футаж и серия картинок — в любом слое
       const cutaway = () => cutaways.some((el) => {
         if (!el.classList.contains("footage") || !vis(el)) return false;
         const r = el.getBoundingClientRect();
         return r.width * r.height >= 0.95 * root.width * root.height;
       });
-      for (const [t, fx0, fy0, fx1, fy1] of faces) {
+      for (const [t, ...box] of faces) {
         tl.totalTime(0, false); tl.totalTime(t, false);
+        const [fx0, fy0, fx1, fy1] = onScreen(...box);
         const seen = new Set();
         if (cutaway()) continue;          // футаж во весь кадр: лица нет — замер пропускается, открытые заезды ждут
         // субтитры — тоже: не на лице и не вплотную к подбородку (Валера 16.10: «сабы ниже подбородка, с отступом»)
@@ -369,11 +407,15 @@ CHECK_JS = r"""
       // голова — рамка лица (YuNet с запасом уже берёт лоб) плюс волосы над ней (0,2 высоты, сверено по IMG_1799) и чуть шире; строки текста (Range) слоя behind, пока
       // человек поверх (#cam-fg). Закрыта больше трети площади строк два замера подряд — провал; data-safe — нет
       res.occluded = [];
-      const behinds = [...document.querySelectorAll("#behind .g")].filter((el) => el.textContent.trim());
+      // подписи «Чертежа» (.bp-lbl) — каждая сама по себе: одна спрятанная из пяти в общей площади приёма тонула
+      // (19.10.2026, галерея: «Багдад» и «Европа» ушли за голову, проверка молчала)
+      const behinds = [...document.querySelectorAll("#behind .g")].filter((el) => el.textContent.trim() && !el.querySelector(".bp-lbl"))
+        .concat([...document.querySelectorAll("#behind .bp-lbl")]);
       const fgEl = document.getElementById("cam-fg");
       const openO = new Map();
-      for (const [t, fx0, fy0, fx1, fy1] of faces) {
+      for (const [t, ...box] of faces) {
         tl.totalTime(0, false); tl.totalTime(t, false);
+        const [fx0, fy0, fx1, fy1] = onScreen(...box);
         if (cutaway() || !fgEl || parseFloat(getComputedStyle(fgEl).opacity) < 0.5) continue;
         const w = fx1 - fx0, h = fy1 - fy0;
         const hx0 = fx0 - 0.15 * w, hx1 = fx1 + 0.15 * w, hy0 = fy0 - 0.2 * h, hy1 = fy1;
@@ -404,7 +446,10 @@ CHECK_JS = r"""
     // ---- субтитры не двоятся (Валера 16.10.2026, IMG_3303 v3: «где-то дублировались субтитры»): «что соты у пчёл»
     // бежало субтитром прямо под подводом «соты у пчёл». Видимый субтитр и видимый текст графики (кроме подписи
     // портрета .card) не несут одно слово одновременно: слова от 4 букв — по первым пяти, числа — целиком.
-    // Два замера подряд — провал. Текст на экране повторяет речь — на его время субтитр прячет hide_captions
+    // Два замера подряд — провал. Текст на экране повторяет речь — на его время субтитр прячет hide_captions.
+    // Буквы по одной (19.10.2026, демо IMG_3292: «икс, вэ, и, и, и» бежало субтитрами «x», «v», «i» под листом XVIII):
+    // субтитр с латинской буквой-двумя, которые стоят в латинском слове на экране, — тоже двойной текст. Одна
+    // кириллическая буква не в счёт: «и», «в», «у» — обычные слова
     res.dupes = [];
     {
       const caps = [...document.querySelectorAll("#caps .cap")];
@@ -419,22 +464,28 @@ CHECK_JS = r"""
       };
       const stems = (s) => (s.toLowerCase().replace(/ё/g, "е").match(/[a-zа-я]+|\d+/g) || [])
         .filter((w) => /\d/.test(w) || w.length >= 4).map((w) => (/\d/.test(w) ? w : w.slice(0, 5)));
+      const latin = (s) => s.toLowerCase().match(/[a-z]+/g) || [];
       const open = new Map();
       if (caps.length && texts.length) {
         for (let t = 0; t <= duration + 1e-6; t += 0.25) {
           tl.totalTime(0, false); tl.totalTime(t, false);
-          const said = new Map();
-          for (const c of caps) if (shown(c)) for (const s of stems(c.textContent)) said.set(s, c.textContent.trim());
+          const said = new Map(), spelled = new Map();
+          for (const c of caps) if (shown(c)) {
+            for (const s of stems(c.textContent)) said.set(s, c.textContent.trim());
+            for (const l of latin(c.textContent)) if (l.length <= 2) spelled.set(l, c.textContent.trim());
+          }
           const seen = new Set();
-          if (said.size) for (const el of texts) {
+          if (said.size || spelled.size) for (const el of texts) {
             if (!shown(el)) continue;
-            const hit = stems(el.textContent).find((s) => said.has(s));
+            let hit = stems(el.textContent).find((s) => said.has(s));
+            const words = hit ? [] : latin(el.textContent);
+            if (!hit) hit = [...spelled.keys()].find((l) => words.some((w) => w.includes(l)));
             if (!hit) continue;
             const key = label(el);
             seen.add(key);
             const rec = open.get(key);
             if (rec) { rec.last = t; rec.count++; }
-            else open.set(key, { el: key, from: t, last: t, count: 1, cap: said.get(hit),
+            else open.set(key, { el: key, from: t, last: t, count: 1, cap: said.get(hit) || spelled.get(hit),
                                  text: el.textContent.trim().replace(/\s+/g, " ").slice(0, 40) });
           }
           for (const [k, rec] of [...open]) if (!seen.has(k)) { if (rec.count >= 2) res.dupes.push(rec); open.delete(k); }
@@ -523,6 +574,30 @@ CHECK_JS = r"""
         for (const [key, rec] of [...open]) if (!seen.has(key)) { if (rec.count >= 2) res.spills.push(rec); open.delete(key); }
       }
       for (const rec of open.values()) if (rec.count >= 2) res.spills.push(rec);
+    }
+
+    // ---- пустые места (Валера 19.10.2026, демо IMG_3292 v2: «в какой-то момент нет никаких вставок, и при этом
+    // субтитры идут одинаково скучно — динамика очень теряется»): 15 с без единой вставки. Вставка — любая графика
+    // на экране (#front .g, #behind .g: текст, «Чертёж», клип, штамп, плашка), вспышки — нет. Сюда — участки
+    // дольше секунды; порог — project.json → insert_gap_max
+    res.bare = [];
+    {
+      const graphics = [...document.querySelectorAll("#front .g, #behind .g")].filter((el) => !/flash/.test(el.id));
+      const seen = (el) => {
+        let a = 1;
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden") return false;
+          a *= parseFloat(cs.opacity);
+        }
+        return a >= 0.15;
+      };
+      let from = 0;
+      for (let t = 0; t <= duration + 1e-6; t += 0.25) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        if (graphics.some(seen)) { if (t - from > 1) res.bare.push([from, t]); from = t + 0.25; }
+      }
+      if (duration - from > 1) res.bare.push([from, duration]);
     }
 
     // ---- динамика (Валера 13.10.2026: «плашка про миллион очень долго висела, мы теряли в динамике» —
@@ -702,6 +777,28 @@ def music_missing(page: str, project: str) -> str | None:
             "scripts/music.py add <имя> <файлы> → kit.background_music(…); нет трека — спроси человека, не рендерь без него")
 
 
+def required_missing(page: str, project: str) -> list:
+    """Обязательное проекта, которого на странице нет (19.10.2026, Валера: «то звуки потеряются, то музыка, то переходов
+    нет»): тихие звуки монтажа (project.json → soft_sounds, rules.md п.9) и вспышка после хука у страниц montage.py
+    (hook_flash; осознанно без неё — m.hook(None, "причина") пишет meta reels-hook)."""
+    import projects
+    try:
+        cfg = projects.of(project.split("--")[0]).config
+    except projects.ProjectError:
+        return []
+    out = []
+    found = re.search(r'data-duration="([\d.]+)"', page)
+    duration = float(found.group(1)) if found else 0.0
+    soft = len(re.findall(r'<audio id="sfx-soft', page))
+    if cfg.get("soft_sounds") and soft < duration / SOFT_EVERY:
+        out.append(f"тихих звуков монтажа {soft} на {duration:.0f} с — нужно не реже одного на {SOFT_EVERY:g} с (rules.md п.9): "
+                   f"montage.py ставит их сам по движениям страницы, вручную — kit.soft_track")
+    if cfg.get("hook_flash") and MONTAGE_MARK in page and 'id="hook-flash"' not in page and 'name="reels-hook"' not in page:
+        out.append("нет вспышки после хука, а проект её просит (project.json → hook_flash): m.hook(t) или "
+                   "m.hook(None, \"почему без неё\")")
+    return out
+
+
 def sound_problems(page: str, project: str | None = None) -> list:
     """Звуки страницы по правилам: громкость по замеру файла не выше нормы, убранных нет, повторов нет."""
     import math
@@ -844,6 +941,21 @@ def load_director(project: Path) -> dict | None:
     return None
 
 
+def accent_gaps(project: Path, limit: float = ACCENT_EVERY) -> list:
+    """Где субтитры идут дольше limit с без ключевого слова (Валера 19.10.2026, демо IMG_3292 v2: «субтитры супер
+    одинаково скучно идут, динамика теряется» — на 58 с одно подсвеченное слово). От начала субтитров до первого
+    ключевого, между ключевыми и от последнего до конца субтитров. Возвращает [(от, до)]."""
+    caps_js = project / "captions.js"
+    if not caps_js.exists():
+        return []
+    found = re.search(r"window\.CAPTIONS\s*=\s*(\[.*\]);", caps_js.read_text(encoding="utf-8"), re.S)
+    chunks = json.loads(found.group(1)) if found else []
+    if not chunks:
+        return []
+    marks = [chunks[0]["t0"]] + [c["t0"] for c in chunks if c.get("accent")] + [chunks[-1]["t1"]]
+    return [(round(a, 2), round(b, 2)) for a, b in zip(marks, marks[1:]) if b - a > limit]
+
+
 def caption_gaps(project: Path, limit: float = CAP_GAP_MAX) -> list:
     """Где речь идёт без субтитров дольше limit с (Валера 16.10.2026, IMG_3303 v3: «где-то слишком надолго пропали»).
 
@@ -977,6 +1089,8 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     if strict:
         silent = music_missing(page_text, project.name)
         check(not silent, silent or "фоновая музыка на месте")
+        absent = required_missing(page_text, project.name)
+        check(not absent, "обязательное проекта на месте: тихие звуки, вспышка после хука", absent)
 
     started = time.time()
     splices = take_splices(project)
@@ -1022,6 +1136,29 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         check(len(clips) <= FOOTAGE_MAX, f"ИИ-видео не больше {FOOTAGE_MAX} на ролик — только в самых топовых местах",
               [f"{len(clips)}: {', '.join(clips)} — остальные места закрой серией фото (kit.slides) или графикой"]
               if len(clips) > FOOTAGE_MAX else [])
+    try:
+        import projects
+        need = float(projects.of(project.name.split("--")[0]).config.get("face_min", 0.6))
+    except Exception:
+        need = 0.6
+    face = 1 - res.get("cutawayShare", 0)
+    if strict:
+        check(face >= need, f"человек в кадре не меньше {need * 100:.0f}% ролика ({face * 100:.0f}%)",
+              [] if face >= need else [f"перебивки во весь кадр занимают {(1 - face) * 100:.0f}% — сократи их или замени "
+                                       f"графикой поверх человека (project.json → face_min)"])
+    try:
+        cfg = projects.of(project.name.split("--")[0]).config
+    except Exception:
+        cfg = {}
+    gap_max = cfg.get("insert_gap_max")
+    if cfg.get("caption_accent_scale") and strict:
+        flat = [f"{a:.2f}–{b:.2f} с: {b - a:.1f} с субтитров без ключевого слова — добавь в accent_words слово этого места"
+                for a, b in accent_gaps(project)]
+        check(not flat, f"ключевое слово в субтитрах — не реже раза в {ACCENT_EVERY:g} с (ровные субтитры — скучно)", flat)
+    if gap_max and strict:
+        bare = [f"{a:.2f}–{b:.2f} с: {b - a:.1f} с без единой вставки — поставь приём по словам этого места "
+                f"(«Чертёж», штамп, клип, карточка)" for a, b in res.get("bare", []) if b - a > float(gap_max)]
+        check(not bare, f"нет пустых мест без вставок дольше {float(gap_max):g} с (project.json → insert_gap_max)", bare)
     over = res.get("fgOverCut", [])
     check(not over, "на перебивке (футаж, серия картинок) нет человека поверх — окна вырезки до и после",
           [f"вырезка видна поверх перебивки на {over[0]:.2f}–{over[-1]:.2f} с ({len(over)} замеров)"] if over else [])

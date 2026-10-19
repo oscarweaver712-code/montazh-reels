@@ -116,6 +116,28 @@ def split_by_drops(start: float, end: float, drops: list) -> list:
     return pieces
 
 
+def keep_bloopers(drops: list, bloopers: list) -> list:
+    """Вырезы с оставленными внутри угарами: [(от, до)] без кусков bloopers.
+
+    Угар (19.10.2026, Валера: «где запороли дубль — серый фильтр, запикать маты, 3 секунды того, как мы угарали, и
+    продолжить дубль») — кусок сорванной попытки, который остаётся в ролике вставкой. Он лежит внутри выреза: вырез
+    делится на два, угар между ними становится своим куском дубля, графика красит его серым (kit.blooper).
+    """
+    out = [(float(a), float(b)) for a, b in drops]
+    for a, b in sorted((float(a), float(b)) for a, b in bloopers):
+        if not 0.6 <= b - a <= 4.0:
+            raise ValueError(f"Угар {a}–{b} с: {b - a:.1f} с — бывает от 0,6 до 4 с (Валера: «3 секунды»)")
+        host = [d for d in out if d[0] - 0.05 <= a and b <= d[1] + 0.05]
+        if not host:
+            raise ValueError(f"Угар {a}–{b} с не лежит внутри выреза (drop): угар — кусок сорванной попытки, которую "
+                             "вырезаешь; часть чистого дубля серым не красят")
+        d0, d1 = host[0]
+        out.remove(host[0])
+        out += [(d0, a)] if a - d0 > 0.05 else []
+        out += [(b, d1)] if d1 - b > 0.05 else []
+    return sorted(out)
+
+
 def mark_dropped(words: list, drops: list) -> None:
     """Помечает слова, попавшие в вырезанные куски (drop из edit.json).
 
@@ -125,6 +147,21 @@ def mark_dropped(words: list, drops: list) -> None:
     for w in words:
         mid = (w["start"] + w["end"]) / 2
         w["drop"] = any(a <= mid < b for a, b in drops)
+
+
+def blooper_spans(segments: list, bloopers: list) -> list:
+    """Угары на шкале дубля: кусок дубля, который больше всех перекрывает угар из edit.json."""
+    out = []
+    for a, b in bloopers:
+        acc, best = 0.0, None
+        for s, e in segments:
+            overlap = min(e, float(b)) - max(s, float(a))
+            if overlap > 0 and (best is None or overlap > best[0]):
+                best = (overlap, round(acc, 3), round(acc + e - s, 3))
+            acc += e - s
+        if best:
+            out.append([best[1], best[2]])
+    return out
 
 
 def to_aroll(t: float, segments: list) -> float | None:
@@ -184,7 +221,7 @@ def refresh_words(video: Path, out_dir: Path, edit: dict) -> None:
         sys.exit(f"Нет {meta_path.relative_to(WORK_DIR.parent)} — сначала полный prep.py")
     segments = json.loads(meta_path.read_text(encoding="utf-8"))["segments"]
     words = run_transcribe(video, language=speech_language(video.stem, edit))["words"]
-    mark_dropped(words, edit.get("drop") or [])
+    mark_dropped(words, keep_bloopers(edit.get("drop") or [], edit.get("blooper") or []))
     aroll_words = remap_words(words, segments)
     (out_dir / "aroll.words.json").write_text(
         json.dumps({"words": aroll_words}, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -307,15 +344,18 @@ def main():
         sys.exit("Рез пауз внутри дубля в prep.py пока не включён — договорились не резать")
 
     try:
-        pieces = split_by_drops(start, end, edit.get("drop") or [])
+        drops = keep_bloopers(edit.get("drop") or [], edit.get("blooper") or [])
+        pieces = split_by_drops(start, end, drops)
     except ValueError as error:
         sys.exit(str(error))
     segments = snap_segments(pieces, fps)
+    bloopers = blooper_spans(segments, edit.get("blooper") or [])
 
-    mark_dropped(words, edit.get("drop") or [])
+    mark_dropped(words, drops)
     aroll_words = remap_words(words, segments)
     kept = sum(e - s for s, e in segments)
-    cuts = f", вырезано дублей: {len(segments) - 1}" if len(segments) > 1 else ""
+    cuts = f", вырезано дублей: {len(segments) - 1 - len(bloopers)}" if len(segments) > 1 else ""
+    cuts += f", угаров: {len(bloopers)}" if bloopers else ""
     print(f"  → дубль {segments[0][0]:.2f}–{segments[-1][1]:.2f} с исходника "
           f"({kept:.1f} с{cuts}), слов {len(aroll_words)}")
 
@@ -350,7 +390,7 @@ def main():
     (out_dir / "aroll.json").write_text(json.dumps({
         "source": str(video), "segments": segments, "fps": fps,
         "duration": sum(e - s for s, e in segments),
-        "look": preset.get("look"), "format": fmt,
+        "look": preset.get("look"), "format": fmt, "bloopers": bloopers,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  ✓ готово за {time.time() - started:.0f} с → {out.relative_to(WORK_DIR.parent)}")
 

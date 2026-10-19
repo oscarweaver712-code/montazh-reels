@@ -50,12 +50,19 @@ CONFIG = {
     "fx_theme": "default",                    # тема приёмов fx.py (fx.THEMES): цвета и шрифты под стиль проекта
     "footage_style": "",                      # хвост стиля ИИ-перебивок (footage.py), один на проект
     "music": False,                           # фоновая музыка в каждом ролике: без неё verify_page не пускает в рендер
+    "hook_flash": False,                      # вспышка с отъездом и звуком после хука (montage.py ставит сама)
+    "soft_sounds": False,                     # тихие звуки монтажа в каждом ролике (не реже одного на 6 с)
+    "face_min": 0.6,                          # доля ролика с человеком в кадре: перебивки во весь кадр — не больше остатка
+    "insert_style": "",                       # мотив вставок: "blueprint" — «Чертёж» (рамка ИИ-клипов, scripts/blueprint.py)
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
                 "long_matte": (bool, "true или false"), "fx_theme": (str, "строкой — имя темы из fx.THEMES"),
                 "footage_style": (str, "строкой — стиль генерации перебивок"),
-                "music": (bool, "true или false")}
+                "music": (bool, "true или false"), "hook_flash": (bool, "true или false"), "soft_sounds": (bool, "true или false"),
+                "face_min": ((int, float), "числом от 0 до 1"), "insert_style": (str, "строкой: \"\" или \"blueprint\""),
+                "insert_gap_max": ((int, float), "числом секунд — дольше без вставок verify_page не пускает"),
+                "caption_accent_scale": ((int, float), "числом от 1 до 1.6 — во сколько ключевое слово субтитров крупнее")}
 
 
 class ProjectError(Exception):

@@ -222,13 +222,14 @@ def _cutaway_js(fid: str, at: float, dur: float, inner: str = "") -> str:
 
 
 def footage(fid: str, stem: str, name: str, at: float, dur: float, fmt: str = "9:16", push: float = 1.08,
-            track: int = 2) -> tuple:
+            track: int = 2, overlay: str = "", clip_css: str = "") -> tuple:
     """ИИ-футаж (scripts/footage.py, Google Flow) — перебивка во весь кадр. (html для behind, js для beats).
 
     16.10.2026 (Валера, после IMG_3303 v2: «вставки не к месту», «субтитры пропадают», «меня поверх не надо — вырезка
     криво»): футаж кладётся в слой behind — под субтитры и графику переднего слоя; человек на это время уходит
     (окна вырезки на футаж не ставить — verify_page краснеет). Вход и выход — переходом (_cutaway_js), внутри — наезд
     push. Субтитры идут поверх как есть. Клип короче окна или не принят — громкая ошибка: сначала footage.py --take.
+    overlay — html поверх клипа (рамка мотива, blueprint.look), clip_css — стиль самого клипа (грейд мотива).
     """
     from common import WORK_DIR
     path = WORK_DIR / stem / "footage" / f"{name}.mp4"
@@ -243,14 +244,15 @@ def footage(fid: str, stem: str, name: str, at: float, dur: float, fmt: str = "9
             f'overflow: hidden; background: #000;">\n'
             f'          <video id="{fid}-clip" class="clip" src="assets/footage/{name}.mp4" muted playsinline '
             f'data-start="{at:.2f}" data-duration="{dur:.2f}" data-track-index="{track}"\n'
-            f'                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;"></video>\n'
-            f'        </div>')
+            f'                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;{clip_css}"></video>\n'
+            f'{overlay}        </div>')
     inner = (f'      tl.fromTo("#{fid}-clip", {{ scale: 1 }}, {{ scale: {push}, duration: {dur:.2f}, ease: "none", '
              f'immediateRender: false }}, {at:.3f});\n')
     return html, _cutaway_js(fid, at, dur, inner)
 
 
-def slides(sid: str, images: list, at: float, durs: list, fmt: str = "9:16", push: float = 1.1) -> tuple:
+def slides(sid: str, images: list, at: float, durs: list, fmt: str = "9:16", push: float = 1.1,
+           overlay: str = "", clip_css: str = "") -> tuple:
     """Перебивка серией картинок (Валера 16.10: «несколько фото подряд, сабы бегут по ним — перебивка вместо видео»).
 
     images — картинки assets/img (сгенерированные gen_image/Nano Banana или свободные фото), durs — сколько держится
@@ -263,9 +265,9 @@ def slides(sid: str, images: list, at: float, durs: list, fmt: str = "9:16", pus
         raise ValueError(f"slides {sid}: картинка держится {min(durs)} с — меньше 0,6 с глаз не успевает")
     width, height = formats.size(fmt)
     imgs = "\n".join(f'          <img id="{sid}-{i}" src="assets/img/{img}" alt="" style="position: absolute; inset: 0; '
-                     f'width: 100%; height: 100%; object-fit: cover; opacity: 0;" />' for i, img in enumerate(images))
+                     f'width: 100%; height: 100%; object-fit: cover; opacity: 0;{clip_css}" />' for i, img in enumerate(images))
     html = (f'        <div id="{sid}" class="g footage" style="left: 0; top: 0; width: {width}px; height: {height}px; '
-            f'overflow: hidden; background: #000;">\n{imgs}\n        </div>')
+            f'overflow: hidden; background: #000;">\n{imgs}\n{overlay}        </div>')
     inner, t = [], at
     for i, d in enumerate(durs):
         inner.append(f'      tl.set("#{sid}-{i}", {{ opacity: 1 }}, {t:.3f});')
@@ -346,6 +348,10 @@ def caption_css(caps: dict, fmt: str = "9:16") -> str:
                f'font-family: "{family}"; font-weight: {caps.get("font_weight", 800)}; font-size: {size}px; '
                f'line-height: 1.15; color: {caps["color"]}; text-transform: {case}; }}')
     css.append(f'      .cap.accent {{ color: {caps["highlight"]}; }}')
+    # акцент крупнее (accent_scale; 19.10.2026, Валера: «субтитры супер одинаково скучно идут»): цвет один, а размер
+    # тот же — ключевое слово не выделялось. Кегль, не transform: масштабом управляет вход субтитра
+    if float(caps.get("accent_scale", 1)) > 1:
+        css.append(f'      .cap.accent {{ font-size: {round(size * float(caps["accent_scale"]))}px; }}')
     css.append('      .cap .w { display: inline-block; }')
     if caps.get("box"):
         from styles import is_dark
@@ -542,6 +548,7 @@ class Take:
         meta = json.loads((work / stem / "aroll.json").read_text(encoding="utf-8"))
         self.segments = meta["segments"]
         self.duration = meta["duration"]
+        self.bloopers = meta.get("bloopers") or []      # угары [[от, до]] на шкале дубля (edit.json → blooper, prep)
         self.fmt = meta.get("format") or "9:16"         # формат сцены для build_page(fmt=…)
         # Стиль брифа (или варианта A/B) — для build_page(captions=…). Нет брифа — None:
         # субтитры как раньше. Страница варианта пишется в studio/<имя>--<стиль>/.

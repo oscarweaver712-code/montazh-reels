@@ -72,11 +72,19 @@ TOOLS = {
     "обложка": "fx.cover: человек — обложка журнала, название антиквой за головой — заголовок, тема ролика",
     "стекло": "fx.glass_word: стеклянное слово в перспективе за спиной — ключевое слово, вариант «слова за спиной»",
     "вспышка": "белая вспышка на главном ударе — пара раз за ролик",
+    # 19.10.2026 (Валера: «вспышку с отъездом и звуком после хука», «запороли дубль — серый фильтр, запикать маты,
+    # 3 секунды угара и продолжить»): обе ставит montage.py, место — из events.py
+    "вспышка хука": "montage.py: белый удар, кадр крупнее и отъезд, вжух — на первом слове основы после хука",
+    "чертёж": "blueprint.py: построение линиями — маршрут, ось эпох, число пишется, циркуль, соты, каркас, график, размер; "
+              "за спиной, на груди, сплит (человек в окне листа) или во весь кадр (1–2 раза)",
+    "угар": "edit.json → blooper (кандидаты — events.py): ≤ 3 с сорванной попытки серым, маты под «пипом», штамп «не вошло»",
     "ключевое слово": "kit.keyword_card: «напиши СЛОВО в комментариях»",
     "CTA": "финальная плашка: куда идти дальше",
     "субтитры": "бегущие субтитры — всегда, стиль из брифа",
     "звук": "удар, вжух, щелчок по норме (kit.audio): на главном, одинаковые не подряд",
 }
+VIZ_TOOLS = {"счётчик", "столбики", "линия", "доли", "до/после", "формула", "график", "доска", "карта", "схема", "чертёж"}
+VIZ_MIN = 4                                 # визуализаций на ролик, если проект просит их часто (graphics.viz: often)
 NOT_VISUAL = {"субтитры", "звук"}          # экран сами по себе не меняют: для динамики не в счёт
 HOOK_BY = 3.0                               # первая смена на экране — не позже, с
 MAX_GAP = 5.0                               # дольше без запланированной смены на экране — провал, с
@@ -187,11 +195,37 @@ def analysis(stem: str) -> list:
     asks = [(t, s) for t, s in sentences(words) if s.endswith("?")]
     if asks:
         lines.append("- вопросы: " + "; ".join(f"{t:.1f} с «{s}»" for t, s in asks[:6]) + " → интрига, хук")
+    lines += event_lines(stem, words)
     face = chin_line(stem)
     if face:
         lines.append(f"- лицо ({face['source']}): подбородок обычно до y {face['chin_usual']}, при наклоне до "
                      f"y {face['chin_low']}; макушка поднимается до y {face['top_high']} → карточки на груди — "
                      f"с y ≥ {face['chin_low'] + 20}, над головой — выше y {face['top_high'] - 20}")
+    return lines
+
+
+def event_lines(stem: str, words: list) -> list:
+    """События дубля (events.py): где может кончаться хук — по этому дублю; угары и сомнения — из events.json."""
+    import events
+    marked = [dict(w, n=events.norm(w["word"])) for w in words if events.norm(w["word"])]
+    found = events.hook_candidates(marked)
+    lines = []
+    if found:
+        lines.append("- конец хука (первое слово основы; events.py, первое вероятнее): "
+                     + ", ".join(f"{t:.2f} с «{w}»" for t, w, _ in found) + " → вспышка хука там, где кончается обещание")
+    path = WORK_DIR / stem / "events.json"
+    if path.exists():
+        ev = json.loads(path.read_text(encoding="utf-8"))
+        meta = json.loads((WORK_DIR / stem / "aroll.json").read_text(encoding="utf-8")) if (WORK_DIR / stem / "aroll.json").exists() else {}
+        if meta.get("bloopers"):
+            lines.append("- угар в дубле: " + ", ".join(f"{a:.2f}–{b:.2f} с" for a, b in meta["bloopers"])
+                         + " → montage.py красит серым, штамп «не вошло»")
+        elif ev.get("bloopers"):
+            lines.append("- угар можно было оставить (исходник): " + ", ".join(f"{b['at'][0]:.2f}–{b['at'][1]:.2f} ({b['why']})"
+                                                                   for b in ev["bloopers"]) + " — edit.json → blooper и prep")
+        if ev.get("doubts"):
+            lines.append("- проверить ушами (исходник): " + ", ".join(f"«{d['word']}» {d['at'][0]:.1f} с ({d['why']})"
+                                                                for d in ev["doubts"][:5]))
     return lines
 
 
@@ -368,6 +402,20 @@ def check(stem: str) -> list:
         problems.append("в раскадровке ни одной смены на экране — одни субтитры и звук")
     elif visual[0] > HOOK_BY:
         problems.append(f"первая смена на экране — {visual[0]:.1f} с: хук — до {HOOK_BY:g} с")
+    import projects
+    try:
+        cfg = projects.of(stem).config
+    except projects.ProjectError:
+        cfg = {}
+    used = {t for _, tools, *_ in rows for t in tools}
+    if cfg.get("hook_flash") and "вспышка хука" not in used:
+        problems.append("нет строки со «вспышка хука» — проект просит вспышку с отъездом после хука (project.json → "
+                        "hook_flash); место — «конец хука» в разделе «Исходник»")
+    if (cfg.get("brief") or {}).get("overrides", {}).get("graphics.viz") == "often":
+        viz = sum(1 for _, tools, *_ in rows if any(t in VIZ_TOOLS for t in tools))
+        if viz < VIZ_MIN:
+            problems.append(f"визуализаций в раскадровке {viz}, проект просит не меньше {VIZ_MIN} (rules.md п.13: каждое "
+                            f"число, сравнение, формула, процесс — движущаяся схема)")
     marks = visual + ([duration] if duration else [])
     for a, b in zip(marks, marks[1:]):
         if b - a > MAX_GAP + 1e-6:
