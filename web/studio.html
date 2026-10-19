@@ -741,8 +741,12 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
 </dialog>
 <dialog class="modal" id="batch-dialog" aria-labelledby="batch-title">
   <h3 id="batch-title">Смонтировать все новые</h3>
-  <div class="say">Каждый ролик — в своей новой сессии ИИ: контекст одного ролика не портит монтаж другого. Тяжёлые шаги (вырезка, рендер) всё равно идут по одному — машина не перегрузится.</div>
+  <div class="say">Каждый ролик монтируется отдельно: контекст одного не портит монтаж другого. Тяжёлые шаги (вырезка, рендер) всё равно идут по одному — машина не перегрузится.</div>
   <div class="grp" id="batch-pick"></div>
+  <div class="grp" id="batch-how" style="margin-top:12px">
+    <label class="pick"><input type="radio" name="batch-how" value="autopilot" checked> Автопилот — ~$2 за ролик: ИИ решает, что показать, коротким ходом, остальное делает машина. Новых ИИ-клипов Flow не делает — скажет, где их нет</label>
+    <label class="pick"><input type="radio" name="batch-how" value="brain"> Сессия ИИ на ролик — как раньше: дороже ($2–30), сам генерирует клипы во Flow</label>
+  </div>
   <label class="pick" style="margin-top:12px">Монтировать разом:
     <select id="batch-par"><option value="1">1 ролик</option><option value="2">2 ролика</option><option value="3">3 ролика</option><option value="4">4 ролика</option></select></label>
   <p class="hint" style="margin:4px 0 0">ИИ думают одновременно, а очередь тяжёлых шагов — одна. Больше разом — быстрее, но быстрее тратится лимит подписки.</p>
@@ -2333,6 +2337,13 @@ async function startAiMontage() {
   pickTab("rtabs", "tab", "ai");
   try {
     const b = await saveBrief(true);
+    // автопилот (по умолчанию): один ролик — пачкой из одного; варианты A/B автопилот пока не делает — тогда сессия ИИ
+    if (store.get("how", "autopilot") === "autopilot" && !b.variants.length) {
+      renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems: [S.stem], engine: S.engine, mode: S.mode, parallel: 1, how: "autopilot" } }));
+      say("brain-say", `${S.stem}: монтирует автопилот — подготовка, ИИ решает, что показать, критик смотрит черновик, рендер. Ход — в строке пачки, лог — work/${S.stem}/autopilot.log.`);
+      return;
+    }
+    if (b.variants.length && store.get("how", "autopilot") === "autopilot") say("brain-say", "В брифе варианты A/B — их автопилот пока не делает: монтирует сессия ИИ, как раньше.");
     const variants = b.variants.length ? ` Плюс варианты для A/B: ${b.variants.map(styleName).join(", ")} — каждый отдельным проектом (compose/render_reel --variant).` : "";
     const text = `Смонтируй ${S.stem} по брифу (work/${S.stem}/brief.json): стиль «${styleName(b.style)}», форматы ${b.formats.join(", ")}.${variants} Тяжёлое — через очередь. В конце коротко отчитайся: что где на экране, что спорно, как откатить.`;
     await newThread(`${S.stem}: монтаж`);
@@ -2576,6 +2587,8 @@ $("batch-go").addEventListener("click", async () => {
     if (!b.new.length) { say("brain-say", "Новых роликов нет: у всех есть выпуски."); return; }
     $("batch-pick").innerHTML = b.new.map((s) => `<label class="pick"><input type="checkbox" value="${esc(s)}" checked>${esc(s)}</label>`).join("");
     $("batch-par").value = String(store.get("batchPar", 3));
+    const how = store.get("how", "autopilot");
+    document.querySelectorAll('#batch-how input').forEach((x) => { x.checked = x.value === how; });
     $("batch-dialog").showModal();
   } catch (e) { say("brain-say", e.message, true); }
 });
@@ -2584,8 +2597,9 @@ $("batch-start").addEventListener("click", async () => {
   const stems = [...document.querySelectorAll("#batch-pick input:checked")].map((x) => x.value);
   if (!stems.length) return;
   const parallel = Number($("batch-par").value) || 1; store.set("batchPar", parallel);
-  try { renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel } })); $("batch-dialog").close();
-        say("brain-say", `Пачка: ${stems.length} роликов, ${parallel > 1 ? `по ${parallel} разом` : "по одному"}, каждый в своей сессии.`); }
+  const how = (document.querySelector('#batch-how input:checked') || {}).value || "autopilot"; store.set("how", how);
+  try { renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel, how } })); $("batch-dialog").close();
+        say("brain-say", `Пачка: ${stems.length} роликов, ${parallel > 1 ? `по ${parallel} разом` : "по одному"}, ${how === "autopilot" ? "автопилотом" : "каждый в своей сессии ИИ"}.`); }
   catch (e) { say("brain-say", e.message, true); }
 });
 
@@ -2733,7 +2747,7 @@ async function upload(files, auto = null) {
   if (auto ?? $("auto-ai").checked) {
     if (stems.length === 1) { say("brain-say", "Загружено — запускаю ИИ-монтаж."); await startAiMontage(); }
     else { say("brain-say", `Загружено ${stems.length} видео — монтирую, каждое в своей сессии ИИ (до ${store.get("batchPar", 3)} разом).`);
-           try { renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel: store.get("batchPar", 3) } })); } catch (e) { say("brain-say", e.message, true); } }
+           try { renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel: store.get("batchPar", 3), how: store.get("how", "autopilot") } })); } catch (e) { say("brain-say", e.message, true); } }
   } else say("brain-say", `Готово: ${stems.length > 1 ? `${stems.length} видео` : "видео"} в проекте. Жми «▶ Запустить ИИ-монтаж».`
                           + (skip.length ? ` Не видео, пропущено: ${skip.map((f) => f.name).join(", ")}.` : ""));
 }

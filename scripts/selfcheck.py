@@ -2317,7 +2317,7 @@ def check_batch(report: Report, tmp: Path):
                 (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
             (made["fresh"].input / "РОЛИК_В.MOV").write_bytes(b"v")
             live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_В"], "engine": "claude",
-                                                "parallel": 2},
+                                                "parallel": 2, "how": "brain"},
                       headers={"X-Studio-Token": TOKEN})
             for _ in range(200):
                 time.sleep(0.05)
@@ -2348,6 +2348,40 @@ def check_batch(report: Report, tmp: Path):
                  and not items[2].get("thread"),
                  "ролик проекта без анкеты пачка не монтирует — «нужен человек», сессия не тратится",
                  f"{items[2]['status']}: {items[2]['note'][:60]}" if len(items) > 2 else "нет третьего ролика")
+
+    # автопилотом (по умолчанию с 19.10.2026): итог ролика — по коду выхода autopilot.py (0 готово, 3 нужен человек,
+    # иначе не вышло), ход — строками его вывода; ИИ и очередь не трогаются: команда подставная
+    fake = tmp / "fake_autopilot.py"
+    fake.write_text("import sys\nstem = sys.argv[1]\nprint('▶ автопилот', stem)\nprint('  → очередь: 20-prep-' + stem)\n"
+                    "code = {'РОЛИК_А': 0, 'РОЛИК_Б': 3}.get(stem, 1)\n"
+                    "print(('✓ ' if code == 0 else '✗ ') + stem + (': готов' if code == 0 else ': нужен человек — брак' if code == 3 "
+                    "else ': упал'))\nsys.exit(code)\n", encoding="utf-8")
+    saved_ap = (studio_api.AUTOPILOT_CMD, studio_api.AUTOPILOT_LOGS)
+    studio_api.AUTOPILOT_CMD = lambda stem: [sys.executable, str(fake), stem]
+    studio_api.AUTOPILOT_LOGS = tmp / "autopilot_logs"
+    studio_api.batch.update(running=False, items=[])
+    auto = []
+    try:
+        with temp_projects(tmp / "auto_projects", "main") as made, TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            sys.modules["projects"].save_setup(made["main"], READY_ANSWERS)
+            for stem in ("РОЛИК_А", "РОЛИК_Б", "РОЛИК_Г"):
+                (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_Г"], "engine": "claude", "parallel": 2},
+                      headers={"X-Studio-Token": TOKEN})
+            for _ in range(200):
+                time.sleep(0.05)
+                if not studio_api.batch["running"]:
+                    break
+            auto = [dict(i) for i in studio_api.batch["items"]]
+    finally:
+        studio_api.AUTOPILOT_CMD, studio_api.AUTOPILOT_LOGS = saved_ap
+        studio_api.batch.update(running=False, items=[])
+        (studio_api.WORK_DIR / "_studio" / "batch.json").unlink(missing_ok=True)
+    logged = (tmp / "autopilot_logs" / "РОЛИК_А" / "autopilot.log").exists()
+    report.check([i["status"] for i in auto] == ["done", "needs_human", "failed"] and logged
+                 and "брак" in auto[1]["note"] and not any(i.get("thread") for i in auto),
+                 "пачка автопилотом: готово, нужен человек и «не вышло» — по коду выхода, ход — в логе, сессий мозга нет",
+                 "; ".join(f"{i['stem']}: {i['status']} ({i['note'][:40]})" for i in auto) or "пачка не прошла")
 
 
 def check_ai_workflow(report: Report, tmp: Path):

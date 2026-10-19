@@ -58,9 +58,9 @@ def prepare(stem: str) -> None:
     # дубль, забракованный в правилах проекта («IMG_3308 — сорван, не монтировать»), не готовится зря: маска — десятки
     # минут счёта (19.10.2026: автопилот готовил IMG_3308, а аналитик потом нашёл его в п.6 правил)
     rules = project.rules.read_text(encoding="utf-8") if project.rules.exists() else ""
-    for line in rules.splitlines():
-        if stem in line and re.search(r"не монтир|сорван|брак", line, re.I):
-            raise Stop(f"в правилах проекта {stem} помечен как негодный: «{line.strip()[:200]}» — монтаж только по просьбе")
+    for sentence in re.split(r"(?<=[.!?])\s+", rules):
+        if stem in sentence and re.search(r"не монтир|сорван|брак", sentence, re.I):
+            raise Stop(f"в правилах проекта: «{' '.join(sentence.split())[:160]}» — монтаж только по просьбе")
     src = str(source.relative_to(ROOT))
     work = WORK_DIR / stem
     if not (WORK_DIR / f"{stem}.words.json").exists():
@@ -102,6 +102,11 @@ def run(stem: str, critic: bool = True, render: bool = True) -> None:
     analyst.run(stem, None)
     if critic:
         analyst.critique(stem, None)
+    # ИИ-клипы Flow автопилот не генерирует (это браузер и бонусы подписки) — берёт только уже принятые; правило проекта
+    # «ИИ-видео 1–2 на ролик» тогда не выполнено — сказать до рендера, а не молча (AGENTS.md: «чего-то не может — говорит»)
+    import score as sc
+    if not any(item.get("kind") == "clip" for item in sc.load(stem).get("items") or []):
+        print(f"  · ИИ-клипов Flow нет: автопилот их не делает — нужен клип, попроси в чате «оживи» про {stem}", flush=True)
     if render:
         queued(f"05-render-{stem}", [f"python scripts/render_reel.py {stem}"], timeout_min=60)
     spent = [json.loads(line) for line in (WORK_DIR / stem / "analyst.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -116,15 +121,22 @@ def main():
     ap.add_argument("--no-critic", action="store_true")
     ap.add_argument("--no-render", action="store_true", help="остановиться на странице — посмотреть в студии")
     args = ap.parse_args()
-    failed = []
+    import analyst
+    human, failed = [], []
     for stem in args.stems:                # роликов несколько — по одному: тяжёлое всё равно одной очередью
         try:
             run(stem, critic=not args.no_critic, render=not args.no_render)
-        except (Stop, RuntimeError) as e:
+        except (Stop, analyst.Skipped) as e:   # решать человеку: брак, согласие на маску
+            print(f"✗ {stem}: нужен человек — {e}", flush=True)
+            human.append(stem)
+        except RuntimeError as e:
             print(f"✗ {stem}: {e}", flush=True)
             failed.append(stem)
+    # код выхода — для студии: 0 готово, 3 нужен человек, 1 не вышло
     if failed:
-        sys.exit(f"✗ не вышло: {', '.join(failed)}")
+        sys.exit(1)
+    if human:
+        sys.exit(3)
 
 
 if __name__ == "__main__":

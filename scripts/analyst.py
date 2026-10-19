@@ -15,6 +15,7 @@ $9). Аналитик делает только то, где нужен ум, �
 Цена каждого хода — в work/<имя>/analyst.jsonl (токены, $, секунды): так считается «до и после».
 """
 import argparse
+import contextlib
 import json
 import re
 import subprocess
@@ -221,17 +222,34 @@ def parse(text: str) -> dict:
         raise sc.ScoreError(f"ответ — не JSON партитуры: {e}") from None
 
 
+@contextlib.contextmanager
+def page_slot():
+    """Сборка, проверка и снимки страницы — по одной на машине: в них Chromium, а пачка гонит несколько автопилотов
+    разом (студия, до 4). ИИ думают параллельно, страницы проверяются по очереди (инвариант 2)."""
+    import host
+    path = WORK_DIR / "_studio" / "page.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+", encoding="utf-8")
+    try:
+        while not host.try_lock(handle):
+            time.sleep(1)
+        yield
+    finally:
+        handle.close()                                  # замок снимается вместе с файлом
+
+
 def assemble(stem: str, variant: str | None, score: dict) -> list:
     """Партитура → страница → проверка. Возвращает провалы (пусто — можно рендерить)."""
     import compose
     import verify_page
     name = compose.project_name(stem, variant)
     project = compose.STUDIO / name
-    if not (project / "camera.js").exists():
-        compose.compose(stem, variant=variant)          # первая сборка: камера и ассеты — сплиту нужна камера
-    sc.build(stem, variant, score)
-    compose.compose(stem, variant=variant)              # субтитры с решениями партитуры
-    return verify_page.verify(name)
+    with page_slot():
+        if not (project / "camera.js").exists():
+            compose.compose(stem, variant=variant)      # первая сборка: камера и ассеты — сплиту нужна камера
+        sc.build(stem, variant, score)
+        compose.compose(stem, variant=variant)          # субтитры с решениями партитуры
+        return verify_page.verify(name)
 
 
 def run(stem: str, variant: str | None = "auto", tries: int = TRIES) -> Path:
@@ -333,7 +351,8 @@ def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
     import shutil
     log = WORK_DIR / stem / "analyst.jsonl"
     score = sc.load(stem, variant)
-    picture = sheet(stem, variant, score)
+    with page_slot():
+        picture = sheet(stem, variant, score)
     shutil.copy2(picture, home() / "sheet.png")
     prompt = ("Партитура ролика:\n" + json.dumps(score, ensure_ascii=False, indent=1) + "\n\n" + material(stem)
               + "\n\nЛист кадров черновика — sheet.png. Ответь JSON.")

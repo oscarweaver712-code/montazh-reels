@@ -1216,11 +1216,11 @@ docs/АРСЕНАЛ.md) → plan.py {stem} --check, и только потом �
   СТАТУС: ЖДУ ОЧЕРЕДЬ — поставил задачи, продолжу после них;
   СТАТУС: НУЖЕН ЧЕЛОВЕК — <что решить> — если без человека дальше нельзя (сорванный дубль и т.п.)."""
 batch: dict = {"running": False, "items": [], "engine": None, "mode": "safe", "stop": False, "started": None,
-               "parallel": 1}
+               "parallel": 1, "how": "autopilot", "procs": {}}
 
 
 def batch_view() -> dict:
-    return {k: batch.get(k) for k in ("running", "items", "engine", "mode", "started", "parallel")}
+    return {k: batch.get(k) for k in ("running", "items", "engine", "mode", "started", "parallel", "how")}
 
 
 def batch_save() -> None:
@@ -1253,9 +1253,68 @@ async def batch_turn(thread: dict, text: str) -> dict:
     return thread["messages"][-1]
 
 
-async def batch_item(item: dict) -> None:
-    """Один ролик пачки: своя сессия, ходы до «СТАТУС», ожидание своих задач очереди."""
+# команда автопилота и папка его лога — переменные модуля: самопроверка подставляет свои (без ИИ и без work/)
+AUTOPILOT_CMD = lambda stem: [str(host.venv_python()), "-u", str(ROOT / "scripts" / "autopilot.py"), stem]    # noqa: E731
+AUTOPILOT_LOGS = WORK_DIR
+
+
+async def batch_autopilot(item: dict) -> None:
+    """Один ролик пачки автопилотом (scripts/autopilot.py, этап 3, 19.10.2026): подготовка очередью, аналитик и критик
+    короткими ходами, рендер — без длинного хода мозга (~$2 за ролик против $2–31). Вывод — work/<имя>/autopilot.log,
+    итог — по коду выхода: 0 готово, 3 нужен человек (брак, согласие на маску), иначе не вышло."""
     stem = item["stem"]
+    log_path = AUTOPILOT_LOGS / stem / "autopilot.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    item.update(status="working", note="автопилот: подготовка дубля")
+    batch_save()
+    lines = []
+    try:
+        proc = subprocess.Popen(AUTOPILOT_CMD(stem), cwd=ROOT,
+                                env=brain.child_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, **host.own_group())
+    except OSError as e:
+        item.update(status="failed", note=f"автопилот не запустился: {e}"[:300])
+        return
+    batch["procs"][stem] = proc
+
+    def read() -> int:
+        with log_path.open("w", encoding="utf-8") as log:
+            for raw in iter(proc.stdout.readline, b""):
+                line = raw.decode("utf-8", "replace").rstrip()
+                log.write(line + "\n")
+                log.flush()
+                lines.append(line)
+                step = line.strip()
+                if step.startswith(("→ очередь", "ход ", "критик", "·")):    # что сейчас — в строку пачки
+                    item["note"] = ("автопилот: " + step.lstrip("→· "))[:300]
+        return proc.wait()
+
+    code = await asyncio.to_thread(read)
+    batch["procs"].pop(stem, None)
+    if batch["stop"]:
+        item.update(status="skipped", note="пачку остановили")
+        return
+    last = next((x.strip() for x in reversed(lines) if x.strip().startswith(("✓", "✗"))), "")
+    flow = next((x.strip("· ").strip() for x in lines if "ИИ-клипов Flow нет" in x), "")
+    if code == 0:
+        item.update(status="done", note=(last + (f" · {flow}" if flow else ""))[:300])
+    elif code == 3:
+        item.update(status="needs_human", note=last[:300])
+    else:
+        item.update(status="failed", note=(last or f"автопилот вышел с кодом {code}")[:300])
+
+
+async def batch_item(item: dict) -> None:
+    """Один ролик пачки: автопилот или своя сессия мозга — ходы до «СТАТУС», ожидание своих задач очереди."""
+    stem = item["stem"]
+    if batch.get("how") == "autopilot":
+        gate = setup_gate(stem)
+        if gate:
+            item.update(status="needs_human", note=gate[:300])
+            batch_save()
+            return
+        await batch_autopilot(item)
+        return
     try:
         project = projects.of(stem).name
     except projects.ProjectError as e:
@@ -1390,7 +1449,10 @@ async def batch_start(data: dict = Body(...)):
         parallel = max(1, min(MAX_BRAINS, int(data.get("parallel", 1))))
     except (TypeError, ValueError):
         raise HTTPException(400, "parallel — число роликов разом, от 1 до %d" % MAX_BRAINS)
-    batch.update(running=True, stop=False, engine=engine, mode=data.get("mode", "safe"), parallel=parallel,
+    how = data.get("how", "autopilot")
+    if how not in ("autopilot", "brain"):
+        raise HTTPException(400, "how — autopilot (аналитик и критик короткими ходами) или brain (сессия мозга на ролик)")
+    batch.update(running=True, stop=False, engine=engine, mode=data.get("mode", "safe"), parallel=parallel, how=how,
                  started=time.time(), items=[{"stem": s, "status": "queued", "thread": None, "note": ""} for s in stems])
     batch_save()
     asyncio.create_task(run_batch())
@@ -1405,4 +1467,6 @@ def batch_stop():
         if not run["done"] and run.get("proc"):
             run["stopped"] = True
             host.kill_tree(run["proc"].pid)
+    for proc in list(batch["procs"].values()):        # автопилоты — со всеми их шагами (ход ИИ, снимки)
+        host.kill_tree(proc.pid)
     return batch_view()

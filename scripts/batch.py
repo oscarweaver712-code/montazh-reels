@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Пачка роликов из терминала: каждый ролик — в своей новой сессии мозга.
+"""Пачка роликов из терминала: автопилотом (scripts/autopilot.py, с 19.10.2026) или каждый — в своей сессии мозга.
 
 Правило Валеры (11.10.2026): одно видео — одна сессия. Контекст у сессии конечный, и если
 монтировать всю пачку в одном разговоре, каждый следующий ролик выходит хуже. Поэтому на
@@ -61,10 +61,12 @@ def show(state: dict) -> str:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Пачка роликов: каждый — в своей сессии мозга")
+    ap = argparse.ArgumentParser(description="Пачка роликов: автопилотом (по умолчанию) или каждый в своей сессии мозга")
     ap.add_argument("stems", nargs="*", help="ролики (имя без расширения); по умолчанию — все новые")
     ap.add_argument("--engine", choices=("claude", "codex"), default="claude")
     ap.add_argument("--mode", choices=("safe", "full"), default="safe")
+    ap.add_argument("--brain", action="store_true",
+                    help="сессия мозга на ролик, как до 19.10 (дороже, сам делает клипы Flow); без флага — автопилот")
     ap.add_argument("--watch", action="store_true", help="следить, пока пачка не кончится")
     ap.add_argument("--status", action="store_true", help="только показать ход пачки")
     args = ap.parse_args()
@@ -78,8 +80,10 @@ def main():
     if args.status:
         print(show(call("/api/brain/batch")))
         return
-    started = call("/api/brain/batch", {"stems": args.stems, "engine": args.engine, "mode": args.mode}, token())
-    print(f"✓ Пачка запущена ({args.engine}): каждый ролик — в своей сессии, ход виден в студии {studio_up.URL}")
+    how = "brain" if args.brain else "autopilot"
+    started = call("/api/brain/batch", {"stems": args.stems, "engine": args.engine, "mode": args.mode, "how": how}, token())
+    print(f"✓ Пачка запущена ({'автопилот: аналитик и критик короткими ходами' if how == 'autopilot' else args.engine + ': каждый ролик — в своей сессии'}), "
+          f"ход виден в студии {studio_up.URL}")
     print(show(started))
     last = ""
     while args.watch:
