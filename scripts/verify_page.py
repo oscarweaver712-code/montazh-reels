@@ -220,7 +220,11 @@ CHECK_JS = r"""
           for (let p = nodes[0].parentElement; p && p.id !== "root" && p !== document.body; p = p.parentElement) {
             if (getComputedStyle(p).overflow !== "visible") clips.push(p);
           }
-          items.push({ el, nodes, clips, allowed: safe ? safe.getAttribute("data-safe") : null });
+          // data-safe-zones="низ" — осознанно только в этих зонах (начало названия), в остальных — заезд (19.10.2026:
+          // «Чертёж» на груди прощал себе и боковую обрезку — подпись ушла за край, а проверка молчала)
+          const only = safe && safe.getAttribute("data-safe-zones");
+          items.push({ el, nodes, clips, allowed: safe ? safe.getAttribute("data-safe") : null,
+                       zonesOk: only ? only.split(",").map((z) => z.trim()) : null });
         }
       });
       const visible = (el) => {
@@ -265,7 +269,7 @@ CHECK_JS = r"""
                 if (rec) { rec.last = t; rec.count++; rec.depth = Math.max(rec.depth, Math.round(depth)); }
                 else open.set(key, { el: label(it.el), zone: z.name, from: t, last: t, count: 1,
                                      depth: Math.round(depth), text: node.textContent.trim().slice(0, 40),
-                                     allowed: it.allowed });
+                                     allowed: it.zonesOk && !it.zonesOk.some((ok) => z.name.startsWith(ok)) ? null : it.allowed });
               }
             }
           }

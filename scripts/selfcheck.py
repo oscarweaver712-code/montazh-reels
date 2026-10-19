@@ -714,7 +714,10 @@ def check_captions(report: Report):
     marked = caption_chunks([{"word": "в", "start": 0.1, "end": 0.2}, {"word": "Индии.", "start": 0.25, "end": 0.7},
                              {"word": "Пётр", "start": 0.9, "end": 1.2}, {"word": "I.", "start": 1.25, "end": 1.5}],
                             {"accent_words": ["Индии."], "keep_case": ["Пётр", "I."]}, duration=2.0)
-    report.check([(c["text"], c["accent"]) for c in marked] == [("в индии", True), ("Пётр I", False)],
+    plain = caption_chunks([{"word": "Петр", "start": 0.1, "end": 0.4}, {"word": "I.", "start": 0.45, "end": 0.7}], {},
+                           duration=1.0)          # имя не в keep_case (партитура аналитика) — номер всё равно с ним
+    report.check([(c["text"], c["accent"]) for c in marked] == [("в индии", True), ("Пётр I", False)]
+                 and [c["text"] for c in plain] == ["петр I"],
                  "ключевые слова и регистр режиссёра — и со знаками препинания; «Пётр I» одной вспышкой",
                  " · ".join(f'{c["text"]}{"*" if c["accent"] else ""}' for c in marked))
 
@@ -1457,6 +1460,35 @@ def check_events(report: Report, tmp: Path):
                  f"с подложкой {with_bed and round(with_bed[0], 1)} дБ, без — {dry and round(dry[0], 1)} дБ")
 
 
+def check_score(report: Report):
+    """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
+    каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
+    дольше 3 с без субтитров, вставка поверх призыва, три подряд в одной раскладке, предложение в подписи."""
+    import score as sc
+
+    print("\nПартитура")
+    words = [{"word": f"слово{i}", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(40)]      # 20 с речи
+    good = {"hook": "auto", "cta": {"w": 36}, "accent": ["слово3"],
+            "items": [{"kind": "word", "w": [1, 3], "text": "хук"},
+                      {"kind": "write", "w": [8, 12], "layout": "chest", "text": "1 2 3", "sub": "факт"},
+                      {"kind": "route", "layout": "behind", "until": 20, "stops": [{"label": "А", "x": 0.1, "y": 0.2, "w": 16},
+                                                                                     {"label": "Б", "x": 0.9, "y": 0.2, "w": 18}]},
+                      {"kind": "write", "w": [24, 28], "layout": "split", "text": "XVIII", "over": 26, "titlo": True}]}
+    bad = {"cta": {"w": 20}, "items": [
+        {"kind": "flash", "w": [1, 2]},
+        {"kind": "write", "w": [5, 99], "text": "x"},
+        {"kind": "write", "w": [10, 11], "layout": "chest", "text": "a"},
+        {"kind": "stamp", "w": [13, 13], "text": "b"},
+        {"kind": "write", "w": [15, 16], "layout": "chest", "text": "c", "sub": "это целое предложение, а не подпись к числу"},
+        {"kind": "write", "w": [30, 32], "layout": "split", "text": "d"}]}
+    errs_good, errs_bad = sc.check(good, words), sc.check(bad, words)
+    want = {"приёма «flash» нет": "чужой приём", "номер слова 99": "слово за краем", "cta на слове 20": "призыв рано",
+            "идёт после призыва": "вставка после призыва", "3 подряд «chest»": "однообразие", "знаков, а в строку": "длинная подпись"}
+    missed = [what for key, what in want.items() if not any(key in e for e in errs_bad)]
+    report.check(not errs_good and not missed, "партитура: годная проходит, ошибки аналитика ловятся до сборки",
+                 f"годная: {'; '.join(errs_good) or 'чисто'}; не поймано: {', '.join(missed) or 'ничего'}")
+
+
 def check_blueprint(report: Report, tmp: Path):
     """«Чертёж» (scripts/blueprint.py, 19.10.2026): все приёмы складываются в страницу без ошибок и залипаний; в сплите
     проверка лица видит человека в окне листа (движение #stage не выкидывается из прогона); лист во весь кадр — это
@@ -1561,10 +1593,13 @@ def check_grey_zones(report: Report, tmp: Path):
              '        <div id="z-ok" class="g lead" style="top: 1000px;">центр</div>\n'
              '        <div id="z-safe" class="g lead" data-safe="стрелка на ник — намеренно"'
              ' style="top: 1700px;">ник</div>\n'
+             # data-safe-zones="низ": внизу — осознанно, а за правой обрезкой — заезд (19.10.2026, «Чертёж» на груди)
+             '        <div id="z-chest" class="g lead" data-safe="на груди" data-safe-zones="низ"'
+             ' style="top: 1700px; left: 700px; width: 600px; text-align: left; white-space: nowrap;">вбок за обрезку справа</div>\n'
              # лента в окне с overflow: hidden: её хвост за окном (и под кнопками справа) не виден — не заезд
              '        <div id="z-tape" class="g" style="left: 300px; top: 800px; width: 400px; height: 90px; overflow: hidden;">'
              '<div class="lead" style="left: 0; width: auto; white-space: nowrap; font-size: 70px;">лента бежит далеко вправо за окно</div></div>')
-    beats = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("z-top", "z-right", "z-ok", "z-safe", "z-tape"))
+    beats = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 0.2);\n' for i in ("z-top", "z-right", "z-ok", "z-safe", "z-tape", "z-chest"))
     (project / "index.html").write_text(build_page("зоны", 2.0, behind, front, beats, [], [], cta_at=5.0),
                                         encoding="utf-8")
     res = run_timeline(project / "index.html", zones=formats.grey_zones("9:16"))
@@ -1577,6 +1612,11 @@ def check_grey_zones(report: Report, tmp: Path):
                  ", ".join(sorted(f"{el} ({z})" for el, z in grey)) or "ничего не поймано")
     report.check("#z-safe" in allowed, "осознанный заезд (data-safe) идёт отдельным списком, а не ошибкой",
                  ", ".join(sorted(allowed)) or "не найден")
+    chest = {g["zone"].split(":")[0] for g in res.get("grey", []) if g["el"] == "#z-chest"}
+    chest_ok = {g["zone"].split(":")[0] for g in res.get("greyAllowed", []) if g["el"] == "#z-chest"}
+    report.check("справа" in chest and chest_ok == {"низ"},
+                 "data-safe-zones: прощён только названный низ, заезд за боковую обрезку — ошибка",
+                 f"ошибкой: {sorted(chest) or 'ничего'}, прощено: {sorted(chest_ok) or 'ничего'}")
 
     # лицо: карточка поверх лица — ошибка (Валера, 12.10.2026: «карточки никогда не должны перекрывать
     # лицо»); та же карточка ниже подбородка и субтитр — нет. Лицо — как его даёт слежение с камерой.
@@ -3741,6 +3781,7 @@ def main():
     section(report, check_cuts)
     section(report, check_edges)
     section(report, check_captions)
+    section(report, check_score)
     section(report, check_cleanup_on_failure, preset)
     section(report, check_long_runs)
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:

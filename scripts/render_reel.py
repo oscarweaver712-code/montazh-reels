@@ -75,7 +75,9 @@ def render_reel(stem: str, version: str, variant: str | None = None, need_plan: 
                      f"возьми другую версию (--version {next_version(name)})")
     # сначала план, потом сборка (правило Валеры 13.10.2026): без годного плана ролик не считается
     if need_plan:
-        problems = plan_problems(stem)
+        import score
+        problems = score.plan_problems(stem, variant, (project / "index.html").read_text(encoding="utf-8"))
+        problems = plan_problems(stem) if problems is None else problems      # страница из партитуры — её план
         if problems:
             raise Failed("план не готов, рендер не запускаю (сначала план — потом сборка): "
                          + "; ".join(problems[:6]) + f". Проверка: .venv/bin/python scripts/plan.py {stem} --check")

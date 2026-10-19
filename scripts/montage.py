@@ -290,6 +290,18 @@ class Montage:
             import blueprint as bp
             self.css(bp.SPLIT_CSS)
 
+        # окно вырезки не заходит на перебивку: человек поверх клипа или листа во весь кадр — провал verify_page
+        # (19.10.2026, партитура аналитика IMG_3303: слово хука кончалось на 0,25 с позже, чем входил клип)
+        fg = []
+        for a0, b0 in sorted(self.fg_windows):
+            for c0, c1 in sorted(self.cutaways):
+                if c0 < b0 and c1 > a0:
+                    b0 = min(b0, c0 - 0.05) if c0 > a0 else b0
+                    a0 = max(a0, c1 + 0.05) if c0 <= a0 else a0
+            if b0 - a0 >= 0.2:
+                fg.append((round(a0, 2), round(b0, 2)))
+        self.fg_windows = fg
+
         switch, whips = [], ""
         if framing:
             keep = list(self.wide_windows) + list(self.cutaways) + list(self.fg_windows) + [tuple(x) for x in tk.bloopers]
@@ -301,7 +313,10 @@ class Montage:
 
         beats = page_js + "".join(auto_js)
         soft = sorted(set(page_events(beats)) | set(self.extra_soft))
-        self.sounds += kit.soft_track(soft, self.sounds)
+        # щелчок плашки призыва ставит build_page позже — раскладка тихих звуков должна знать его заранее, иначе тихий
+        # звук встаёт вплотную к нему и check_sounds роняет сборку (19.10.2026, партитура аналитика IMG_3292: cta на 57,1 с)
+        cta_pop = [kit.audio("cta", "pop", cta_at)] if self.cfg.get("cta", True) and cta_at is not None else []
+        self.sounds += kit.soft_track(soft, self.sounds + cta_pop)
         n_soft = sum('id="sfx-soft' in s for s in self.sounds)
         if n_soft < dur / SOFT_EVERY:
             raise ValueError(f"Тихих звуков монтажа {n_soft} на {dur:.0f} с — меньше одного на {SOFT_EVERY:g} с: на странице мало "

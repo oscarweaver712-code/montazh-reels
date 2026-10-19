@@ -159,7 +159,8 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
     # на экране, и из восьми ключевых слов IMG_3292 подсвечивалось одно; «I.» в keep_case — и «Пётр I» шёл как «i»
     edge = lambda x: re.sub(r"^[«\"]+|[.,!?;:«»\"]+$", "", x.strip())      # noqa: E731
     keep_case = {edge(w) for w in director.get("keep_case") or []}
-    accents = {edge(w).lower() for w in director.get("accent_words") or []}
+    # «Пётр I» в списке — оба слова; однобуквенные («I», «в») не подсвечиваются сами по себе
+    accents = {part for w in director.get("accent_words") or [] for part in edge(w).lower().split() if len(part) > 1}
 
     tokens = []
     for i, w in enumerate(words):
@@ -171,6 +172,7 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
             continue                        # отдельное тире — не слово, вспышкой не показывается
         stop = bool(re.search(r"[.!?…]+[»\"]*$", text))
         pause_mark = bool(re.search(r"[,;:—]+[»\"]*$", text))
+        raw = bare                              # как сказано: регистр — для склейки «Пётр I»
         if case == "natural":
             bare = re.sub(r"^[«\"]+", "", text)    # регистр и знаки как сказано
         else:
@@ -181,12 +183,13 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
             tokens[-1]["text"] += bare
             tokens[-1]["end"] = w["end"]
             continue
-        # «Пётр I», «Екатерина II» — номер одной вспышкой с именем, а не отдельной «I» (19.10.2026, IMG_3292)
-        if (tokens and re.fullmatch(r"[IVX]{1,4}", bare) and re.fullmatch(r"[А-ЯЁA-Z][а-яёa-z]{2,}", tokens[-1]["text"])
+        # «Пётр I», «Екатерина II» — номер одной вспышкой с именем, а не отдельной «I» (19.10.2026, IMG_3292). Регистр —
+        # как сказано (raw): у партитуры аналитика имя не в keep_case, и «петр» в нижнем регистре номер не узнавал
+        if (tokens and re.fullmatch(r"[IVX]{1,4}", raw) and re.fullmatch(r"[А-ЯЁA-Z][а-яёa-z]{2,}", tokens[-1]["raw"])
                 and not tokens[-1]["stop"]):
-            tokens[-1].update(text=f'{tokens[-1]["text"]} {bare}', end=w["end"], stop=stop, mark=pause_mark)
+            tokens[-1].update(text=f'{tokens[-1]["text"]} {raw}', end=w["end"], stop=stop, mark=pause_mark)
             continue
-        tokens.append({"text": bare, "start": w["start"], "end": w["end"], "stop": stop,
+        tokens.append({"text": bare, "raw": raw, "start": w["start"], "end": w["end"], "stop": stop,
                        "mark": pause_mark})
 
     chunks, i = [], 0
@@ -300,7 +303,9 @@ def project_name(stem: str, variant: str | None = None) -> str:
 # молча собрать ролик в стиле по умолчанию.
 TEST_VARIANTS = {"sfx": "тихие звуки на переходах и влётах текста — тест удержания (16.10.2026, rules.md п.9)",
                  "music": "еле слышная фоновая музыка (лоу-фай из фонотеки YouTube) — тест удержания (17.10.2026, rules.md п.9)",
-                 "montage": "сборка montage.py: обязательное ставится само — вспышка хука, склейки, звуки, музыка (19.10.2026)"}
+                 "montage": "сборка montage.py: обязательное ставится само — вспышка хука, склейки, звуки, музыка (19.10.2026)",
+                 "manual": "партитура вручную (score.manual.json → score.py) — эталон для аналитика (19.10.2026, этап 3)",
+                 "auto": "партитура аналитика (analyst.py → score.auto.json → score.py): монтаж без page.py (19.10.2026, этап 3)"}
 
 
 def ruling_style(stem: str, variant: str | None = None) -> dict | None:

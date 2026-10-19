@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-score" content="score.auto.json" />
+    <meta name="reels-montage" content="2026-10-19" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Почему соты шестиугольные</title>
+    <script src="assets/gsap.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <script src="layers.js"></script>
+    <script src="edits.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 94px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+
+      /* «Чертёж» (scripts/blueprint.py, 19.10.2026): кремовые линии, красный акцент, подписи Manrope */
+      /* толщина и кегли — под экран телефона (19.10.2026: «почему такая маленькая»): 3,5 px линии и 30 px подписи
+         читались как тонкий технический чертёж, рядом со словом за головой в 150 px — мелко */
+      .bp-svg { position: absolute; left: 0; top: 0; overflow: visible; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.6)); }
+      .bp-ln { fill: none; stroke: #F2EBDD; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .bp-ln.red { stroke: #F0352C; stroke-width: 7; }
+      .bp-ln.thin { stroke-width: 3; stroke: rgba(242,235,221,0.6); }
+      .bp-dot { fill: #F2EBDD; opacity: 0; }
+      .bp-dot.red { fill: #F0352C; }
+      .bp-fill { fill: #F0352C; opacity: 0; }
+      .bp-lbl { position: absolute; white-space: nowrap; opacity: 0; text-align: center;
+                font-family: "Manrope"; font-weight: 800; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase;
+                color: #F2EBDD; text-shadow: 0 2px 10px rgba(0,0,0,0.65); }
+      .bp-lbl.red { color: #F0352C; }
+      /* середина подписи на точке — xPercent/yPercent GSAP (_piece), не translate(−50%) в CSS: его GSAP узнаёт только при
+         точном совпадении округлённой ширины, и подпись с дробной шириной съезжала вправо на половину себя (19.10.2026,
+         «1202 · ФИБОНАЧЧИ» в проверке ушла в обрезку). У края — выравнивание внутрь: left или right от точки */
+      .bp-lbl.al { text-align: left; }
+      .bp-lbl.ar { text-align: right; }
+      [data-safe] .bp-lbl { background: rgba(20,18,16,0.78); padding: 4px 14px 6px; border-radius: 4px; }
+      .bp-lbl.big { font-family: "Oswald"; font-weight: 700; font-size: 80px; letter-spacing: 0.02em; line-height: 1; }
+      .bp-lbl .sub { display: block; margin-top: 4px; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                     font-size: 38px; letter-spacing: 0; text-transform: none; opacity: 0.9; }
+      .bp-write { fill: rgba(242,235,221,0); stroke: #F2EBDD; stroke-width: 5; stroke-dasharray: 3000; stroke-dashoffset: 3000;
+                  font-family: "Oswald"; font-weight: 700; paint-order: stroke; direction: ltr; unicode-bidi: bidi-override; }
+      /* порядок знаков — как написан (19.10.2026: восточные цифры «١ ٢ ٣ ٤ ٥» через пробел браузер клал справа налево) */
+      .bp-mark { fill: #F0352C; opacity: 0; }
+      .bp-sheet { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; opacity: 0; }
+      #stage { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; transform-origin: 0 0; }
+      #caps { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="56.300" data-width="1080" data-height="1920">
+      <div id="stage">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="56.300" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="s1-clip" class="g footage" style="left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000;">
+          <video id="s1-clip-clip" class="clip" src="assets/footage/a_tower.mp4" muted playsinline data-start="2.45" data-duration="1.90" data-track-index="2"
+                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(0.55) contrast(1.04) brightness(1.1);"></video>
+          <div style="position: absolute; inset: 0; background: #F2EBDD; mix-blend-mode: soft-light; opacity: 0.22;"></div>
+          <svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="lk1-g" width="90" height="90" patternUnits="userSpaceOnUse"><path d="M 90 0 L 0 0 0 90" fill="none" stroke="#F2EBDD" stroke-opacity="0.1" stroke-width="1.2" /></pattern></defs><rect width="1080" height="1920" fill="url(#lk1-g)" /><rect x="36" y="36" width="1008" height="1848" fill="none" stroke="#F2EBDD" stroke-opacity="0.55" stroke-width="2.5" /><path d="M 54 300 H 106 M 80 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 300 H 1026 M 1000 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 54 1300 H 106 M 80 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 1300 H 1026 M 1000 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /></svg>
+          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; font-family: Manrope; font-weight: 800; font-size: 32px; letter-spacing: 0.18em; text-transform: uppercase; color: #F2EBDD; text-shadow: 0 2px 8px rgba(0,0,0,0.7); background: rgba(20,18,16,0.6); padding: 6px 14px 8px; border-radius: 4px;">башни-соты</div>
+        </div>
+        <div id="s3-clip" class="g footage" style="left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000;">
+          <video id="s3-clip-clip" class="clip" src="assets/footage/c_taxi.mp4" muted playsinline data-start="13.71" data-duration="3.38" data-track-index="2"
+                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(0.55) contrast(1.04) brightness(1.1);"></video>
+          <div style="position: absolute; inset: 0; background: #F2EBDD; mix-blend-mode: soft-light; opacity: 0.22;"></div>
+          <svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="lk2-g" width="90" height="90" patternUnits="userSpaceOnUse"><path d="M 90 0 L 0 0 0 90" fill="none" stroke="#F2EBDD" stroke-opacity="0.1" stroke-width="1.2" /></pattern></defs><rect width="1080" height="1920" fill="url(#lk2-g)" /><rect x="36" y="36" width="1008" height="1848" fill="none" stroke="#F2EBDD" stroke-opacity="0.55" stroke-width="2.5" /><path d="M 54 300 H 106 M 80 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 300 H 1026 M 1000 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 54 1300 H 106 M 80 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 1300 H 1026 M 1000 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /></svg>
+          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; font-family: Manrope; font-weight: 800; font-size: 32px; letter-spacing: 0.18em; text-transform: uppercase; color: #F2EBDD; text-shadow: 0 2px 8px rgba(0,0,0,0.7); background: rgba(20,18,16,0.6); padding: 6px 14px 8px; border-radius: 4px;">«Капитал», 1867</div>
+        </div>
+        <div id="s6-write-sheet" class="g footage" data-fullframe="чертёж во весь кадр" style="left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; background: #141210;">
+          <svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="s6-write-sheet-g1" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#F2EBDD" stroke-opacity="0.07" stroke-width="1" /></pattern><pattern id="s6-write-sheet-g2" width="180" height="180" patternUnits="userSpaceOnUse"><path d="M 180 0 L 0 0 0 180" fill="none" stroke="#F2EBDD" stroke-opacity="0.14" stroke-width="1.5" /></pattern></defs><path d="M 0 0 H 1080 V 1920 H 0 Z" fill="#141210" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z" fill="url(#s6-write-sheet-g1)" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z" fill="url(#s6-write-sheet-g2)" fill-rule="evenodd" /><rect x="30" y="30" width="1020" height="1860" fill="none" stroke="#F2EBDD" stroke-opacity="0.35" stroke-width="2" /><path d="M 32 54 H 76 M 54 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 54 H 1048 M 1026 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 32 1866 H 76 M 54 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 1866 H 1048 M 1026 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /></svg>
+        <div id="s6-write" class="g bp" style="left: 90px; top: 320px; width: 900px; height: 1060px;">
+          <svg class="bp-svg" viewBox="0 0 900 1060" width="900" height="1060">
+            <text id="s6-write-w" class="bp-write" x="450" y="288" text-anchor="middle" font-size="355">3</text>
+          </svg>
+          <div id="s6-write-s" class="bp-lbl " style="left: 450px; top: 358px;">правильных паркета</div>
+        </div>
+        </div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="56.300" data-track-index="1"></video>
+      </div>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="s5-write-sheet" class="bp-sheet"><svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="s5-write-sheet-g1" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#F2EBDD" stroke-opacity="0.07" stroke-width="1" /></pattern><pattern id="s5-write-sheet-g2" width="180" height="180" patternUnits="userSpaceOnUse"><path d="M 180 0 L 0 0 0 180" fill="none" stroke="#F2EBDD" stroke-opacity="0.14" stroke-width="1.5" /></pattern></defs><path d="M 0 0 H 1080 V 1920 H 0 Z M 194 760 V 1780 H 864 V 760 Z" fill="#141210" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 194 760 V 1780 H 864 V 760 Z" fill="url(#s5-write-sheet-g1)" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 194 760 V 1780 H 864 V 760 Z" fill="url(#s5-write-sheet-g2)" fill-rule="evenodd" /><rect x="30" y="30" width="1020" height="1860" fill="none" stroke="#F2EBDD" stroke-opacity="0.35" stroke-width="2" /><path d="M 32 54 H 76 M 54 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 54 H 1048 M 1026 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 32 1866 H 76 M 54 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 1866 H 1048 M 1026 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><rect x="194" y="760" width="670" height="1020" fill="none" stroke="#F2EBDD" stroke-width="3" /><path d="M 168 760 H 186 M 872 760 H 890 M 168 1780 H 186 M 872 1780 H 890 M 177 760 V 1780 M 881 760 V 1780" stroke="#F2EBDD" stroke-opacity="0.5" stroke-width="2" fill="none" /></svg></div>
+        <div id="s8-write-sheet" class="bp-sheet"><svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="s8-write-sheet-g1" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#F2EBDD" stroke-opacity="0.07" stroke-width="1" /></pattern><pattern id="s8-write-sheet-g2" width="180" height="180" patternUnits="userSpaceOnUse"><path d="M 180 0 L 0 0 0 180" fill="none" stroke="#F2EBDD" stroke-opacity="0.14" stroke-width="1.5" /></pattern></defs><path d="M 0 0 H 1080 V 1920 H 0 Z M 186 760 V 1779 H 855 V 760 Z" fill="#141210" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 186 760 V 1779 H 855 V 760 Z" fill="url(#s8-write-sheet-g1)" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 186 760 V 1779 H 855 V 760 Z" fill="url(#s8-write-sheet-g2)" fill-rule="evenodd" /><rect x="30" y="30" width="1020" height="1860" fill="none" stroke="#F2EBDD" stroke-opacity="0.35" stroke-width="2" /><path d="M 32 54 H 76 M 54 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 54 H 1048 M 1026 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 32 1866 H 76 M 54 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 1866 H 1048 M 1026 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><rect x="186" y="760" width="669" height="1019" fill="none" stroke="#F2EBDD" stroke-width="3" /><path d="M 160 760 H 178 M 863 760 H 881 M 160 1779 H 178 M 863 1779 H 881 M 169 760 V 1779 M 872 760 V 1779" stroke="#F2EBDD" stroke-opacity="0.5" stroke-width="2" fill="none" /></svg></div>
+        <div id="s10-timeline-sheet" class="bp-sheet"><svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="s10-timeline-sheet-g1" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#F2EBDD" stroke-opacity="0.07" stroke-width="1" /></pattern><pattern id="s10-timeline-sheet-g2" width="180" height="180" patternUnits="userSpaceOnUse"><path d="M 180 0 L 0 0 0 180" fill="none" stroke="#F2EBDD" stroke-opacity="0.14" stroke-width="1.5" /></pattern></defs><path d="M 0 0 H 1080 V 1920 H 0 Z M 195 760 V 1782 H 865 V 760 Z" fill="#141210" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 195 760 V 1782 H 865 V 760 Z" fill="url(#s10-timeline-sheet-g1)" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 195 760 V 1782 H 865 V 760 Z" fill="url(#s10-timeline-sheet-g2)" fill-rule="evenodd" /><rect x="30" y="30" width="1020" height="1860" fill="none" stroke="#F2EBDD" stroke-opacity="0.35" stroke-width="2" /><path d="M 32 54 H 76 M 54 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 54 H 1048 M 1026 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 32 1866 H 76 M 54 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 1866 H 1048 M 1026 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><rect x="195" y="760" width="670" height="1022" fill="none" stroke="#F2EBDD" stroke-width="3" /><path d="M 169 760 H 187 M 873 760 H 891 M 169 1782 H 187 M 873 1782 H 891 M 178 760 V 1782 M 882 760 V 1782" stroke="#F2EBDD" stroke-opacity="0.5" stroke-width="2" fill="none" /></svg></div>
+        <div id="s0-stamp" class="g stamp" data-safe="на груди ниже подбородка" style="left: 368px; top: 1250px; font-size: 72px; transform: rotate(-5deg); background: rgba(20,18,16,0.72);">УКРАДЁТ</div>
+        <div id="s2-hexes" class="g bp" data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" data-safe-zones="низ" style="left: 190px; top: 1225px; width: 700px; height: 400px;">
+          <svg class="bp-svg" viewBox="0 0 700 400" width="700" height="400">
+            <path id="s2-hexes-h0" class="bp-ln" d="M 180.3 136.0 L 131.8 164.0 L 83.3 136.0 L 83.3 80.0 L 131.8 52.0 L 180.3 80.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h1" class="bp-ln" d="M 277.3 136.0 L 228.8 164.0 L 180.3 136.0 L 180.3 80.0 L 228.8 52.0 L 277.3 80.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h2" class="bp-ln" d="M 374.2 136.0 L 325.8 164.0 L 277.3 136.0 L 277.3 80.0 L 325.8 52.0 L 374.2 80.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h3" class="bp-ln" d="M 471.2 136.0 L 422.7 164.0 L 374.2 136.0 L 374.2 80.0 L 422.7 52.0 L 471.2 80.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h4" class="bp-ln" d="M 568.2 136.0 L 519.7 164.0 L 471.2 136.0 L 471.2 80.0 L 519.7 52.0 L 568.2 80.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h5" class="bp-ln" d="M 228.8 220.0 L 180.3 248.0 L 131.8 220.0 L 131.8 164.0 L 180.3 136.0 L 228.8 164.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h6" class="bp-ln" d="M 325.8 220.0 L 277.3 248.0 L 228.8 220.0 L 228.8 164.0 L 277.3 136.0 L 325.8 164.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-f" class="bp-fill" d="M 422.7 220.0 L 374.2 248.0 L 325.8 220.0 L 325.8 164.0 L 374.2 136.0 L 422.7 164.0 Z" />
+            <path id="s2-hexes-h7" class="bp-ln red" d="M 422.7 220.0 L 374.2 248.0 L 325.8 220.0 L 325.8 164.0 L 374.2 136.0 L 422.7 164.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h8" class="bp-ln" d="M 519.7 220.0 L 471.2 248.0 L 422.7 220.0 L 422.7 164.0 L 471.2 136.0 L 519.7 164.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h9" class="bp-ln" d="M 616.7 220.0 L 568.2 248.0 L 519.7 220.0 L 519.7 164.0 L 568.2 136.0 L 616.7 164.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h10" class="bp-ln" d="M 180.3 304.0 L 131.8 332.0 L 83.3 304.0 L 83.3 248.0 L 131.8 220.0 L 180.3 248.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h11" class="bp-ln" d="M 277.3 304.0 L 228.8 332.0 L 180.3 304.0 L 180.3 248.0 L 228.8 220.0 L 277.3 248.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h12" class="bp-ln" d="M 374.2 304.0 L 325.8 332.0 L 277.3 304.0 L 277.3 248.0 L 325.8 220.0 L 374.2 248.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h13" class="bp-ln" d="M 471.2 304.0 L 422.7 332.0 L 374.2 304.0 L 374.2 248.0 L 422.7 220.0 L 471.2 248.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s2-hexes-h14" class="bp-ln" d="M 568.2 304.0 L 519.7 332.0 L 471.2 304.0 L 471.2 248.0 L 519.7 220.0 L 568.2 248.0 Z" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          </svg>
+          <div id="s2-hexes-l" class="bp-lbl " style="left: 350px; top: 396px;">угол 120°</div>
+        </div>
+        <div id="s4-stamp" class="g stamp" data-safe="на груди ниже подбородка" style="left: 416px; top: 1250px; font-size: 72px; transform: rotate(-5deg); background: rgba(20,18,16,0.72);">ЗАЧЁТ</div>
+        <div id="s5-write" class="g bp" style="left: 60px; top: 280px; width: 960px; height: 440px;">
+          <svg class="bp-svg" viewBox="0 0 960 440" width="960" height="440">
+            <text id="s5-write-w" class="bp-write" x="480" y="335" text-anchor="middle" font-size="320">9,3 %</text>
+          </svg>
+          <div id="s5-write-s" class="bp-lbl " style="left: 480px; top: 405px;">пустоты у кругов</div>
+        </div>
+        <div id="s7-write" class="g bp" data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" data-safe-zones="низ" style="left: 190px; top: 1225px; width: 700px; height: 400px;">
+          <svg class="bp-svg" viewBox="0 0 700 400" width="700" height="400">
+            <text id="s7-write-w" class="bp-write" x="350" y="266" text-anchor="middle" font-size="182">6 · 4 · 3</text>
+          </svg>
+          <div id="s7-write-s" class="bp-lbl " style="left: 350px; top: 336px;">сходятся в вершине</div>
+        </div>
+        <div id="s8-write" class="g bp" style="left: 60px; top: 280px; width: 960px; height: 440px;">
+          <svg class="bp-svg" viewBox="0 0 960 440" width="960" height="440">
+            <text id="s8-write-w" class="bp-write" x="480" y="275" text-anchor="middle" font-size="153">4,56 · 4 · 3,72</text>
+            <path id="s8-write-o0" class="bp-ln red" d="M 58 127 L 335 127" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s8-write-o1" class="bp-ln red" d="M 374 127 L 409 127" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s8-write-o2" class="bp-ln red" d="M 448 127 L 528 127" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s8-write-o3" class="bp-ln red" d="M 567 127 L 602 127" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s8-write-o4" class="bp-ln red" d="M 641 127 L 902 127" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          </svg>
+          <div id="s8-write-s" class="bp-lbl " style="left: 480px; top: 345px;">ячейка S = 1</div>
+        </div>
+        <div id="s9-write" class="g bp" data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" data-safe-zones="низ" style="left: 190px; top: 1225px; width: 700px; height: 400px;">
+          <svg class="bp-svg" viewBox="0 0 700 400" width="700" height="400">
+            <text id="s9-write-w" class="bp-write" x="350" y="276" text-anchor="middle" font-size="210">−7 %</text>
+          </svg>
+          <div id="s9-write-s" class="bp-lbl " style="left: 350px; top: 346px;">против квадратов</div>
+        </div>
+        <div id="s10-timeline" class="g bp" style="left: 60px; top: 280px; width: 960px; height: 440px;">
+          <svg class="bp-svg" viewBox="0 0 960 440" width="960" height="440">
+            <path id="s10-timeline-ax" class="bp-ln" d="M 58 185 L 902 185 M 881.6 196.8 L 902.4 184.8 L 881.6 172.8" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s10-timeline-m" class="bp-mark" d="M -24 -70 L 24 -70 L 0 -32 Z" />
+            <path id="s10-timeline-k0" class="bp-ln" d="M 198 157 L 198 213" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s10-timeline-k1" class="bp-ln" d="M 480 157 L 480 213" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s10-timeline-k2" class="bp-ln" d="M 762 157 L 762 213" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          </svg>
+          <div id="s10-timeline-l0" class="bp-lbl big" style="left: 198px; top: 305px;">−36<span class="sub">Варрон</span></div>
+          <div id="s10-timeline-l1" class="bp-lbl big" style="left: 480px; top: 305px;">1859<span class="sub">его книга</span></div>
+          <div id="s10-timeline-l2" class="bp-lbl big red" style="left: 762px; top: 305px;">1999<span class="sub">Хейлз</span></div>
+        </div>
+        <div id="s11-stamp" class="g stamp" data-safe="на груди ниже подбородка" style="left: 321px; top: 1250px; font-size: 72px; transform: rotate(-5deg); background: rgba(20,18,16,0.72);">гениально</div>
+        <div id="s12-write" class="g bp" data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" data-safe-zones="низ" style="left: 190px; top: 1225px; width: 700px; height: 400px;">
+          <svg class="bp-svg" viewBox="0 0 700 400" width="700" height="400">
+            <text id="s12-write-w" class="bp-write" x="350" y="276" text-anchor="middle" font-size="210">80+</text>
+          </svg>
+          <div id="s12-write-s" class="bp-lbl " style="left: 350px; top: 346px;">баллов из 100</div>
+        </div>
+        <div id="hook-flash" style="position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0;"></div>
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">смотри у меня в профиле</div>
+        </div>
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-hook" src="assets/sfx/whoosh-cinematic.mp3" data-start="8.78" data-volume="0.134"></audio>
+      <audio id="sfx-soft0" src="assets/sfx/bubble-1.mp3" data-start="0.63" data-volume="0.221"></audio>
+      <audio id="sfx-soft1" src="assets/sfx/swell-1.mp3" data-start="2.19" data-volume="0.250"></audio>
+      <audio id="sfx-soft2" src="assets/sfx/swell-3.mp3" data-start="4.09" data-volume="0.247"></audio>
+      <audio id="sfx-soft3" src="assets/sfx/tick-1.mp3" data-start="6.33" data-volume="0.380"></audio>
+      <audio id="sfx-soft4" src="assets/sfx/tick-2.mp3" data-start="6.69" data-volume="0.376"></audio>
+      <audio id="sfx-soft5" src="assets/sfx/tap-1.mp3" data-start="7.33" data-volume="0.295"></audio>
+      <audio id="sfx-soft6" src="assets/sfx/swell-3.mp3" data-start="11.09" data-volume="0.155"></audio>
+      <audio id="sfx-soft7" src="assets/sfx/swell-2.mp3" data-start="13.45" data-volume="0.294"></audio>
+      <audio id="sfx-soft8" src="assets/sfx/swell-1.mp3" data-start="16.83" data-volume="0.250"></audio>
+      <audio id="sfx-soft9" src="assets/sfx/bubble-2.mp3" data-start="18.59" data-volume="0.216"></audio>
+      <audio id="sfx-soft10" src="assets/sfx/swell-3.mp3" data-start="23.20" data-volume="0.247"></audio>
+      <audio id="sfx-soft11" src="assets/sfx/tap-2.mp3" data-start="24.43" data-volume="0.266"></audio>
+      <audio id="sfx-soft12" src="assets/sfx/swell-2.mp3" data-start="25.61" data-volume="0.294"></audio>
+      <audio id="sfx-soft13" src="assets/sfx/swell-1.mp3" data-start="28.36" data-volume="0.250"></audio>
+      <audio id="sfx-soft14" src="assets/sfx/tap-3.mp3" data-start="29.59" data-volume="0.254"></audio>
+      <audio id="sfx-soft15" src="assets/sfx/swell-3.mp3" data-start="30.32" data-volume="0.247"></audio>
+      <audio id="sfx-soft16" src="assets/sfx/swell-2.mp3" data-start="35.02" data-volume="0.294"></audio>
+      <audio id="sfx-soft17" src="assets/sfx/tap-1.mp3" data-start="36.25" data-volume="0.295"></audio>
+      <audio id="sfx-soft18" src="assets/sfx/swell-1.mp3" data-start="40.39" data-volume="0.250"></audio>
+      <audio id="sfx-soft19" src="assets/sfx/tap-2.mp3" data-start="42.27" data-volume="0.266"></audio>
+      <audio id="sfx-soft20" src="assets/sfx/swell-3.mp3" data-start="42.98" data-volume="0.247"></audio>
+      <audio id="sfx-soft21" src="assets/sfx/tap-3.mp3" data-start="43.52" data-volume="0.254"></audio>
+      <audio id="sfx-soft22" src="assets/sfx/swell-2.mp3" data-start="46.27" data-volume="0.294"></audio>
+      <audio id="sfx-soft23" src="assets/sfx/bubble-1.mp3" data-start="47.13" data-volume="0.221"></audio>
+      <audio id="sfx-bgm" src="assets/materials/yt-no-rush.mp3" data-start="0.00" data-duration="56.3" data-fade-out="1.5" data-volume="0.067"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="53.73" data-volume="0.646"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      []
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      // склейка (Валера 15.10: «склейки не спрятаны за переходами вспышками»): кадр приходит смазанным
+      // и наводится за 5 кадров, поверх — вспышка в 3 кадра; крупность бьёт наезд Take.splice_punches.
+      // Надписи через склейку не висят — уходят до неё, новая влетает на ней (verify_page).
+      function splice(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: flashes++ === 0 }, t - 0.033);
+        tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, t);
+        tl.fromTo(".cam", { filter: BLUR(16) }, { filter: BLUR(0), duration: 0.17, ease: "power2.out", immediateRender: false }, t);
+      }
+      // смена плана как у риелтора (15.10): кадр перескакивает крупнее с коротким смазом, без вспышки
+      function whip(t) {
+        tl.fromTo(".cam", { filter: BLUR(9) }, { filter: BLUR(0), duration: 0.12, ease: "power2.out", immediateRender: false }, t);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры ----------
+      const caps = document.getElementById("caps");
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        el.textContent = c.text;
+        if (c.y !== undefined) el.style.top = c.y + "px";
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход, сработавший посреди входа, в покадровом рендере
+        // проигрывает недоигравшему fromTo — и слово висит до конца ролика
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) },
+                  { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: Math.min(0.09, c.t1 - c.t0), ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+      });
+
+      slam("#s0-stamp", 0.63, { fromScale: 2.0, blur: 10, rot: -5 });
+      leave("#s0-stamp", 2.93, { rot: -5 });
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.5, duration: 0.033, ease: "none", immediateRender: false }, 2.417);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 2.450);
+      tl.set("#s1-clip", { opacity: 1 }, 2.450);
+      tl.fromTo("#s1-clip", { scale: 1.12, filter: BLUR(16) }, { scale: 1, filter: BLUR(0), duration: 0.22, ease: "power2.out", immediateRender: false }, 2.450);
+      tl.fromTo("#s1-clip-clip", { scale: 1 }, { scale: 1.08, duration: 1.90, ease: "none", immediateRender: false }, 2.450);
+      tl.to("#s1-clip", { scale: 1.06, filter: BLUR(14), duration: 0.12, ease: "power2.in" }, 4.230);
+      tl.set("#s1-clip", { opacity: 0, scale: 1, filter: BLUR(0) }, 4.350);
+      splice(4.350);
+      tl.set("#s2-hexes", { opacity: 1 }, 6.31);
+      gsap.set("#s2-hexes .bp-lbl", { xPercent: -50, yPercent: -50 });
+      draw("#s2-hexes-h0", 6.33, 0.25);
+      draw("#s2-hexes-h1", 6.39, 0.25);
+      draw("#s2-hexes-h2", 6.45, 0.25);
+      draw("#s2-hexes-h3", 6.51, 0.25);
+      draw("#s2-hexes-h4", 6.57, 0.25);
+      draw("#s2-hexes-h5", 6.63, 0.25);
+      draw("#s2-hexes-h6", 6.69, 0.25);
+      draw("#s2-hexes-h7", 6.75, 0.25);
+      draw("#s2-hexes-h8", 6.81, 0.25);
+      draw("#s2-hexes-h9", 6.87, 0.25);
+      draw("#s2-hexes-h10", 6.93, 0.25);
+      draw("#s2-hexes-h11", 6.99, 0.25);
+      draw("#s2-hexes-h12", 7.05, 0.25);
+      draw("#s2-hexes-h13", 7.11, 0.25);
+      draw("#s2-hexes-h14", 7.17, 0.25);
+      tl.fromTo("#s2-hexes-f", { opacity: 0 }, { opacity: 0.85, duration: 0.25 }, 7.38);
+      enter("#s2-hexes-l", 7.33, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s2-hexes .bp-ln", { strokeDashoffset: 1, duration: 0.3, ease: "power2.in" }, 8.27);
+      tl.to("#s2-hexes .bp-fill", { scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.22, ease: "power2.in" }, 8.27);
+      leave("#s2-hexes .bp-lbl", 8.27, { y: -30, dur: 0.24 });
+      tl.set("#s2-hexes", { opacity: 0 }, 8.62);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.5, duration: 0.033, ease: "none", immediateRender: false }, 13.677);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 13.710);
+      tl.set("#s3-clip", { opacity: 1 }, 13.710);
+      tl.fromTo("#s3-clip", { scale: 1.12, filter: BLUR(16) }, { scale: 1, filter: BLUR(0), duration: 0.22, ease: "power2.out", immediateRender: false }, 13.710);
+      tl.fromTo("#s3-clip-clip", { scale: 1 }, { scale: 1.08, duration: 3.38, ease: "none", immediateRender: false }, 13.710);
+      tl.to("#s3-clip", { scale: 1.06, filter: BLUR(14), duration: 0.12, ease: "power2.in" }, 16.970);
+      tl.set("#s3-clip", { opacity: 0, scale: 1, filter: BLUR(0) }, 17.090);
+      splice(17.090);
+      slam("#s4-stamp", 18.59, { fromScale: 2.0, blur: 10, rot: -5 });
+      leave("#s4-stamp", 20.09, { rot: -5 });
+      tl.set("#s6-write", { opacity: 1 }, 28.85);
+      gsap.set("#s6-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s6-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 28.87);
+      tl.to("#s6-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 29.55);
+      enter("#s6-write-s", 29.59, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s6-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 30.23);
+      leave("#s6-write .bp-lbl", 30.23, { y: -30, dur: 0.24 });
+      tl.set("#s6-write", { opacity: 0 }, 30.58);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.5, duration: 0.033, ease: "none", immediateRender: false }, 28.587);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 28.620);
+      tl.set("#s6-write-sheet", { opacity: 1 }, 28.620);
+      tl.fromTo("#s6-write-sheet", { scale: 1.12, filter: BLUR(16) }, { scale: 1, filter: BLUR(0), duration: 0.22, ease: "power2.out", immediateRender: false }, 28.620);
+      tl.to("#s6-write-sheet", { scale: 1.06, filter: BLUR(14), duration: 0.12, ease: "power2.in" }, 30.460);
+      tl.set("#s6-write-sheet", { opacity: 0, scale: 1, filter: BLUR(0) }, 30.580);
+      splice(30.580);
+      tl.set("#s7-write", { opacity: 1 }, 30.51);
+      gsap.set("#s7-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s7-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 30.53);
+      tl.to("#s7-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 31.21);
+      enter("#s7-write-s", 31.25, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s7-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 33.15);
+      leave("#s7-write .bp-lbl", 33.15, { y: -30, dur: 0.24 });
+      tl.set("#s7-write", { opacity: 0 }, 33.50);
+      tl.set("#s9-write", { opacity: 1 }, 41.53);
+      gsap.set("#s9-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s9-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 41.55);
+      tl.to("#s9-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 42.22);
+      enter("#s9-write-s", 42.27, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s9-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 43.11);
+      leave("#s9-write .bp-lbl", 43.11, { y: -30, dur: 0.24 });
+      tl.set("#s9-write", { opacity: 0 }, 43.46);
+      slam("#s11-stamp", 47.13, { fromScale: 2.0, blur: 10, rot: -5 });
+      leave("#s11-stamp", 48.63, { rot: -5 });
+      tl.set("#s12-write", { opacity: 1 }, 52.91);
+      gsap.set("#s12-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s12-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 52.93);
+      tl.to("#s12-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 53.60);
+      enter("#s12-write-s", 53.65, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s12-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 53.83);
+      leave("#s12-write .bp-lbl", 53.83, { y: -30, dur: 0.24 });
+      tl.set("#s12-write", { opacity: 0 }, 54.18);
+      // вспышка с отъездом после хука (Валера 19.10.2026): белый удар, кадр крупнее и отъезд за 0.9 с
+      tl.fromTo("#hook-flash", { opacity: 0 }, { opacity: 0.9, duration: 0.05, ease: "none", immediateRender: false }, 8.960);
+      tl.to("#hook-flash", { opacity: 0, duration: 0.32, ease: "power2.out" }, 9.010);
+      tl.fromTo(".cam", { filter: BLUR(10) }, { filter: BLUR(0), duration: 0.2, ease: "power2.out", immediateRender: false }, 9.010);
+      tl.set("#s5-write", { opacity: 1 }, 23.69);
+      gsap.set("#s5-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s5-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 23.71);
+      tl.to("#s5-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 24.39);
+      enter("#s5-write-s", 24.43, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s5-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 25.57);
+      leave("#s5-write .bp-lbl", 25.57, { y: -30, dur: 0.24 });
+      tl.set("#s5-write", { opacity: 0 }, 25.92);
+      // «Чертёж», сплит: человек в окне листа (194, 760, 864, 1780), лицо (411, 871, 669, 1229)
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 23.427);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 23.460);
+      tl.set("#s5-write-sheet", { opacity: 1 }, 23.460);
+      tl.set("#caps", { zIndex: 5 }, 23.460);
+      tl.fromTo("#stage", { scale: 0.6696, x: 167.6, y: 537.2, filter: BLUR(14) }, { scale: 0.62, x: 194.4, y: 589.3, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 23.460);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 25.837);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 25.870);
+      tl.set("#s5-write-sheet", { opacity: 0 }, 25.870);
+      tl.set("#caps", { zIndex: 0 }, 25.870);
+      tl.fromTo("#stage", { scale: 1.06, x: -32, y: -58, filter: BLUR(14) }, { scale: 1, x: 0, y: 0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 25.870);
+      tl.set("#s8-write", { opacity: 1 }, 35.51);
+      gsap.set("#s8-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s8-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 35.53);
+      tl.to("#s8-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 36.20);
+      draw("#s8-write-o0", 39.27, 0.25);
+      draw("#s8-write-o1", 39.39, 0.25);
+      draw("#s8-write-o2", 39.51, 0.25);
+      draw("#s8-write-o3", 39.63, 0.25);
+      draw("#s8-write-o4", 39.75, 0.25);
+      enter("#s8-write-s", 36.25, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s8-write .bp-ln", { strokeDashoffset: 1, duration: 0.3, ease: "power2.in" }, 40.35);
+      tl.to("#s8-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 40.35);
+      leave("#s8-write .bp-lbl", 40.35, { y: -30, dur: 0.24 });
+      tl.set("#s8-write", { opacity: 0 }, 40.70);
+      // «Чертёж», сплит: человек в окне листа (186, 760, 855, 1779), лицо (411, 864, 669, 1236)
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 35.247);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 35.280);
+      tl.set("#s8-write-sheet", { opacity: 1 }, 35.280);
+      tl.set("#caps", { zIndex: 5 }, 35.280);
+      tl.fromTo("#stage", { scale: 0.6696, x: 158.8, y: 536.4, filter: BLUR(14) }, { scale: 0.62, x: 185.6, y: 588.5, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 35.280);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 40.617);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 40.650);
+      tl.set("#s8-write-sheet", { opacity: 0 }, 40.650);
+      tl.set("#caps", { zIndex: 0 }, 40.650);
+      tl.fromTo("#stage", { scale: 1.06, x: -32, y: -58, filter: BLUR(14) }, { scale: 1, x: 0, y: 0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 40.650);
+      tl.set("#s10-timeline", { opacity: 1 }, 43.47);
+      gsap.set("#s10-timeline .bp-lbl", { xPercent: -50, yPercent: -50 });
+      draw("#s10-timeline-ax", 43.19, 0.3);
+      draw("#s10-timeline-k0", 43.49, 0.15);
+      enter("#s10-timeline-l0", 43.52, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.fromTo("#s10-timeline-m", { opacity: 0, x: 198, y: 185 }, { opacity: 1, duration: 0.15 }, 43.49);
+      draw("#s10-timeline-k1", 44.29, 0.15);
+      enter("#s10-timeline-l1", 44.32, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s10-timeline-m", { x: 480, duration: 0.35, ease: "power3.inOut" }, 44.19);
+      draw("#s10-timeline-k2", 45.29, 0.15);
+      enter("#s10-timeline-l2", 45.32, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s10-timeline-m", { x: 762, duration: 0.35, ease: "power3.inOut" }, 45.19);
+      tl.to("#s10-timeline .bp-ln", { strokeDashoffset: 1, duration: 0.3, ease: "power2.in" }, 46.23);
+      tl.to("#s10-timeline .bp-mark", { scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.22, ease: "power2.in" }, 46.23);
+      leave("#s10-timeline .bp-lbl", 46.23, { y: -30, dur: 0.24 });
+      tl.set("#s10-timeline", { opacity: 0 }, 46.58);
+      // «Чертёж», сплит: человек в окне листа (195, 760, 865, 1782), лицо (411, 861, 669, 1239)
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 43.207);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 43.240);
+      tl.set("#s10-timeline-sheet", { opacity: 1 }, 43.240);
+      tl.set("#caps", { zIndex: 5 }, 43.240);
+      tl.fromTo("#stage", { scale: 0.6696, x: 168.3, y: 539.2, filter: BLUR(14) }, { scale: 0.62, x: 195.1, y: 591.3, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 43.240);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 46.497);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 46.530);
+      tl.set("#s10-timeline-sheet", { opacity: 0 }, 46.530);
+      tl.set("#caps", { zIndex: 0 }, 46.530);
+      tl.fromTo("#stage", { scale: 1.06, x: -32, y: -58, filter: BLUR(14) }, { scale: 1, x: 0, y: 0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 46.530);
+      whip(6.11);
+      whip(11.35);
+      whip(17.09);
+      whip(20.81);
+      whip(25.97);
+      whip(30.58);
+      whip(40.75);
+      whip(46.63);
+      whip(50.45);
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 53.73);
+      tl.set("#cta-arrow", { opacity: 1 }, 54.08);
+      draw("#arrow-path", 54.08, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 54.40);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 54.73);
+
+
+      try { REELS_EDITS(tl); } catch (e) { throw new Error(`правки студии: ${e.message}`); }
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

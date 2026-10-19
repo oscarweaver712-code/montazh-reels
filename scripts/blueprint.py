@@ -41,6 +41,7 @@ INK, CREAM, RED = "#141210", "#F2EBDD", "#F0352C"
 W, H = 1080, 1920
 LAYOUTS = ("behind", "chest", "split", "full")
 FONT_DIR = Path(__file__).resolve().parents[1] / "presets" / "fonts"
+WEIGHTS = {"Cormorant": 700, "Cormorant-i": 600}           # жирность переменных шрифтов в CSS страницы
 FONT_FILES = {"Oswald": "Oswald-Bold.ttf", "Manrope": "Manrope-ExtraBold.ttf", "Cormorant": "CormorantGaramond.ttf",
               "Cormorant-i": "CormorantGaramond-Italic.ttf", "JBMono": "JetBrainsMono.ttf"}
 # серые зоны площадок (formats.GREY_ZONES): верх во всю ширину до TOP_LINE, кнопки справа — ниже BUTTONS_LINE
@@ -57,7 +58,9 @@ LEAD = 24                    # подпись у края начинается (
 BOXES = {"behind": (60, 280, 960, 460), "chest": (190, 1225, 700, 400), "split": (60, 280, 960, 440),
          "full": (90, 320, 900, 1060)}
 WRITE_MAX = {"behind": 230, "chest": 210, "split": 320, "full": 460}     # предел кегля числа, которое пишется
-CHEST_SAFE = 'data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)"'
+# на груди — осознанно только внизу (ник и подпись): боковая обрезка и кнопки справа — заезд и для «Чертежа»
+CHEST_SAFE = ('data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" '
+              'data-safe-zones="низ"')
 SPLIT_FACE_H = 380           # высота лица в окне сплита, px
 SPLIT_FACE_Y = 1050          # середина лица в окне
 SPLIT_TOP = 760              # верх окна: выше — поле построения
@@ -74,13 +77,13 @@ CSS = f'''
       .bp-dot {{ fill: {CREAM}; opacity: 0; }}
       .bp-dot.red {{ fill: {RED}; }}
       .bp-fill {{ fill: {RED}; opacity: 0; }}
-      .bp-lbl {{ position: absolute; transform: translate(-50%, -50%); white-space: nowrap; opacity: 0; text-align: center;
+      .bp-lbl {{ position: absolute; white-space: nowrap; opacity: 0; text-align: center;
                 font-family: "Manrope"; font-weight: 800; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase;
                 color: {CREAM}; text-shadow: 0 2px 10px rgba(0,0,0,0.65); }}
       .bp-lbl.red {{ color: {RED}; }}
-      /* у края кадра подпись выравнивается внутрь: left или right от точки, по вертикали — середина (GSAP читает
-         только translate −50% как xPercent, поэтому сдвиг по x — не transform) */
-      .bp-lbl.al, .bp-lbl.ar {{ transform: translate(0, -50%); }}
+      /* середина подписи на точке — xPercent/yPercent GSAP (_piece), не translate(−50%) в CSS: его GSAP узнаёт только при
+         точном совпадении округлённой ширины, и подпись с дробной шириной съезжала вправо на половину себя (19.10.2026,
+         «1202 · ФИБОНАЧЧИ» в проверке ушла в обрезку). У края — выравнивание внутрь: left или right от точки */
       .bp-lbl.al {{ text-align: left; }}
       .bp-lbl.ar {{ text-align: right; }}
       [data-safe] .bp-lbl {{ background: rgba(20,18,16,0.78); padding: 4px 14px 6px; border-radius: 4px; }}
@@ -134,7 +137,10 @@ def _font(family: str) -> tuple:
     from fontTools.ttLib import TTFont
     if family not in FONT_FILES:
         raise ValueError(f"«Чертёж»: шрифта «{family}» нет в presets/fonts — есть {', '.join(FONT_FILES)}")
-    f = TTFont(FONT_DIR / FONT_FILES[family], lazy=True)
+    f = TTFont(FONT_DIR / FONT_FILES[family], lazy=family not in WEIGHTS)
+    if family in WEIGHTS and "fvar" in f:                # переменный шрифт — ширины того начертания, что на странице
+        from fontTools.varLib import instancer
+        f = instancer.instantiateVariableFont(f, {"wght": WEIGHTS[family]})
     upm = f["head"].unitsPerEm
     return (f.getBestCmap(), f["hmtx"], upm, f["OS/2"].sCapHeight / upm, f["hhea"].ascent / upm, -f["hhea"].descent / upm)
 
@@ -159,7 +165,8 @@ def _band(y0: float, y1: float) -> tuple:
     return lo + SAFE_PAD, hi - SAFE_PAD
 
 
-def _place(text: str, x: float, y: float, box: tuple, sub: str = "", cls: str = "", size: float | None = None) -> tuple:
+def _place(text: str, x: float, y: float, box: tuple, sub: str = "", cls: str = "", size: float | None = None,
+           sub_size: float = 38) -> tuple:
     """(css-позиция, классы, рамка x0, y0, x1, y1 в поле) подписи с серединой в (x, y) поля box. Если по центру она
     заедет в боковую обрезку или под кнопки площадок, выравнивается внутрь: у левого края начинается от точки вправо,
     у правого — кончается на ней (19.10.2026: «Индия», «Европа» у краёв маршрута уходили в обрезку Instagram).
@@ -168,7 +175,7 @@ def _place(text: str, x: float, y: float, box: tuple, sub: str = "", cls: str = 
     size = size or (80 if big else 40)
     wl = _em(text.upper(), "Oswald" if big else "Manrope", 0.02 if big else 0.12) * size + 28
     if sub:
-        wl = max(wl, _em(sub, "Cormorant-i") * 38 + 28)
+        wl = max(wl, _em(sub, "Cormorant-i") * sub_size + 28)
     hh = (0.55 if big else 0.7) * size + (26 if sub else 0)
     sx, sy = box[0] + x, box[1] + y
     lo, hi = _band(sy - hh, sy + hh)
@@ -183,10 +190,12 @@ def _place(text: str, x: float, y: float, box: tuple, sub: str = "", cls: str = 
     return pos, cls.strip(), (x0, y - hh, x0 + wl, y + hh)
 
 
-def _label(lid: str, text: str, x: float, y: float, box: tuple, sub: str = "", cls: str = "", size: float | None = None) -> str:
+def _label(lid: str, text: str, x: float, y: float, box: tuple, sub: str = "", cls: str = "", size: float | None = None,
+           sub_size: float = 38) -> str:
     """Подпись с серединой в (x, y) поля box — по центру или, у края кадра, выровненная внутрь (_place)."""
-    pos, cls, _ = _place(text, x, y, box, sub, cls, size)
-    inner = text + (f'<span class="sub">{sub}</span>' if sub else "")
+    pos, cls, _ = _place(text, x, y, box, sub, cls, size, sub_size)
+    style = f' style="font-size: {sub_size:.0f}px;"' if sub_size != 38 else ""
+    inner = text + (f'<span class="sub"{style}>{sub}</span>' if sub else "")
     font = f" font-size: {size:.0f}px;" if size else ""
     return f'          <div id="{lid}" class="bp-lbl {cls}" style="{pos}; top: {y:.0f}px;{font}">{inner}</div>\n'
 
@@ -209,7 +218,12 @@ def _piece(pid: str, layout: str, box: tuple, t0: float, t1: float, svg: list, l
             + "".join(f"            {s}\n" for s in svg) + "          </svg>\n" + "".join(labels) + "        </div>")
     has = lambda cls: f'class="{cls}' in html                    # noqa: E731  уход — только по тому, что есть
     pops = ", ".join(f"#{pid} .{c}" for c in ("bp-dot", "bp-fill", "bp-mark") if has(c))
-    out = [f'      tl.set("#{pid}", {{ opacity: 1 }}, {t0 - 0.02:.2f});', *js]
+    out = [f'      tl.set("#{pid}", {{ opacity: 1 }}, {t0 - 0.02:.2f});']
+    if labels:
+        out.append(f'      gsap.set("#{pid} .bp-lbl", {{ xPercent: -50, yPercent: -50 }});')
+        if any(re.search(r'class="bp-lbl[^"]*\b(al|ar)\b', label) for label in labels):
+            out.append(f'      gsap.set("#{pid} .bp-lbl.al, #{pid} .bp-lbl.ar", {{ xPercent: 0 }});')
+    out += js
     if has("bp-ln"):
         out.append(f'      tl.to("#{pid} .bp-ln", {{ strokeDashoffset: 1, duration: 0.3, ease: "power2.in" }}, {t1:.2f});')
     if pops:
@@ -291,6 +305,10 @@ def timeline(pid: str, marks: list, times: list, until: float, layout: str = "sp
     xs = [x0 + (x1 - x0) * (i + 0.5) / len(marks) for i in range(len(marks))]
     step = (x1 - x0) / len(marks) - 28
     size = min(80.0, *(step / _em(m[0].upper(), "Oswald", 0.02) for m in marks))
+    # подписи под метками — тоже не шире шага (19.10.2026: «Algoritmi de numero Indorum» и «Фибоначчи, Liber Abaci»
+    # у аналитика налезли друг на друга), но не мельче 24 px — длиннее надо писать короче
+    sub_size = max(24.0, min(38.0, *((step - 40) / max(_em(m[1], "Cormorant-i"), 0.1) for m in marks if m[1]))
+                   if any(m[1] for m in marks) else 38.0)
     svg = [f'<path id="{pid}-ax" class="bp-ln" d="M {x0:.0f} {ay:.0f} L {x1:.0f} {ay:.0f} {_arrow(x1, ay, 0)}" {DRAW} />',
            f'<path id="{pid}-m" class="bp-mark" d="M -24 -70 L 24 -70 L 0 -32 Z" />']
     js = [f'      draw("#{pid}-ax", {times[0] - 0.3:.2f}, 0.3);']
@@ -299,7 +317,7 @@ def timeline(pid: str, marks: list, times: list, until: float, layout: str = "sp
         svg.append(f'<path id="{pid}-k{i}" class="bp-ln" d="M {x:.0f} {ay - 28:.0f} L {x:.0f} {ay + 28:.0f}" {DRAW} />')
         js.append(f'      draw("#{pid}-k{i}", {t:.2f}, 0.15);')
         labels.append(_label(f"{pid}-l{i}", label, x, ay + 120, bx, sub, "big" + (" red" if i == len(marks) - 1 else ""),
-                             None if size >= 80 else size))
+                             None if size >= 80 else size, sub_size))
         js.append(_enter(f"#{pid}-l{i}", t + 0.03))
         if i == 0:
             js.append(f'      tl.fromTo("#{pid}-m", {{ opacity: 0, x: {x:.0f}, y: {ay:.0f} }}, {{ opacity: 1, duration: 0.15 }}, {t:.2f});')
@@ -615,7 +633,9 @@ def look(label: str = "", fig: int = 1) -> tuple:
     # подпись места — сверху слева (ниже вкладок TikTok): внизу справа её закрывают кнопки площадок
     caption = (f'          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; font-family: Manrope; '
                f'font-weight: 800; font-size: 32px; letter-spacing: 0.18em; text-transform: uppercase; color: {CREAM}; '
-               f'text-shadow: 0 2px 8px rgba(0,0,0,0.7);">{label}</div>\n') if label else ""
+               f'text-shadow: 0 2px 8px rgba(0,0,0,0.7); background: rgba(20,18,16,0.6); padding: 6px 14px 8px; '
+               f'border-radius: 4px;">{label}</div>\n') if label else ""
+    # подложка подписи: на светлом небе клипа она не читалась (19.10.2026, критик IMG_3292)
     # лёгкий тёплый налёт крема — серия читается одной, а цвет и свет клипа остаются
     overlay = (f'          <div style="position: absolute; inset: 0; background: {CREAM}; mix-blend-mode: soft-light; opacity: 0.22;"></div>\n'
                f'          {grid}\n{caption}')

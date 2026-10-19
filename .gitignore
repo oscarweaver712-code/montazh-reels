@@ -34,6 +34,8 @@ work/*/*
 !work/*/timeline.json
 !work/*/page.py
 !work/*/page.*.py
+!work/*/score.json
+!work/*/score.*.json
 !work/*/downloads/
 # материалы, которые человек положил к ролику (студия → «Материалы»): фото и звук — в git, видео — на машине
 !work/*/materials/
