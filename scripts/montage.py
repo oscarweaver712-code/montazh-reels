@@ -263,7 +263,9 @@ class Montage:
 
         page_js = "".join(self._js)
         have = {round(float(x), 2) for x in re.findall(r"\bsplice\(\s*([\d.]+)\s*\)", page_js)}
-        missing = [j for j in tk.splices if all(abs(j - h) > 0.05 for h in have)]
+        # склейки по паузам (tk.jumps) прячет смена плана framing; без неё — как вырезы дублей, вспышкой
+        cuts = tk.splices if framing else sorted(tk.splices + tk.jumps)
+        missing = [j for j in cuts if all(abs(j - h) > 0.05 for h in have)]
         if missing:
             auto_js.append("".join(f"      splice({j:.3f});\n" for j in missing))
             self.notes.append(f"склеек дубля спрятано сборкой: {len(missing)}")
@@ -359,7 +361,7 @@ class Montage:
 
         director = {"_note": f"{self.stem}: собрано montage.py — обязательное (склейки, смена плана, вспышка хука, угар, "
                              f"тихие звуки, музыка) поставлено сборкой; содержание — work/{self.stem}/page.py.",
-                    "punches": self.punches + tk.splice_punches() + switch + auto_punch,
+                    "punches": self.punches + tk.splice_punches(jumps=not framing) + switch + auto_punch,
                     "text_fixes": fixes, "keep_case": keep_case or [], "accent_words": accent_words or [],
                     "hide_captions": self.hidden, **(director_extra or {})}
         if lanes:

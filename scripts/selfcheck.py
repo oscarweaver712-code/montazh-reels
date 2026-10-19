@@ -669,6 +669,49 @@ def check_edges(report: Report):
                  "слова на краях дубля и выреза не пропадают из субтитров", " · ".join(kept))
 
 
+def check_pauses(report: Report):
+    """Начало по голосу и рез длинных пауз (20.10.2026, Валера: «на старте точно есть пауза», «могу затупить — хочется не
+    терять динамику, склеить переходом, чтобы не заметно было»).
+
+    IMG_3645: вдох перед «Почему» (−24…−37 дБ) порвал тишину по −35 дБ, и ролик открывался 0,6 с вдоха. Пауза длиннее
+    pause_max сжимается до pause_keep, вдох посреди паузы её не рвёт, слово whisper внутри — не режем. На склейке по
+    паузе — смена плана (Take.framing): граница крупного ровно на ней и смаз whip, а не вспышка.
+    """
+    import kit
+    from prep import find_edges, find_pauses, pause_jumps
+
+    print("\nПаузы")
+    words = [{"word": "Почему", "start": 0.12, "end": 0.72}, {"word": "в", "start": 0.72, "end": 0.96}]
+    silences = [(0.0, 0.14), (0.44, 0.62)]                     # вдох 0.14–0.44 разорвал тишину
+    bare, _ = find_edges(words, silences, 0.0, 2.0)
+    start, _ = find_edges(words, silences, 0.0, 2.0, voice=[(0.62, 1.40)])
+    report.check(0.5 <= start <= 0.62, "ролик начинается с голоса, а не со вдоха",
+                 f"начало {start:.2f} с (без карты голоса было бы {bare:.2f}), голос с 0.62")
+
+    words = [{"word": w, "start": a, "end": b} for w, a, b in (
+        ("раз", 0.3, 0.9), ("два", 1.3, 1.9), ("три", 3.3, 3.9), ("тут", 4.0, 4.4), ("четыре", 5.6, 6.2), ("пять", 6.3, 6.9))]
+    voice = [(0.3, 0.9), (1.3, 1.9), (3.3, 4.4), (5.6, 6.9)]
+    silences = [(0.9, 1.3),                                    # обычная пауза 0,4 с — остаётся
+                (1.9, 2.5), (2.8, 3.3),                        # затуп 1,4 с, посреди вдох 2.5–2.8 без голоса
+                (4.4, 5.6)]                                    # тишина 1,2 с, но whisper слышит в ней «э» — не режем
+    words.append({"word": "э", "start": 4.8, "end": 5.2})
+    cuts = find_pauses(words, silences, voice, 0.2, 7.0, 0.5, 0.2)
+    report.check(cuts == [(2.0, 3.2)], "затуп режется до 0,2 с, вдох его не рвёт, обычная пауза и слово в тишине целы",
+                 f"вырезы {cuts}")
+    segments = [(0.2, 2.0), (3.2, 7.0)]
+    report.check(pause_jumps(segments, cuts) == [1.8], "склейка по паузе помечена на шкале дубля",
+                 f"{pause_jumps(segments, cuts)}")
+
+    tk = kit.Take.__new__(kit.Take)
+    tk.base_zoom, tk.duration, tk.splices, tk.jumps = 1.2, 20.0, [], [7.0, 13.0]
+    tk.words = [{"word": f"слово{i}.", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(40)]
+    punches, whips = tk.framing()
+    bounds = [x for p in punches for x in p[:2]]
+    hidden = [j for j in tk.jumps if any(abs(x - j) < 0.02 for x in bounds) and f"whip({j:.2f})" in whips]
+    report.check(hidden == tk.jumps, "склейка по паузе спрятана сменой плана со смазом",
+                 f"спрятано {hidden} из {tk.jumps}; крупные {[(p[0], p[1]) for p in punches]}")
+
+
 def check_captions(report: Report):
     """Субтитры уступают место крупной типографике, но слова перед ударом не теряют.
 
@@ -3814,6 +3857,7 @@ def main():
     section(report, check_camera)
     section(report, check_cuts)
     section(report, check_edges)
+    section(report, check_pauses)
     section(report, check_captions)
     section(report, check_score)
     section(report, check_cleanup_on_failure, preset)

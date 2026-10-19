@@ -91,12 +91,25 @@ def audio(sid: str, name: str, start: float, level: float = 1.0,
             f'{extra} data-volume="{gain:.3f}"></audio>')
 
 
+def bgm_level(stem: str) -> float:
+    """Громкость фоновой музыки ролика: project.json → music_level (20.10.2026, Валера: «звук музыки на всех видосах
+    чуть громче, чем должен быть» — antishkola 0.44), без проекта — BGM_LEVEL."""
+    import projects
+    try:
+        level = float(projects.of_or_default(stem).config.get("music_level", BGM_LEVEL))
+    except projects.ProjectError:
+        return BGM_LEVEL
+    if not 0 < level <= 1:
+        raise ValueError(f"project.json → music_level = {level}: бывает от 0 до 1 (доля нормы материалов)")
+    return level
+
+
 def background_music(stem: str, name: str, duration: float) -> str:
-    """Фоновый лоу-фай на весь ролик — громкость проекта (BGM_LEVEL), уход в конце за 1,5 с. Трек — yt-*.mp3 из материалов."""
+    """Фоновый лоу-фай на весь ролик — громкость проекта (bgm_level), уход в конце за 1,5 с. Трек — yt-*.mp3 из материалов."""
     if not name.startswith(BGM_PREFIX):
         raise ValueError(f"фоновая музыка — трек фонотеки YouTube в материалах ({BGM_PREFIX}*.mp3, scripts/music.py), "
                          f"а не «{name}»")
-    return material_audio("bgm", stem, name, 0.0, BGM_LEVEL, duration=round(duration, 2), fade_out=1.5)
+    return material_audio("bgm", stem, name, 0.0, bgm_level(stem), duration=round(duration, 2), fade_out=1.5)
 
 
 def material_audio(sid: str, stem: str, name: str, start: float, level: float = 1.0,
@@ -562,11 +575,14 @@ class Take:
         cam = (self.style or {}).get("params", {}).get("camera", {})
         self.base_zoom = float(cam.get("base_zoom", 1.12))
         self.punch = float(cam.get("punch_level", self.base_zoom + 0.1))
-        # склейки на шкале дубля: здесь кончается один кусок и начинается следующий
+        # склейки на шкале дубля: здесь кончается один кусок и начинается следующий. Склейки по вырезанным паузам
+        # (prep, cut_pauses) — jumps: на них смена плана со смазом (framing), а вспышка splice — только на вырезах дублей
+        self.jumps = [round(float(j), 3) for j in meta.get("jumps") or []]
         acc, self.splices = 0.0, []
         for s0, s1 in self.segments[:-1]:
             acc += s1 - s0
-            self.splices.append(round(acc, 3))
+            if all(abs(acc - j) > 0.02 for j in self.jumps):
+                self.splices.append(round(acc, 3))
         self.src_words = json.loads((work / f"{stem}.words.json").read_text(encoding="utf-8"))["words"]
         self.words = json.loads((work / stem / "aroll.words.json").read_text(encoding="utf-8"))["words"]
 
@@ -591,13 +607,15 @@ class Take:
             raise ValueError(f"Слово [{i}] «{w['word']}» не нашлось в дубле — оно вырезано?")
         return j
 
-    def splice_punches(self, hold: float = 0.9) -> list:
+    def splice_punches(self, hold: float = 0.9, jumps: bool = False) -> list:
         """Наезды director.json на каждую склейку: кадр мгновенно бьёт заметно крупнее (+0.16 к базе),
         держится hold с и отпускает за 0.6 с. Пара на странице — splice(t) в beats: смаз-навод и вспышка.
+        jumps — и на склейках по паузам (страница без смены плана framing: там их прячет она).
 
         Так режут референсы (Арсен, риелтор): на склейке меняется весь план, а не дёргается кадр.
         """
-        return [[j, round(j + hold, 2), round(self.base_zoom + 0.16, 2), 0.0, 0.6] for j in self.splices]
+        cuts = sorted(self.splices + (self.jumps if jumps else []))
+        return [[j, round(j + hold, 2), round(self.base_zoom + 0.16, 2), 0.0, 0.6] for j in cuts]
 
     def framing(self, keep_wide: list = (), every: float = 2.4) -> tuple:
         """Смена плана общий ↔ крупный, как монтаж с двух камер (стиль antishkola, IMG_1799 v5, 15.10.2026).
@@ -605,17 +623,23 @@ class Take:
         Перескок — мгновенный, на границе фразы (пауза ≥ 0.08 с или знак препинания) не чаще раза в 1.6 с и не
         реже раза в every с. Крупный — база + 0.12; перед склейкой — общий (там бьёт splice), keep_wide —
         окна [(от, до)] по шкале дубля, где крупный нельзя (портрет сбоку ляжет на лицо).
-        Возвращает (наезды для director.json, строки beats со whip() на входе в крупный).
+        Склейка по вырезанной паузе (jumps) — сама граница плана: рез прячется перескоком крупности со смазом,
+        как в двухкамерном монтаже (Валера 20.10.2026: «склеить переходом, чтобы не заметно было даже»). Если окно
+        крупного там не встало (keep_wide, край ролика), на склейке — короткий наезд, как на вырезе дубля.
+        Возвращает (наезды для director.json, строки beats со whip() на входе в крупный и на каждой такой склейке).
         """
         tight = round(self.base_zoom + 0.12, 2)
         edges, last = [], 0.0
         for a, b in zip(self.words, self.words[1:]):
             gap = b["start"] - a["end"]
             edge = round(a["end"] + min(gap, 0.12) / 2, 2) if gap > 0 else round(b["start"], 2)
+            if any(abs(edge - j) < 0.8 for j in self.jumps):
+                continue                                 # у склейки по паузе граница своя — ровно на ней
             natural = gap >= 0.08 or a["word"][-1:] in ",.?!—:"
             if ((natural and edge - last >= 1.6) or edge - last >= every) and edge < self.duration - 3.0:
                 edges.append(edge)
                 last = edge
+        edges = sorted(edges + [round(j, 3) for j in self.jumps])
         punches = []
         for a, b in zip(edges[0::2], edges[1::2]):
             for j in self.splices:
@@ -624,9 +648,26 @@ class Take:
             for c0, c1 in keep_wide:
                 if a < c1 and b > c0:
                     a, b = (a, c0) if c0 - a >= b - c1 else (c1, b)
-            if b - a >= 1.2:
+            if b - a >= 1.2 or (b - a >= 0.5 and any(abs(x - j) < 0.02 for j in self.jumps for x in (a, b))):
                 punches.append([a, b, tight, 0.0, 0.0])
-        whips = [a for a, *_ in punches if all(abs(a - j) > 1.0 for j in self.splices)]
+        for j in self.jumps:                             # план на склейке не сменился — сменить
+            if any(abs(x - j) < 0.02 for p in punches for x in p[:2]):
+                continue
+            host = next((p for p in punches if p[0] < j < p[1]), None)
+            if host:
+                host[1] = round(j, 3)                    # склейка внутри крупного — крупный кончается на ней
+                continue
+            later = [p for p in punches if p[0] > j]
+            nxt = min(later)[0] if later else self.duration
+            if nxt - j >= 0.95:                          # наезд, как на вырезе дубля (splice_punches)
+                punches.append([round(j, 3), round(min(j + 0.9, nxt - 0.65), 2), round(self.base_zoom + 0.16, 2), 0.0, 0.6])
+            elif later:
+                min(later)[0] = round(j, 3)              # крупный и так рядом — начинается прямо на склейке
+            else:
+                punches.append([round(j, 3), round(self.duration, 3), tight, 0.0, 0.0])
+        punches.sort()
+        whips = sorted({round(a, 2) for a, *_ in punches if all(abs(a - j) > 1.0 for j in self.splices)}
+                       | {round(j, 2) for j in self.jumps})
         return punches, "\n".join(f"      whip({a:.2f});" for a in whips) + "\n"
 
     def fixes(self, by_src: dict) -> dict:

@@ -324,7 +324,7 @@ def analyze(stem: str, env: np.ndarray | None = None) -> dict:
         for at in ranked[:1]:
             bloopers.append({"at": [round(max(0.0, at - 0.6), 2), round(at - 0.6 + BLOOPER_MAX, 2)],
                              "why": "сорванное начало: мат" + (" и смех" if any(abs(at - x) < 3 for x in lead_laughs) else "")})
-    edit = {"trim": [round(max(0.0, start - 0.3), 2), round(end + 0.3, 2)], "cut_pauses": False}
+    edit = {"trim": [round(max(0.0, start - 0.3), 2), round(end + 0.3, 2)]}     # рез пауз — как в project.json
     if drops:
         edit["drop"] = drops
     kept = [b["at"] for b in bleeps if not b["dropped"]]

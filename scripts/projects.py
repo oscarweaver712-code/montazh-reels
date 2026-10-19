@@ -54,6 +54,10 @@ CONFIG = {
     "soft_sounds": False,                     # тихие звуки монтажа в каждом ролике (не реже одного на 6 с)
     "face_min": 0.6,                          # доля ролика с человеком в кадре: перебивки во весь кадр — не больше остатка
     "insert_style": "",                       # мотив вставок: "blueprint" — «Чертёж» (рамка ИИ-клипов, scripts/blueprint.py)
+    "cut_pauses": False,                      # резать длинные паузы внутри дубля (prep.py); edit.json ролика решает сам
+    "pause_max": 0.5,                         # с: пауза длиннее режется …
+    "pause_keep": 0.2,                        # с: … и от неё остаётся столько тишины
+    "music_level": 0.55,                      # громкость фоновой музыки от нормы материалов (kit.background_music)
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
@@ -62,7 +66,11 @@ CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строк�
                 "music": (bool, "true или false"), "hook_flash": (bool, "true или false"), "soft_sounds": (bool, "true или false"),
                 "face_min": ((int, float), "числом от 0 до 1"), "insert_style": (str, "строкой: \"\" или \"blueprint\""),
                 "insert_gap_max": ((int, float), "числом секунд — дольше без вставок verify_page не пускает"),
-                "caption_accent_scale": ((int, float), "числом от 1 до 1.6 — во сколько ключевое слово субтитров крупнее")}
+                "caption_accent_scale": ((int, float), "числом от 1 до 1.6 — во сколько ключевое слово субтитров крупнее"),
+                "cut_pauses": (bool, "true или false"),
+                "pause_max": ((int, float), "числом секунд — пауза длиннее режется"),
+                "pause_keep": ((int, float), "числом секунд — сколько тишины остаётся от вырезанной паузы"),
+                "music_level": ((int, float), "числом от 0 до 1 — громкость музыки от нормы материалов")}
 
 
 class ProjectError(Exception):

@@ -6,7 +6,7 @@
 
   {
     "trim": [6.2, 63.6],     # откуда и докуда дубль; границы сами уезжают в тишину
-    "cut_pauses": false,      # паузы внутри пока не режем — дубль идёт сплошняком
+    "cut_pauses": true,       # резать длинные паузы внутри (по умолчанию — как в project.json проекта)
     "format": "16:9",         # формат ролика (formats.py); по умолчанию — из брифа или 9:16
     "language": "en",         # язык речи для распознавания; по умолчанию — из project.json проекта
     "air_end": 0.6            # тишины после последнего слова, с (не дальше конца паузы); по умолчанию 0.12
@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import formats
 import styles
 from common import require_queue
-from common import (WORK_DIR, detect_silence, ffmpeg_bin, load_preset, measure_noise_floor, probe,
+from common import (WORK_DIR, detect_silence, detect_voice, ffmpeg_bin, load_preset, measure_noise_floor, probe,
                     snap_segments)
 from cut import remap_words
 from reframe import reframe
@@ -40,6 +40,17 @@ from render import render
 from transcribe import run_transcribe
 
 AIR = 0.12          # сколько тишины оставить до первого слова и после последнего
+VOICE_PRE = 0.08    # с: начало дубля — за столько до голоса (согласная в начале тише гласной)
+BREATH_MAX = 0.6    # с: вдох или шорох между двумя тишинами — пауза не рвётся, если в нём нет голоса
+
+
+def project_config(stem: str) -> dict:
+    """project.json проекта ролика (рез пауз и его пороги); ролик вне проектов — умолчания."""
+    import projects
+    try:
+        return projects.of_or_default(stem).config
+    except projects.ProjectError:
+        return dict(projects.CONFIG)
 
 
 def speech_language(stem: str, edit: dict) -> str:
@@ -54,7 +65,7 @@ def speech_language(stem: str, edit: dict) -> str:
 
 
 def find_edges(words: list, silences: list, start_hint: float, end_hint: float,
-               air_end: float = AIR) -> tuple:
+               air_end: float = AIR, voice: list | None = None) -> tuple:
     """Границы дубля в настоящей тишине, а не по таймингам распознавания.
 
     Whisper ставит конец слова на 0.3–0.4 с раньше, чем человек договорил: если резать
@@ -83,6 +94,11 @@ def find_edges(words: list, silences: list, start_hint: float, end_hint: float,
         start = max(s0, s1 - AIR)
     else:
         start = max(0.0, first["start"] - 0.2)
+    # Вдох перед первым словом паузу по −35 дБ рвёт, и ролик открывался им (IMG_3645, 20.10.2026: «на старте точно есть
+    # пауза»). Голос (common.detect_voice) громче вдоха — начало за VOICE_PRE до него, если он позже найденного начала.
+    onset = next((a for a, b in voice or [] if b > start and a <= first["end"] + 0.4), None)
+    if onset is not None and onset - VOICE_PRE > start:
+        start = onset - VOICE_PRE
 
     after = next((s for s in silences if s[0] >= last["start"] + 0.1), None)
     end = min(after[0] + air_end, after[1]) if after else last["end"] + 0.3
@@ -103,7 +119,7 @@ def split_by_drops(start: float, end: float, drops: list) -> list:
     """Дубль без неудачных кусков: [(начало, конец), …] в секундах исходника.
 
     Неудачные дубли и оговорки с матом вырезаются по точкам, которые режиссёр нашёл по
-    громкости (в тишине между словами), — это не рез пауз, паузы остаются как были.
+    громкости (в тишине между словами). Длинные паузы (find_pauses) приходят сюда же — вырезами.
     """
     pieces, cursor = [], start
     for a, b in sorted((float(a), float(b)) for a, b in drops):
@@ -114,6 +130,46 @@ def split_by_drops(start: float, end: float, drops: list) -> list:
         cursor = b
     pieces.append((cursor, end))
     return pieces
+
+
+def find_pauses(words: list, silences: list, voice: list, start: float, end: float,
+                longer: float, keep: float) -> list:
+    """Длинные паузы внутри дубля → вырезы [(от, до)] в секундах исходника.
+
+    Валера 20.10.2026: «в моменте я могу затупить… хочется не терять динамику; вырезать паузу и склеить переходом, чтобы
+    не заметно было». Пауза — настоящая тишина (detect_silence), а не промежуток между словами whisper (инвариант 3);
+    вдох или шорох без голоса (detect_voice) посреди паузы её не рвёт. Пауза длиннее longer режется так, что от неё
+    остаётся keep — пополам у каждого края, рез обоими концами в тишине. Если whisper слышит внутри слово — не режем.
+    """
+    inside = sorted((max(a, start), min(b, end)) for a, b in silences if b > start and a < end)
+    merged = []
+    for a, b in inside:
+        if merged:
+            p0, p1 = merged[-1]
+            quiet = not any(va < a and vb > p1 for va, vb in voice)
+            if a - p1 <= 0.05 or (a - p1 <= BREATH_MAX and quiet):
+                merged[-1] = (p0, max(p1, b))
+                continue
+        merged.append((a, b))
+    cuts = []
+    for p0, p1 in merged:
+        if p0 <= start + 0.01 or p1 >= end - 0.01 or p1 - p0 <= longer:
+            continue                                  # края дубля решает find_edges
+        a, b = round(p0 + keep / 2, 3), round(p1 - keep / 2, 3)
+        if any(a < (w["start"] + w["end"]) / 2 < b for w in words):
+            continue
+        cuts.append((a, b))
+    return cuts
+
+
+def pause_jumps(segments: list, cuts: list) -> list:
+    """Склейки по вырезанным паузам на шкале дубля — там смена плана, а не вспышка (kit.Take.jumps)."""
+    acc, out = 0.0, []
+    for (s0, s1), (n0, _) in zip(segments, segments[1:]):
+        acc += s1 - s0
+        if any(abs(a - s1) <= 0.05 and abs(b - n0) <= 0.05 for a, b in cuts):
+            out.append(round(acc, 3))
+    return out
 
 
 def keep_bloopers(drops: list, bloopers: list) -> list:
@@ -337,27 +393,36 @@ def main():
     silences = detect_silence(video, preset["cut"].get("silence_db", -35),
                               preset["cut"].get("silence_min", 0.10))
 
+    voice = detect_voice(video)
     trim = edit.get("trim") or [0.0, info["duration"]]
     start, end = find_edges(words, silences, float(trim[0]), float(trim[1]),
-                            float(edit.get("air_end", AIR)))
-    if edit.get("cut_pauses", False):
-        sys.exit("Рез пауз внутри дубля в prep.py пока не включён — договорились не резать")
+                            float(edit.get("air_end", AIR)), voice=voice)
 
     try:
         drops = keep_bloopers(edit.get("drop") or [], edit.get("blooper") or [])
-        pieces = split_by_drops(start, end, drops)
+        cuts = []
+        project = project_config(stem)
+        if edit.get("cut_pauses", project["cut_pauses"]):
+            busy = [(float(a), float(b)) for a, b in drops + list(edit.get("bleep") or [])]
+            cuts = [c for c in find_pauses(words, silences, voice, start, end, float(project["pause_max"]),
+                                           float(project["pause_keep"]))
+                    if not any(c[0] < b + 0.05 and c[1] > a - 0.05 for a, b in busy)]
+        pieces = split_by_drops(start, end, drops + cuts)
     except ValueError as error:
         sys.exit(str(error))
     segments = snap_segments(pieces, fps)
+    jumps = pause_jumps(segments, cuts)
+    if cuts:
+        print(f"  → пауз вырезано: {len(cuts)} ({sum(b - a for a, b in cuts):.1f} с) — на склейках смена плана")
     bloopers = blooper_spans(segments, edit.get("blooper") or [])
 
     mark_dropped(words, drops)
     aroll_words = remap_words(words, segments)
     kept = sum(e - s for s, e in segments)
-    cuts = f", вырезано дублей: {len(segments) - 1 - len(bloopers)}" if len(segments) > 1 else ""
-    cuts += f", угаров: {len(bloopers)}" if bloopers else ""
+    done = f", вырезано дублей: {len(segments) - 1 - len(bloopers) - len(jumps)}" if len(segments) > 1 + len(jumps) else ""
+    done += f", угаров: {len(bloopers)}" if bloopers else ""
     print(f"  → дубль {segments[0][0]:.2f}–{segments[-1][1]:.2f} с исходника "
-          f"({kept:.1f} с{cuts}), слов {len(aroll_words)}")
+          f"({kept:.1f} с{done}), слов {len(aroll_words)}")
 
     preset["cut"]["enabled"] = False
     preset["subs"]["enabled"] = False
@@ -390,7 +455,7 @@ def main():
     (out_dir / "aroll.json").write_text(json.dumps({
         "source": str(video), "segments": segments, "fps": fps,
         "duration": sum(e - s for s, e in segments),
-        "look": preset.get("look"), "format": fmt, "bloopers": bloopers,
+        "look": preset.get("look"), "format": fmt, "bloopers": bloopers, "jumps": jumps,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  ✓ готово за {time.time() - started:.0f} с → {out.relative_to(WORK_DIR.parent)}")
 

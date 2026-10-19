@@ -162,6 +162,56 @@ def detect_silence(video: Path, threshold_db: float = -35.0,
     return silences
 
 
+VOICE_WINDOW = 0.02     # с: окно громкости для detect_voice
+
+
+def detect_voice(video: Path, below_speech: float = 15.0, min_len: float = 0.06) -> list:
+    """Промежутки голоса: [(начало, конец), …] — громкость не ниже речи минус below_speech дБ дольше min_len.
+
+    Тишина по порогу −35 дБ (detect_silence) не отличает вдох от слова: вдох перед первой фразой (−24…−37 дБ) рвал
+    паузу, и ролик открывался полусекундой вдоха (IMG_3645, 20.10.2026: голос с 0,62 с, whisper — с 0,12). Голос
+    громче вдоха на 10–20 дБ, поэтому порог считается от уровня самой речи — медианы громких окон, а одиночный
+    щелчок короче min_len голосом не считается. Звук читается потоком по секунде: память не зависит от длины записи.
+    """
+    import numpy as np
+    rate = 16000
+    step = int(rate * VOICE_WINDOW)
+    proc = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", str(rate),
+                             "-f", "s16le", "-"], stdout=subprocess.PIPE)
+    levels, rest = [], b""
+    try:
+        while True:
+            chunk = proc.stdout.read(rate * 2)
+            if not chunk:
+                break
+            data = rest + chunk
+            usable = len(data) // (step * 2) * step * 2
+            rest = data[usable:]
+            if usable:
+                frames = np.frombuffer(data[:usable], np.int16).astype(np.float32).reshape(-1, step) / 32768
+                levels.extend((20 * np.log10(np.sqrt((frames ** 2).mean(axis=1)) + 1e-9)).tolist())
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    if not levels:
+        return []
+    db = np.array(levels)
+    speech = float(np.median(db[db > np.percentile(db, 40)]))
+    loud = db >= speech - below_speech
+    spans, k, need = [], 0, max(1, round(min_len / VOICE_WINDOW))
+    while k < len(loud):
+        if not loud[k]:
+            k += 1
+            continue
+        j = k
+        while j < len(loud) and loud[j]:
+            j += 1
+        if j - k >= need:
+            spans.append((round(k * VOICE_WINDOW, 3), round(j * VOICE_WINDOW, 3)))
+        k = j
+    return spans
+
+
 def measure_noise_floor(video: Path, silences: list, default: float = -45.0) -> float:
     """Настоящий уровень шума — по средней громкости пауз этой же записи.
 

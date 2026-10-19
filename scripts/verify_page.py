@@ -735,14 +735,15 @@ SFX_NORM_MARK = 'name="reels-sfx-norm"'        # kit ставит в стран�
 
 def music_problems(page: str, project: str | None) -> list:
     """Фоновая музыка (Валера 17.10.2026: «менять постоянно, но по громкости негромко, вот как сейчас хорошо»): трек
-    фонотеки (yt-*), не громче kit.BGM_LEVEL от нормы материалов и не тот, что уже стоит в другом ролике."""
+    фонотеки (yt-*), не громче громкости проекта (kit.bgm_level: project.json → music_level) от нормы материалов и не
+    тот, что уже стоит в другом ролике."""
     import kit
     import materials
     tracks = re.findall(r'<audio id="sfx-[^"]*" src="assets/materials/([^"]+)"[^>]*?data-volume="([\d.]+)"', page)
     if not tracks or project is None:
         return []
     stem = project.split("--")[0]
-    problems, limit = [], kit.SFX_TARGET + 20 * math.log10(kit.BGM_LEVEL) + 0.5
+    problems, limit = [], kit.SFX_TARGET + 20 * math.log10(kit.bgm_level(stem)) + 0.5
     for name, volume in tracks:
         if not name.startswith(kit.BGM_PREFIX):
             continue                           # свой звук человека из материалов — его громкость решает он
@@ -1004,6 +1005,15 @@ def take_splices(project: Path) -> list:
     return out
 
 
+def take_pause_cuts(project: Path) -> list:
+    """Склейки по вырезанным паузам (aroll.json → jumps, prep cut_pauses): их прячет смена плана, надпись через них
+    висеть может — человек не перескакивает, пауза просто короче."""
+    meta = take_dir(project) / "aroll.json"
+    if not meta.exists():
+        return []
+    return [float(j) for j in json.loads(meta.read_text(encoding="utf-8")).get("jumps") or []]
+
+
 def camera_jumps(project: Path, splices: list) -> dict:
     """{склейка: |зум после − зум до|} по camera.js — сменился ли план на резе."""
     path = project / "camera.js"
@@ -1199,8 +1209,11 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
             print(f"  · осознанный заезд: {g['el']} «{g['text']}» — {g['zone']}: {g['allowed']}")
     if splices:
         jumps = camera_jumps(project, splices)
+        pauses = take_pause_cuts(project)
         bad = []
         for sp in res.get("splices", []):
+            if any(abs(sp["t"] - p) <= 0.02 for p in pauses):
+                sp["across"] = []
             t = sp["t"]
             if sp["flash"] < 0.3 and sp["blur"] < 4:
                 bad.append(f"склейка {t:.2f} с: ни вспышки, ни смаза — splice({t:.2f}) в beats")
