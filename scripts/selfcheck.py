@@ -1295,11 +1295,13 @@ def check_plan(report: Report, tmp: Path):
         (plan.WORK_DIR / "X").mkdir(parents=True)
         (plan.WORK_DIR / "X" / "aroll.json").write_text(json.dumps({"duration": 20.0}), encoding="utf-8")
 
-        def problems(rows: list, filled: bool = True) -> list:
+        def problems(rows: list, filled: bool = True, seen: int = 5) -> list:
             board = "\n".join(f"| {t} | реплика | что на экране | {tool} | почему | {hold} |" for t, tool, hold in rows)
             thought = "зритель унесёт одно" if filled else f"{plan.TODO} одной фразой"
+            eyes = "\n".join(f"- {i * 3.5:.1f} с — банка в правой руке, жест ладонью" for i in range(seen))
             (plan.WORK_DIR / "X" / "plan.md").write_text(
-                f"# План\n\n## Исходник\n- длина 20 с\n\n## Мысль ролика\n{thought}\n\n## Хук\nвопрос в лоб\n\n"
+                f"# План\n\n## Исходник\n- длина 20 с\n\n## Дубль глазами\n{eyes}\n\n"
+                f"## Мысль ролика\n{thought}\n\n## Хук\nвопрос в лоб\n\n"
                 f"## Раскадровка\n| время, с | реплика | что на экране | инструмент | почему он | держится, с |\n"
                 f"|---|---|---|---|---|---|\n{board}\n\n## Звук\nудар на главном\n\n## Риски\nлицо низко\n",
                 encoding="utf-8")
@@ -1309,13 +1311,22 @@ def check_plan(report: Report, tmp: Path):
                          ("12.5", "счётчик", "3"), ("16.0", "CTA", "4")])
         bad = " | ".join(problems([("0.5", "голограмма", "2"), ("4.0", "панель", "7"), ("14.0", "наезд", ""),
                                    ("17.0", "CTA", "3")], filled=False))
+        rows = [("0.5", "слово за спиной", "2"), ("4.0", "панель", "3"), ("8.0", "наезд", ""), ("12.5", "счётчик", "3"),
+                ("16.0", "CTA", "4")]
+        blind = " | ".join(problems(rows, seen=2))
+        # 17.10.2026, IMG_3292 v2: «как будто анализ видео вообще не проводился» — дубль никто не смотрел
+        (plan.WORK_DIR / "X" / "aroll.mp4").write_bytes(b"")
+        no_sheet = " | ".join(problems(rows))
+        (plan.WORK_DIR / "X" / "aroll.mp4").unlink()
         caught = {"пустой раздел": "«Мысль ролика» не заполнен" in bad, "чужой инструмент": "голограмма" in bad,
-                  "плашка висит": "держится 7" in bad, "дыра без смены": "4.0–14.0" in bad}
+                  "плашка висит": "держится 7" in bad, "дыра без смены": "4.0–14.0" in bad,
+                  "дубль не смотрели": "2 наблюдений" in blind, "нет сетки дубля": "сетки кадров" in no_sheet}
     finally:
         plan.WORK_DIR = saved
     report.check(not good and all(caught.values()),
-                 "план: годный проходит; пустой раздел, чужой инструмент, висящая плашка и дыра без смены — нет",
-                 "; ".join(good) if good else ", ".join(k for k, v in caught.items() if not v) or "все четыре пойманы")
+                 "план: годный проходит; пустой раздел, чужой инструмент, висящая плашка, дыра без смены "
+                 "и дубль, который не смотрели глазами, — нет",
+                 "; ".join(good) if good else ", ".join(k for k, v in caught.items() if not v) or "все шесть пойманы")
 
 
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
@@ -3160,6 +3171,11 @@ def check_studio(report: Report, tmp: Path):
     cmd_safe = brain.command("claude", "x", mode="safe") if brain.find_binary("claude") else ["--permission-mode"]
     report.check("--dangerously-skip-permissions" not in cmd_safe and "--permission-mode" in cmd_safe,
                  "безопасный режим мозга не снимает ограничения")
+    # 17.10.2026: мозг студии был без браузера — v2 IMG_3292 вышла без видео Flow и без музыки, а в терминале
+    # то же самое делалось. Студия должна монтировать так же, как терминал
+    report.check(("--chrome" in cmd_safe or not brain.find_binary("claude")) and "mcp__claude-in-chrome" in brain.SAFE_TOOLS
+                 and "браузера нет" not in brain.STUDIO_PROMPT and "jobqueue.py wait" in brain.STUDIO_PROMPT,
+                 "мозг студии с браузером, как агент в терминале, и ждёт очередь через wait")
     report.check(brain.child_env().get(brain.CHILD_ENV) == "1", "агент студии помечен для хука старта")
 
     # цена хода (13.10.2026): total_cost_usd у Claude — нарастающий итог сессии, а студия показывала его
@@ -3353,6 +3369,33 @@ def check_studio_failures(report: Report, tmp: Path):
         said = got.text
     report.check(got.status_code == 500 and "division by zero" in said,
                  "упавший запрос студии отдаёт странице причину, а не голое «Internal Server Error»", said[:70])
+
+    # 17.10.2026: ИИ ждал рендер своим циклом по логу («until grep ^exit») — строки нет, ход висел
+    q = tmp / "wait_queue"
+    for sub_dir in ("done", "failed", "logs"):
+        (q / sub_dir).mkdir(parents=True)
+    (q / "done" / "05-render-A.json").write_text("[]", encoding="utf-8")
+    (q / "logs" / "05-render-A.log").write_text("✓ A_v1.mp4 готов\n", encoding="utf-8")
+    (q / "failed" / "05-render-B.json").write_text("[]", encoding="utf-8")
+    (q / "20-prep-C.json").write_text("[]", encoding="utf-8")
+    with contextlib.redirect_stdout(io.StringIO()):
+        codes = [jobqueue.wait(n, 0.3, queue=q, poll=0.1) for n in ("05-render-A", "05-render-B", "20-prep-C", "99-нет")]
+    report.check(codes == [0, 1, 2, 2], "ожидание задачи очереди: готово — 0, упала — 1, идёт дольше срока или нет — 2, без вечного цикла",
+                 str(codes))
+
+    # 17.10.2026, IMG_3292 v2: трека не нашлось — ролик ушёл в рендер без музыки, сказано только в отчёте
+    import verify_page
+    with temp_projects(tmp / "music_projects", "loud", "quiet") as made:
+        (made["loud"].root / "project.json").write_text('{"music": true}', encoding="utf-8")
+        for name, folder in (("M1", "loud"), ("M2", "quiet")):
+            (made[folder].input / f"{name}.mp4").write_bytes(b"")
+        bare = '<audio id="sfx-hit" src="assets/sfx/pop.mp3" data-start="1.00" data-volume="0.5"></audio>'
+        with_bgm = bare + '<audio id="sfx-bgm" src="assets/materials/yt-calm.mp3" data-start="0.00" data-volume="0.1"></audio>'
+        verdicts = [verify_page.music_missing(bare, "M1"), verify_page.music_missing(with_bgm, "M1"),
+                    verify_page.music_missing(bare, "M2")]
+    report.check(bool(verdicts[0]) and verdicts[1] is None and verdicts[2] is None,
+                 "проект просит музыку — ролик без трека не идёт в рендер; с треком и в проекте без музыки — идёт",
+                 (verdicts[0] or "пропустил без музыки")[:70])
 
     # хук старта перезапускает сервер на старом коде — но не посреди хода ИИ или пачки
     import studio_up

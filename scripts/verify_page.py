@@ -684,6 +684,24 @@ def music_problems(page: str, project: str | None) -> list:
     return problems
 
 
+def music_missing(page: str, project: str) -> str | None:
+    """Проект просит фон в каждом ролике (project.json → music), а трека на странице нет — причина отказа.
+
+    IMG_3292 v2 (17.10.2026): подходящего трека не нашлось, ИИ собрал ролик без музыки и сказал об этом
+    только в отчёте — «музыки нет, какого хуя». Нет трека — ролик не готов: положить его (music.py add)
+    или спросить человека, а не рендерить."""
+    import kit
+    import projects
+    try:
+        wants = projects.of(project.split("--")[0]).config.get("music")
+    except projects.ProjectError:
+        return None
+    if not wants or re.search(rf'src="assets/materials/{re.escape(kit.BGM_PREFIX)}[^"]+"', page):
+        return None
+    return ("нет фоновой музыки, а проект просит её в каждом ролике: скачай 2–3 лоу-фай из фонотеки YouTube → "
+            "scripts/music.py add <имя> <файлы> → kit.background_music(…); нет трека — спроси человека, не рендерь без него")
+
+
 def sound_problems(page: str, project: str | None = None) -> list:
     """Звуки страницы по правилам: громкость по замеру файла не выше нормы, убранных нет, повторов нет."""
     import math
@@ -956,6 +974,9 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
                      "(старые звуки громче голоса и повторяются)")
     else:
         print("  · звуки по правилам до 12.10.2026 — при правке ролика пересобрать page.py")
+    if strict:
+        silent = music_missing(page_text, project.name)
+        check(not silent, silent or "фоновая музыка на месте")
 
     started = time.time()
     splices = take_splices(project)

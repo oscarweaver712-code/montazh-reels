@@ -6,7 +6,12 @@
 сильные моушн-студии: сначала раскадровка, потом анимация; сначала идея и одобрение, потом сборка.
 
   .venv/bin/python scripts/plan.py IMG_3317           # разбор исходника → work/IMG_3317/plan.md (каркас)
+  .venv/bin/python scripts/plan.py IMG_3317 --sheet   # сетка кадров дубля после prep → work/IMG_3317/sheets/take.jpg
   .venv/bin/python scripts/plan.py IMG_3317 --check   # план заполнен и годится — без этого рендер не идёт
+
+«Дубль глазами» (17.10.2026, IMG_3292 v2: «как будто анализ видео вообще не проводился»): режиссёр
+собрал ролик по транскрипту и чужой странице, ни разу не посмотрев на человека в кадре. Теперь план
+не проходит, пока в нём нет наблюдений по сетке кадров дубля — что в руках, жесты, мимика — со временем.
 
 Раздел «Исходник» считается здесь по файлам ролика (слова с таймингами, лицо по кадрам, длина,
 бриф): паузы, числа и имена в речи, перечисления, вопросы, где лицо и куда можно ставить карточки.
@@ -16,13 +21,15 @@
 """
 import argparse
 import json
+import math
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import ROOT, WORK_DIR  # noqa: E402  (заодно UTF-8 в консоли — common это делает)
+from common import ROOT, WORK_DIR, ffmpeg_bin  # noqa: E402  (заодно UTF-8 в консоли — common это делает)
 
 # Инструменты конвейера: имя в плане → что это и когда к месту. Новое из арсенала попадает сюда,
 # когда встроено в kit/viz и проверено, — не раньше.
@@ -75,7 +82,10 @@ HOOK_BY = 3.0                               # первая смена на эк�
 MAX_GAP = 5.0                               # дольше без запланированной смены на экране — провал, с
 HOLD_MAX = 5.0                              # то же правило, что в verify_page: плашка не висит дольше, с
 PAUSE = 0.7                                 # паузы в речи от этой длины — в разбор, с
-SECTIONS = ("Мысль ролика", "Хук", "Раскадровка", "Звук", "Риски")
+SECTIONS = ("Дубль глазами", "Мысль ролика", "Хук", "Раскадровка", "Звук", "Риски")
+SEEN_MIN = 5                                # столько наблюдений по кадрам дубля, со временем
+SHEET_COLS, SHEET_TILES = 8, 48             # сетка дубля: 8 колонок, не больше 48 плиток
+SHEET_STEP = 1.5                            # кадр каждые столько секунд (длинный дубль — реже)
 TODO = "✎"
 
 NUMBER_STEMS = ("тысяч", "миллион", "миллиард", "биллион", "триллион", "процент", "половин", "четверт",
@@ -231,10 +241,35 @@ def decisions(stem: str, fmt: str) -> list:
     return lines
 
 
+def take_sheet(stem: str) -> tuple:
+    """(сетка кадров дубля, шаг в с) или (None, шаг), если дубля ещё нет. Плитки слева направо, сверху
+    вниз; первая — 0 с. Один проход ffmpeg по 1080p-дублю, кадры сразу ужимаются — секунды и мало памяти."""
+    aroll, meta = WORK_DIR / stem / "aroll.mp4", WORK_DIR / stem / "aroll.json"
+    duration = float(json.loads(meta.read_text(encoding="utf-8")).get("duration", 0)) if meta.exists() else 0.0
+    step = max(SHEET_STEP, round(duration / SHEET_TILES + 0.05, 1)) if duration else SHEET_STEP
+    if not aroll.exists() or not duration:
+        return None, step
+    out = WORK_DIR / stem / "sheets" / "take.jpg"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rows = math.ceil(math.ceil(duration / step) / SHEET_COLS)
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-threads", "2", "-i", str(aroll), "-vf",
+                    f"fps=1/{step:g}:round=down,scale=216:-2,tile={SHEET_COLS}x{rows}:padding=4:color=white",
+                    "-frames:v", "1", str(out)], check=True, capture_output=True)
+    return out, step
+
+
+def seen_lines(body: str) -> list:
+    """Наблюдения по дублю: строки, где есть время «12.5 с» и после него что-то увидено."""
+    return [line for line in body.splitlines() if re.search(r"\d+(?:[.,]\d+)?\s*с\b.*\S{4,}", line)]
+
+
 def skeleton(stem: str) -> str:
     tools = " · ".join(TOOLS)
     meta_path = WORK_DIR / stem / "aroll.json"
     fmt = json.loads(meta_path.read_text(encoding="utf-8")).get("format", "9:16") if meta_path.exists() else "9:16"
+    sheet, step = take_sheet(stem)
+    where = (f"сетку кадров {sheet.relative_to(ROOT)} (плитки слева направо, сверху вниз, каждая {step:g} с; первая — 0 с)"
+             if sheet else f"сетку кадров — её ещё нет: после prep `.venv/bin/python scripts/plan.py {stem} --sheet`")
     return f"""# План монтажа {stem}
 
 > Сначала план, потом страница (правило Валеры, 13.10.2026). Раздел «Исходник» посчитал plan.py;
@@ -246,6 +281,11 @@ def skeleton(stem: str) -> str:
 
 ## Что видно → что делаю
 {chr(10).join(decisions(stem, fmt))}
+
+## Дубль глазами
+{TODO} открой {where} и запиши, что видно, со временем — не меньше {SEEN_MIN} строк вида «12.0 с — показывает
+три пальца»: что в руках, жесты и куда показывает, мимика и смех, наклоны и смена позы, предметы в кадре.
+Раскадровка опирается на это: показ рукой — графика туда, предмет в руке — не закрывать, смех — не перебивать.
 
 ## Мысль ролика
 {TODO} одной фразой: что зритель унесёт
@@ -300,6 +340,13 @@ def check(stem: str) -> list:
         body = section(text, name)
         if not body or TODO in body:
             problems.append(f"раздел «{name}» не заполнен (осталось {TODO} или пусто)")
+    seen = seen_lines(section(text, "Дубль глазами"))
+    if section(text, "Дубль глазами") and TODO not in section(text, "Дубль глазами") and len(seen) < SEEN_MIN:
+        problems.append(f"«Дубль глазами»: {len(seen)} наблюдений со временем, нужно не меньше {SEEN_MIN} — "
+                        f"посмотри сетку кадров дубля, а не только транскрипт")
+    sheet, aroll = WORK_DIR / stem / "sheets" / "take.jpg", WORK_DIR / stem / "aroll.mp4"
+    if aroll.exists() and (not sheet.exists() or sheet.stat().st_mtime < aroll.stat().st_mtime):
+        problems.append(f"нет свежей сетки кадров дубля — .venv/bin/python scripts/plan.py {stem} --sheet и посмотри её")
     meta_path = WORK_DIR / stem / "aroll.json"
     duration = float(json.loads(meta_path.read_text(encoding="utf-8")).get("duration", 0)) if meta_path.exists() else 0.0
     rows = beats(section(text, "Раскадровка"))
@@ -333,7 +380,15 @@ def main():
     ap.add_argument("stem", help="ролик: IMG_3317")
     ap.add_argument("--check", action="store_true", help="проверить заполненный план")
     ap.add_argument("--force", action="store_true", help="переписать план заново (заполненное пропадёт)")
+    ap.add_argument("--sheet", action="store_true", help="сетка кадров дубля для «Дубль глазами» (после prep)")
     args = ap.parse_args()
+    if args.sheet:
+        sheet, step = take_sheet(args.stem)
+        if not sheet:
+            sys.exit(f"✗ нет дубля work/{args.stem}/aroll.mp4 — сначала prep (через очередь)")
+        print(f"✓ сетка дубля: {sheet.relative_to(ROOT)} — плитки слева направо, сверху вниз, каждая {step:g} с; "
+              f"посмотри её и заполни «Дубль глазами»")
+        return
     if args.check:
         problems = check(args.stem)
         if problems:

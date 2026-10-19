@@ -16,6 +16,9 @@ done/ или failed/. Пока идёт одна задача, вторая не
       "python scripts/prep.py projects/antishkola/input/IMG_3317.MOV" "python scripts/track.py work/IMG_3317/aroll.mp4"
   .venv/bin/python scripts/jobqueue.py --idle 900      # обработчик: живёт, пока очередь не пустует 15 мин
 
+  .venv/bin/python scripts/jobqueue.py wait 20-prep-IMG_3317   # дождаться: 0 — готово, 1 — упала
+
+Ждать задачу — только `wait`, а не своим циклом по логу: формат лога не обещан.
 `add` сам будит обработчик, если его нет. Каждая строка вывода обработчика — событие
 (старт, конец, ошибка): за ним удобно следить.
 
@@ -362,6 +365,35 @@ def serve(idle: float) -> None:
         idle_since = time.time()
 
 
+def wait(name: str, timeout: float, queue: Path | None = None, poll: float = 5) -> int:
+    """Ждёт, пока задача окажется в done/ или failed/; 0 — прошла, 1 — упала, 2 — её нет или не дождался.
+
+    Агенты ждали задачу самодельным циклом по логу («until grep ^exit …») — такой строки обработчик не
+    пишет, и ход ИИ по IMG_3292 (17.10.2026) крутился после готового рендера, пока его не погасили руками.
+    """
+    queue = queue or QUEUE
+    deadline = time.time() + timeout
+    while True:
+        for state, code in (("done", 0), ("failed", 1)):
+            found = [p for p in job_files(queue / state) if p.stem == name]
+            if found:
+                log = queue / "logs" / f"{name}.log"
+                try:
+                    tail = log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-12:]
+                except OSError:
+                    tail = []
+                print("\n".join(tail))
+                print(f"{'✓' if code == 0 else '✗'} {name}: {'готово' if code == 0 else 'упала'} (лог — {log.relative_to(ROOT) if log.is_relative_to(ROOT) else log})")
+                return code
+        if not any(p.stem == name for p in job_files(queue)):
+            print(f"✗ задачи {name} нет ни в очереди, ни в done/, ни в failed/ — проверь имя")
+            return 2
+        if time.time() > deadline:
+            print(f"✗ {name} ещё идёт — не дождался за {timeout / 60:g} мин; позови wait снова")
+            return 2
+        time.sleep(poll)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Очередь тяжёлых задач, по одной за раз")
     sub = ap.add_subparsers(dest="cmd")
@@ -370,9 +402,14 @@ def main():
     add.add_argument("steps", nargs="+", help="шаги — каждый одной строкой: \"python scripts/prep.py projects/<проект>/input/X.MOV\"")
     add.add_argument("--no-wake", action="store_true", help="не будить обработчик")
     sub.add_parser("stop", help="остановить задачу, которая выполняется сейчас")
+    w = sub.add_parser("wait", help="дождаться задачи: выход 0 — готово, 1 — упала, 2 — нет такой или не дождался")
+    w.add_argument("name", help="имя задачи, как в add: 05-render-IMG_3317")
+    w.add_argument("--timeout", type=float, default=50, help="минут ждать (по умолчанию 50)")
     ap.add_argument("--idle", type=float, default=900, help="выйти после стольких секунд пустой очереди")
     args = ap.parse_args()
 
+    if args.cmd == "wait":
+        sys.exit(wait(args.name, args.timeout * 60))
     if args.cmd == "stop":
         try:
             name = json.loads(CURRENT.read_text(encoding="utf-8"))["job"]

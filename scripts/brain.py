@@ -44,6 +44,11 @@ SAFE_TOOLS = [
     "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(grep *)",
     "Bash(mkdir -p *)", "Bash(cp *)", "Bash(curl -L -o work/*)", "Bash(curl -sL -o work/*)",
     "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(du *)",
+    # страница ролика (work/<имя>/page.py) — тот же питон проекта; 17.10.2026 мозгу IMG_3292 её запуск запрещали
+    "Bash(.venv/bin/python work/*)", "Bash(./.venv/bin/python work/*)",
+    "Bash(.venv/Scripts/python.exe work/*)", "Bash(./.venv/Scripts/python.exe work/*)",
+    # браузер (Claude in Chrome): Flow, фонотека, свободные фото — как у агента в терминале
+    "mcp__claude-in-chrome", "ToolSearch", "Monitor",
 ]
 
 PY = ".venv/Scripts/python.exe" if host.IS_WINDOWS else ".venv/bin/python"
@@ -71,10 +76,12 @@ STUDIO_PROMPT = f"""Тебя вызывают из локальной студи
 — Приёмы рилса @tenfoldmarc (оглавление, чек-лист, телефон, интерфейс, стена, орбита, рамка, вертиго,
   пролёт, отъезд, рост, сцена, коллаж, каракули, обложка, стекло) — scripts/fx.py, когда к месту —
   docs/ПРИЁМЫ-17.md. Ставь по плану и к смыслу, не ради набора: не больше двух крупных приёмов на мысль.
-— ИИ-футаж (Google Flow / Omni) — скилл flow (.agents/skills/flow/SKILL.md). Генерация во Flow идёт в браузере
-  (Claude in Chrome); здесь браузера нет — подготовь work/<имя>/footage.json и {PY} scripts/footage.py <имя>
-  --prompts и напиши человеку: «открой Claude Code с Chrome и скажи: сгенерируй футажи для <имя>». Приём
-  скачанного клипа (footage.py --take) — через очередь, как тяжёлое.
+— Браузер у тебя есть — тот же Chrome человека, что у агента в терминале (Claude — Claude in Chrome, Codex —
+  Computer Use): монтаж из студии должен быть не хуже монтажа из терминала. ИИ-футаж (Google Flow / Omni) делай
+  сам по скиллу flow (.agents/skills/flow/SKILL.md), бонусы — в пределах budget из footage.json; лоу-фай — из
+  фонотеки YouTube (rules.md проекта, scripts/music.py add). Приём клипа (footage.py --take) — через очередь.
+  Браузер не отвечает — не подменяй видео картинкой молча: напиши человеку, чего не хватает, до рендера.
+— Ждать задачу очереди — только {PY} scripts/jobqueue.py wait <задача>, не своим циклом по логу.
 — Порядок инструментов проекта — его rules.md (у antishkola п.18: всегда → часто → иногда → редко); субтитры не
   на лице и текст за головой виден — проверяет verify_page, рендер не пойдёт.
 """
@@ -203,6 +210,8 @@ def command(engine: str, prompt: str, session: str | None = None, mode: str = "s
     if engine == "claude":
         cmd = [binary, "-p", prompt, "--output-format", "stream-json", "--verbose",
                "--append-system-prompt", STUDIO_PROMPT + ("\n" + context if context else "")]
+        # --chrome: браузер человека, как у агента в терминале (17.10.2026: «чтобы монтаж из студии был идентичен»)
+        cmd += ["--chrome"]
         if mode == "full":
             cmd += ["--dangerously-skip-permissions"]
         else:
