@@ -44,10 +44,13 @@ FPS = 30
 VIDEO = {".mp4", ".mov", ".m4v", ".webm"}
 FRESH = 3 * 3600          # «свежее» в Загрузках: скачано за последние три часа
 # Хвост стиля к каждому кадру — то, без чего клип не встанет в ролик: вертикаль, спокойный верх (там текст
-# ролика и серая зона площадки), главное в центре (плеер Instagram режет бока ~на 5%), без титров.
-STYLE_TAIL = ("Vertical 9:16, photorealistic, looks like a real everyday moment shot on a phone camera, natural light, "
-              "true-to-life colours. Keep the top 20% of the frame calm and uncluttered. Main subject in the central "
+# ролика и серая зона площадки), главное в центре (плеер Instagram режет бока ~на 5%), без титров. Только формат и
+# композиция: как кадр выглядит, решает стиль проекта (project_look). Здесь же стояло «photorealistic… shot on a phone
+# camera», и любой стиль проекта тянуло в фото с телефона (20.10.2026, «Макет на чёрном столе» Антишколы)
+STYLE_TAIL = ("Vertical 9:16. Keep the top 20% of the frame calm and uncluttered. Main subject in the central "
               "80% of the width. No captions, no subtitles, no watermarks.")
+DEFAULT_LOOK = ("Photorealistic, looks like a real everyday moment shot on a phone camera, natural light, "
+                "true-to-life colours.")
 MOTION_TAIL = "One continuous shot, no cuts. The main action happens within the first 4 seconds."
 
 
@@ -67,10 +70,22 @@ def load_brief(stem: str) -> dict:
         brief = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise FootageError(f"work/{stem}/footage.json не читается: {e}") from e
+    import projects
+    style, motion = project_look(projects.of_or_default(stem))
     if not str(brief.get("style") or "").strip():          # стиль проекта (rules.md п.15), если у ролика нет своего
-        import projects
-        brief["style"] = projects.of_or_default(stem).config.get("footage_style", "")
+        brief["style"] = style
+    brief.setdefault("motion_style", motion)
     return validate(brief, stem)
+
+
+def project_look(project) -> tuple:
+    """(стиль кадра, стиль движения) ИИ-клипов проекта: DESIGN.md → footage (один замок на все генерации), иначе
+    footage_style из project.json, иначе фото с телефона, как было до дизайн-систем."""
+    import design
+    system = design.of(project)
+    if system and system.footage:
+        return system.footage["style"], system.footage["motion"]
+    return (str(project.config.get("footage_style") or "").strip() or DEFAULT_LOOK), ""
 
 
 def validate(brief: dict, stem: str = "?") -> dict:
@@ -132,7 +147,9 @@ def messages(brief: dict) -> tuple:
             + (" Use the uploaded reference images as exact references for the products/objects they show:"
                " keep their real packaging, colours and logos unchanged." if refs else ""))
     first = head + "\n\n" + "\n\n".join(imgs)
-    moves = [f"{i}. [{c['name']}] {c['motion'].strip().rstrip('.')}. {MOTION_TAIL}" for i, c in enumerate(clips, 1)]
+    look = (brief.get("motion_style") or "").strip()
+    moves = [f"{i}. [{c['name']}] {c['motion'].strip().rstrip('.')}. {look} {MOTION_TAIL}".replace("  ", " ")
+             for i, c in enumerate(clips, 1)]
     second = ("Animate each of these images into a video, using the image as the first frame, 9:16, no sound needed. "
               "One video per image, in the same order:\n\n" + "\n\n".join(moves))
     return first, second, refs
@@ -278,9 +295,9 @@ def frame(stem: str, name: str) -> Path:
     if clip is None:
         raise FootageError(f"клипа «{name}» нет в брифе {stem}")
     out = folder(stem) / "frames" / f"{name}.png"
-    rules = ("вертикальный кадр 9:16, фотореализм, как снято на телефон; верхние 20% кадра спокойные; главное — "
-             "в центральных 80% ширины; без титров и водяных знаков; без узнаваемых реальных людей")
-    gen_image.generate(out, f"{clip['image']} {brief.get('style', '')}".strip(), rules)
+    rules = ("вертикальный кадр 9:16, строго в стиле из описания; верхние 20% кадра спокойные; главное — "
+             "в центральных 80% ширины; без титров, надписей и водяных знаков; без узнаваемых реальных людей")
+    gen_image.generate(out, f"{clip['image'].strip().rstrip('.')}. {brief.get('style', '')}".strip(), rules)
     return out
 
 

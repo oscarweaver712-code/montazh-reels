@@ -1033,6 +1033,22 @@ def check_footage(report: Report, tmp: Path):
     report.check(not bad and msg_ok, "бриф без дыр; сообщения для Flow — все клипы, вертикаль, референсы, спокойный верх",
                  f"пропущено битых {len(bad)}, сообщения {'полные' if msg_ok else 'неполные'}")
 
+    # один стиль на все генерации (20.10.2026, «Макет на чёрном столе» в DESIGN.md Антишколы): замок кадра и движения
+    # уходит в каждый промпт, а вшитый хвост «фото с телефона» его не перебивает; у проекта без системы — как было
+    import projects
+    from types import SimpleNamespace
+    look, move = footage.project_look(projects.of_or_default("IMG_3647"))
+    plain, _ = footage.project_look(SimpleNamespace(name="_нет_такого_", config={}))
+    lock = {k: v for k, v in brief.items() if k != "style"}
+    first, second, _ = footage.messages(footage.validate({**lock, "style": look, "motion_style": move}))
+    styled = ("black desk" in first and "red lacquer" in first and "phone camera" not in first and "photorealistic"
+              not in first.lower() and "kinetic paper model" in second and second.count("kinetic paper model") == 2)
+    report.check(styled and "phone camera" in plain,
+                 "ИИ-клипы в стиле проекта: замок «Макета» из DESIGN.md в каждом кадре и движении, без «фото с телефона»; "
+                 "без дизайн-системы — фото, как было",
+                 f"кадр {'«Макет»' if 'black desk' in first else 'без замка'}, телефон {'есть' if 'phone camera' in first else 'нет'}, "
+                 f"движение {second.count('kinetic paper model')} из 2, без системы — {plain[:40]}")
+
     saved = footage.WORK_DIR, common.WORK_DIR
     footage.WORK_DIR = common.WORK_DIR = work
     try:

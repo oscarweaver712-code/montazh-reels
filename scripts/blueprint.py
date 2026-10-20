@@ -684,7 +684,7 @@ SPLIT_CSS = ("      #stage { position: absolute; left: 0; top: 0; width: 1080px;
              "      #caps { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }\n")
 
 
-def look(label: str = "", fig: int = 1) -> tuple:
+def look(label: str = "", fig: int = 1, saturate: float = 0.55) -> tuple:
     """Рамка мотива для ИИ-клипа или фото во весь кадр: (overlay, clip_css) для kit.footage/slides.
 
     Клип — приглушённый, но в цвете, поверх — сетка листа, рамка, метки углов и короткая подпись места.
@@ -714,7 +714,8 @@ def look(label: str = "", fig: int = 1) -> tuple:
     # лёгкий тёплый налёт крема — серия читается одной, а цвет и свет клипа остаются
     overlay = (f'          <div style="position: absolute; inset: 0; background: {CREAM}; mix-blend-mode: soft-light; opacity: 0.22;"></div>\n'
                f'          {grid}\n{caption}')
-    return overlay, " filter: saturate(0.55) contrast(1.04) brightness(1.1);"
+    # saturate — из дизайн-системы (DESIGN.md → footage.saturate): клип «Макета» уже в палитре, при 0,55 лак бурел
+    return overlay, f" filter: saturate({saturate:g}) contrast(1.04) brightness(1.1);"
 
 
 # ---------------------------------------------------------------- галерея

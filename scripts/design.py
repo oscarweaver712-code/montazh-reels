@@ -148,6 +148,20 @@ class Design:
                 errs.append(f"motion.{key}: секунды 0.005–0.12, а не {value!r}")
         if motion.get("bounce") or "back" in self.enter or "elastic" in self.enter or "bounce" in self.enter:
             errs.append(f"motion: отскоки и «желе» системе запрещены (enter {self.enter}) — expo.out или power")
+
+        # ИИ-клипы: один стиль на все генерации проекта (footage.py дописывает замок к промптам, рамка листа — saturate)
+        foot = tokens.get("footage") or {}
+        self.footage = {}
+        if foot:
+            for key in ("style", "motion"):
+                if not isinstance(foot.get(key), str) or len(foot[key].strip()) < 40:
+                    errs.append(f"footage.{key}: замок стиля ИИ-клипов — строкой по-английски, от 40 знаков")
+            sat = foot.get("saturate", 0.55)
+            if not isinstance(sat, (int, float)) or not 0.2 <= sat <= 1.2:
+                errs.append(f"footage.saturate: 0.2–1.2 (насыщенность клипа в рамке листа), а не {sat!r}")
+            if not errs or all(not e.startswith("footage") for e in errs):
+                self.footage = {"name": str(foot.get("name") or ""), "style": " ".join(foot["style"].split()),
+                                "motion": " ".join(foot["motion"].split()), "saturate": float(sat)}
         if errs:
             raise DesignError(f"{where}:\n  " + "\n  ".join(errs))
 
@@ -355,6 +369,8 @@ def main():
     if d is None:
         sys.exit(f"✗ у проекта {args.project} нет {FILE} (projects/{args.project}/{FILE})")
     print(f"✓ projects/{args.project}/{FILE}: {d.tokens.get('name', '')}")
+    if d.footage:
+        print(f"  ИИ-клипы  «{d.footage['name']}», насыщенность в рамке {d.footage['saturate']:g}")
     for name, value in d.colors.items():
         print(f"  {name:<10} {value}")
     print(f"  градиент   {d.gradient}")

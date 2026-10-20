@@ -129,7 +129,8 @@ class Montage:
         if self.cfg.get("insert_style") == "blueprint" and "overlay" not in kw:
             import blueprint as bp
             self._fig += 1
-            overlay, clip = bp.look(label, self._fig)
+            sat = self.design.footage.get("saturate", 0.55) if self.design and self.design.footage else 0.55
+            overlay, clip = bp.look(label, self._fig, saturate=sat)
             kw = {**kw, "overlay": overlay, "clip_css": clip}
         return kw
 
