@@ -71,10 +71,14 @@ def load_brief(stem: str) -> dict:
     except json.JSONDecodeError as e:
         raise FootageError(f"work/{stem}/footage.json не читается: {e}") from e
     import projects
-    style, motion = project_look(projects.of_or_default(stem))
+    project = projects.of_or_default(stem)
+    style, motion = project_look(project)
     if not str(brief.get("style") or "").strip():          # стиль проекта (rules.md п.15), если у ролика нет своего
         brief["style"] = style
     brief.setdefault("motion_style", motion)
+    # бюджет без отдельного «да»: умолчание проекта (Валера 20.10.2026: «на ролик 2 клипа по умолчанию» — 2 × 15 бонусов)
+    if brief.get("budget") is None and int(project.config.get("footage_budget") or 0) > 0:
+        brief["budget"] = int(project.config["footage_budget"])
     return validate(brief, stem)
 
 

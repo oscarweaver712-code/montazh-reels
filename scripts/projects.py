@@ -49,6 +49,8 @@ CONFIG = {
     "long_matte": False,                      # владелец согласен на долгую маску BiRefNet (matte.py без --yes)
     "fx_theme": "default",                    # тема приёмов fx.py (fx.THEMES): цвета и шрифты под стиль проекта
     "footage_style": "",                      # хвост стиля ИИ-перебивок (footage.py), один на проект
+    "footage_clips": 0,                       # ИИ-клипов Flow на ролик по умолчанию (0 — только по просьбе)
+    "footage_budget": 0,                      # бонусов Flow на ролик без отдельного «да» (0 — спросить владельца)
     "music": False,                           # фоновая музыка в каждом ролике: без неё verify_page не пускает в рендер
     "hook_flash": False,                      # вспышка с отъездом и звуком после хука (montage.py ставит сама)
     "soft_sounds": False,                     # тихие звуки монтажа в каждом ролике (не реже одного на 6 с)
@@ -63,6 +65,8 @@ CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строк�
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
                 "long_matte": (bool, "true или false"), "fx_theme": (str, "строкой — имя темы из fx.THEMES"),
                 "footage_style": (str, "строкой — стиль генерации перебивок"),
+                "footage_clips": (int, "целым числом — ИИ-клипов на ролик по умолчанию"),
+                "footage_budget": (int, "целым числом — бонусов Flow на ролик без отдельного согласия"),
                 "music": (bool, "true или false"), "hook_flash": (bool, "true или false"), "soft_sounds": (bool, "true или false"),
                 "face_min": ((int, float), "числом от 0 до 1"), "insert_style": (str, "строкой: \"\" или \"blueprint\""),
                 "insert_gap_max": ((int, float), "числом секунд — дольше без вставок verify_page не пускает"),

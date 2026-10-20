@@ -1017,7 +1017,11 @@ def check_sfx(report: Report):
     except SystemExit:
         refused = True
     named = music.slug(Path("mixkit-sleepy-cat-135.mp3"), music.SOURCES["mixkit"][0])
-    heard = verify_page.music_missing(mx, "IMG_3647") is None and verify_page.music_missing("", "IMG_3647") is not None
+    # проект — временный: на чистой машине (CI) видео роликов нет, и настоящий IMG_3647 проекта не находит
+    with tempfile.TemporaryDirectory() as t, temp_projects(Path(t) / "mx_projects", "main") as made:
+        made["main"].root.joinpath("project.json").write_text(json.dumps({"music": True}), encoding="utf-8")
+        (made["main"].input / "IMG_0900.MOV").write_bytes(b"a")
+        heard = verify_page.music_missing(mx, "IMG_0900") is None and verify_page.music_missing("", "IMG_0900") is not None
     report.check(any("громче" in p for p in mx_loud) and refused and named == "mx-sleepy-cat.mp3" and heard,
                  "фон с Mixkit: mx-*.mp3 ставится, меряется и считается музыкой, как фонотека YouTube; запас без источника — отказ",
                  f"громче: {len(mx_loud)}, без источника {'отказ' if refused else 'принят'}, имя {named}, "
@@ -1069,6 +1073,24 @@ def check_footage(report: Report, tmp: Path):
     first, second, _ = footage.messages(footage.validate({**lock, "style": look, "motion_style": move}))
     styled = ("black desk" in first and "red lacquer" in first and "phone camera" not in first and "photorealistic"
               not in first.lower() and "kinetic paper model" in second and second.count("kinetic paper model") == 2)
+    # бюджет без отдельного «да» — умолчание проекта (20.10.2026, Валера: «на ролик 2 клипа по умолчанию»); свой budget
+    # брифа главнее
+    with temp_projects(tmp / "ft_projects", "main") as made:
+        made["main"].root.joinpath("project.json").write_text(json.dumps({"footage_clips": 2, "footage_budget": 30}),
+                                                              encoding="utf-8")
+        saved_dir = footage.WORK_DIR
+        footage.WORK_DIR = tmp / "ft_work"
+        try:
+            for stem, b in (("IMG_0800", {k: v for k, v in brief.items() if k != "budget"}), ("IMG_0801", brief)):
+                (made["main"].input / f"{stem}.MOV").write_bytes(b"a")
+                (footage.WORK_DIR / stem).mkdir(parents=True)
+                (footage.WORK_DIR / stem / "footage.json").write_text(json.dumps(b), encoding="utf-8")
+            by_project, own = footage.load_brief("IMG_0800").get("budget"), footage.load_brief("IMG_0801").get("budget")
+        finally:
+            footage.WORK_DIR = saved_dir
+    report.check(by_project == 30 and own == 20,
+                 "бонусы Flow: без budget в брифе — умолчание проекта (footage_budget), свой budget брифа главнее",
+                 f"по проекту {by_project}, свой {own}")
     report.check(styled and "phone camera" in plain,
                  "ИИ-клипы в стиле проекта: замок «Макета» из DESIGN.md в каждом кадре и движении, без «фото с телефона»; "
                  "без дизайн-системы — фото, как было",
