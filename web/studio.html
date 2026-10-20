@@ -441,6 +441,10 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .mat .acts button { font-size: 11px; padding: 2px 6px; }
 .dz-z.mat-z.hot { border-color: #A47BFF; background: color-mix(in srgb, #A47BFF 20%, var(--panel2)); box-shadow: 0 0 0 6px color-mix(in srgb, #A47BFF 20%, transparent); }
 .dz-zones.three { grid-template-columns: 1fr 1fr 1fr; }
+.dz-zones.four { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media (max-width: 900px) { .dz-zones.four { grid-template-columns: 1fr 1fr; } }
+.dz-z.pack-z.hot { border-color: #3FB98C; background: color-mix(in srgb, #3FB98C 20%, var(--panel2)); box-shadow: 0 0 0 6px color-mix(in srgb, #3FB98C 20%, transparent); }
+.reel .pk { font: 700 10px var(--ui, inherit); color: #3FB98C; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
 @media (max-width: 760px) { .dz-zones.three { grid-template-columns: 1fr; } }
 @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); } to { box-shadow: 0 0 0 5px transparent; } }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0 10px; }
@@ -458,6 +462,7 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
       <div class="dz-z" data-auto="0"><b>⬇ Просто добавить</b><span>новое видео в «Ждут ИИ-монтажа»</span></div>
       <div class="dz-z ai" data-auto="1"><b>▶ Добавить и смонтировать ИИ</b><span>монтаж начнётся сразу; несколько видео — каждое в своей сессии</span></div>
       <div class="dz-z mat-z" data-mat="1"><b>▣ В материалы <span id="dz-stem"></span></b><span>фото, видео, звук для наложения — ИИ вставит, куда скажешь</span></div>
+      <div class="dz-z pack-z" data-pack="1" hidden><b>▦ Одним роликом</b><span>все эти видео — сырьё одного ролика: ИИ отберёт лучшие куски и соберёт</span></div>
     </div>
     <p>Папка: <code id="dz-path">projects/…/input</code> · можно тащить из Finder, Telegram, Загрузок. Другой проект — выбери в шапке.</p>
   </div>
@@ -852,6 +857,7 @@ function renderProjects() {
   $("pmenu-pop").innerHTML = `<div class="pop-h">Проекты</div>` + S.projects.map((p) =>
     `<button type="button" class="item" data-project="${esc(p.name)}" aria-current="${p.name === S.project}">${esc(p.title)}<small>${p.error ? `<b style="color:var(--rec)">● ${esc(p.error)}</b>` : `${count(p.name)} видео`}</small></button>`).join("")
     + `<button type="button" class="item" data-setup="${esc(S.project)}">⚙ Настроить проект${cur && cur.setup_missing ? ` <b style="color:var(--rec)">● не настроен</b>` : ""}<small>анкета: для кого, где, характер, чего нельзя, референсы</small></button>`
+    + `<button type="button" class="item" data-setup="${esc(S.project)}" data-refs="1">🎞 Референсы проекта<small>ролики, скрины, ссылки — на все ролики проекта: ИИ смотрит их перед каждым монтажом</small></button>`
     + `<button type="button" class="item" data-rules>📋 Правила проекта<small>что можно, чего нельзя — ИИ читает перед монтажом</small></button>`
     + `<div class="pop-h">Новый проект</div><form id="newproj" class="rowbtn" style="flex-wrap:nowrap"><input type="text" id="newproj-title" placeholder="Название, например «Клиент Анна»" maxlength="60"><button class="btn" type="submit">＋</button></form>
        <p class="hint" style="margin:2px 4px">У проекта свои видео, свои правила и свой стиль по умолчанию.</p>`;
@@ -972,7 +978,7 @@ function reelLi(v) {
   const STEPS = ["transcribed", "prepped", "tracked", "cutout", "page"];
   return `<li class="reel" tabindex="0" data-stem="${esc(v.stem)}" aria-current="${v.stem === S.stem}">
       <img class="thumb" loading="lazy" alt="" src="/api/studio/thumb/${encodeURIComponent(v.stem)}" onerror="this.style.visibility='hidden'">
-      <div class="reel-head"><span class="reel-name">${esc(v.stem)}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
+      <div class="reel-head"><span class="reel-name">${esc(v.stem)}${v.pack ? `<span class="pk" title="сборка: один ролик из ${v.pack.clips} видео (${mmss(v.pack.seconds)} сырья)${v.pack.built ? " — собрана" : ""}">▦ ${v.pack.clips}</span>` : ""}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
       <div class="strip">${STEPS.map((k) => `<span class="${v.steps[k] ? "done" : ""}"></span>`).join("")}<span class="${v.outputs.length ? "out" : ""}"></span></div>
       <div class="reel-state">${reelState(v)}${v.brief.error ? ` · <span style="color:var(--rec)">бриф с ошибкой</span>` : ""}</div></li>`;
 }
@@ -2337,15 +2343,19 @@ async function startAiMontage() {
   pickTab("rtabs", "tab", "ai");
   try {
     const b = await saveBrief(true);
-    // автопилот (по умолчанию): один ролик — пачкой из одного; варианты A/B автопилот пока не делает — тогда сессия ИИ
-    if (store.get("how", "autopilot") === "autopilot" && !b.variants.length) {
+    const v = current(), pack = v && v.pack;
+    // автопилот (по умолчанию): один ролик — пачкой из одного; варианты A/B и сборку (отбор кусков из нескольких видео)
+    // автопилот пока не делает — тогда сессия ИИ
+    if (store.get("how", "autopilot") === "autopilot" && !b.variants.length && !pack) {
       renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems: [S.stem], engine: S.engine, mode: S.mode, parallel: 1, how: "autopilot" } }));
       say("brain-say", `${S.stem}: монтирует автопилот — подготовка, ИИ решает, что показать, критик смотрит черновик, рендер. Ход — в строке пачки, лог — work/${S.stem}/autopilot.log.`);
       return;
     }
     if (b.variants.length && store.get("how", "autopilot") === "autopilot") say("brain-say", "В брифе варианты A/B — их автопилот пока не делает: монтирует сессия ИИ, как раньше.");
     const variants = b.variants.length ? ` Плюс варианты для A/B: ${b.variants.map(styleName).join(", ")} — каждый отдельным проектом (compose/render_reel --variant).` : "";
-    const text = `Смонтируй ${S.stem} по брифу (work/${S.stem}/brief.json): стиль «${styleName(b.style)}», форматы ${b.formats.join(", ")}.${variants} Тяжёлое — через очередь. В конце коротко отчитайся: что где на экране, что спорно, как откатить.`;
+    if (pack && store.get("how", "autopilot") === "autopilot") say("brain-say", "Это сборка из нескольких видео — отбор кусков автопилот пока не делает: монтирует сессия ИИ.");
+    const packNote = pack ? ` Это сборка: ${pack.clips} видео → один ролик — сначала разбор клипов и отбор кусков (pack.py, порядок — в контексте студии).` : "";
+    const text = `Смонтируй ${S.stem} по брифу (work/${S.stem}/brief.json): стиль «${styleName(b.style)}», форматы ${b.formats.join(", ")}.${packNote}${variants} Тяжёлое — через очередь. В конце коротко отчитайся: что где на экране, что спорно, как откатить.`;
     await newThread(`${S.stem}: монтаж`);
     await send(text);
   } catch (e) { brainError(new Error(`ИИ-монтаж не запустился: ${e.message}`)); }
@@ -2662,15 +2672,19 @@ function dzZone(e) { const z = e.target.closest && e.target.closest(".dz-z"); do
 // что тащат: только фото и звук — это материал к открытому видео, а не новое видео в проект
 function dzKinds(e) {
   const types = [...((e && e.dataTransfer && e.dataTransfer.items) || [])].filter((i) => i.kind === "file").map((i) => i.type || "");
-  return { media: types.length > 0 && types.every((t) => /^(image|audio)\//.test(t)) };
+  return { media: types.length > 0 && types.every((t) => /^(image|audio)\//.test(t)), count: types.length };
 }
 function dzShow(on, e) {
   const cur = S.projects.find((p) => p.name === uploadProject());
   const onlyMedia = on && dzKinds(e).media;
   document.querySelectorAll(".dz-z[data-auto]").forEach((z) => { z.hidden = onlyMedia; });
   const mz = document.querySelector(".dz-z[data-mat]"); mz.hidden = !S.stem;
+  // несколько видео разом — можно сделать из них один ролик (сборка, scripts/pack.py)
+  const pz = document.querySelector(".dz-z[data-pack]"); pz.hidden = !(on && !onlyMedia && dzKinds(e).count > 1);
   $("dz-stem").textContent = S.stem || "";
-  $("dz-zones").classList.toggle("three", !onlyMedia && !!S.stem);
+  const zones = [...document.querySelectorAll(".dz-z")].filter((z) => !z.hidden).length;
+  $("dz-zones").classList.toggle("four", zones === 4);
+  $("dz-zones").classList.toggle("three", zones === 3);
   $("dz-zones").classList.toggle("one", onlyMedia);
   $("dz-head").innerHTML = onlyMedia ? `Отпусти — файл ляжет в материалы <b>${esc(S.stem || "")}</b>` : `Отпусти видео — оно ляжет в проект <span id="dz-proj"></span>`;
   if ($("dz-proj")) $("dz-proj").textContent = `«${cur ? cur.title.split(" — ")[0] : uploadProject()}»`;
@@ -2688,6 +2702,7 @@ document.addEventListener("drop", async (e) => {
   const auto = z && z.dataset.auto ? z.dataset.auto === "1" : null;     // мимо зон — как стоит галочка в «Медиа»
   const files = [...(e.dataTransfer.files || [])];
   if (files.length && ((z && z.dataset.mat) || (!z && media && S.stem))) return uploadMaterials(files);
+  if (files.length && z && z.dataset.pack) return upload(files, null, true);
   if (files.length) return upload(files, auto);
   const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
   if (uri) {
@@ -2702,10 +2717,11 @@ document.addEventListener("drop", async (e) => {
   say("brain-say", "Файл не дошёл: это приложение не отдаёт видео браузеру. Сохрани его (в Telegram — правый клик → «Сохранить как…» или «Показать в Finder») и перетащи из Finder.", true);
 });
 // загрузка с полосой: видео с айфона весят сотни мегабайт, «Загружаю…» без процентов пугает
-function sendFile(f) {
+function sendFile(f, pack = "") {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest(), fd = new FormData();
     fd.append("file", f); fd.append("project", uploadProject());
+    if (pack) fd.append("pack", pack);
     xhr.open("POST", "/api/upload");
     xhr.setRequestHeader("X-Studio-Token", TOKEN);
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) showUpload(f.name, e.loaded / e.total); };
@@ -2726,22 +2742,29 @@ function showUpload(name, frac) {
 // сервер студии сам пометит файл без видео
 const VIDEO_EXT = /\.(mov|mp4|m4v|avi|mkv|webm|3gp|mts|hevc)$/i;
 const looksVideo = (f) => (f.type || "").startsWith("video/") || VIDEO_EXT.test(f.name) || (!f.type && !/\.[a-z0-9]{2,5}$/i.test(f.name));
-async function upload(files, auto = null) {
+async function upload(files, auto = null, asPack = false) {
   const d = $("drop"); d.dataset.idle = d.dataset.idle || d.innerHTML;
   const skip = files.filter((f) => !looksVideo(f)); files = files.filter(looksVideo);
   if (skip.length) say("brain-say", `Не видео, пропускаю: ${skip.map((f) => f.name).join(", ")}`, true);
   if (!files.length) return;
   pickTab("ltabs", "tab", "media");
   const names = [];
+  let pack = asPack ? "new" : "";               // сборка: первый файл заводит папку, остальные идут в неё же
   for (const [i, f] of files.entries()) {
     try {
       S.uploading = { name: f.name, frac: 0, n: i + 1, of: files.length }; renderAiLive();
-      showUpload(f.name, 0); const r = await sendFile(f); names.push(r.name);
+      showUpload(f.name, 0); const r = await sendFile(f, pack); names.push(r.name); if (r.pack) pack = r.pack;
     } catch (e) { S.uploading = null; renderAiLive(); showUpload(null, null); say("brain-say", `${f.name}: ${e.message}`, true); return; }
   }
   S.uploading = null; renderAiLive();
   showUpload(null, null);
   await poll();
+  if (asPack) {
+    await selectVideo(pack); pickTab("rtabs", "tab", "ai");
+    if (auto ?? $("auto-ai").checked) { say("brain-say", `Сборка ${pack}: ${files.length} видео → один ролик. Запускаю ИИ: отберёт куски и смонтирует.`); await startAiMontage(); }
+    else say("brain-say", `Готово: сборка ${pack} — ${files.length} видео для одного ролика (projects/${uploadProject()}/input/${pack}/). Жми «▶ Запустить ИИ-монтаж».`);
+    return;
+  }
   const stems = names.map((n) => n.replace(/\.[^.]+$/, ""));
   await selectVideo(stems[0]); pickTab("rtabs", "tab", "ai");
   if (auto ?? $("auto-ai").checked) {
@@ -2892,7 +2915,11 @@ $("setup-ai").addEventListener("click", async () => {
       + "Если чего-то для хороших правил не хватает — в конце задай человеку 2–3 вопроса.", "setup-say");
   } catch (e) { say("setup-say", e.message, true); }
 });
-document.addEventListener("click", (e) => { const b = e.target.closest("[data-setup]"); if (b) openSetup(b.dataset.setup); });
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-setup]"); if (!b) return;
+  await openSetup(b.dataset.setup);
+  if (b.dataset.refs) $("ref-drop").scrollIntoView({ block: "center" });
+});
 async function uploadRefs(files) {
   for (const f of files) {
     const fd = new FormData(); fd.append("file", f);

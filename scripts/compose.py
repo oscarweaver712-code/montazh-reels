@@ -140,7 +140,7 @@ def caption_lane(project: Path, sc: dict) -> str:
 
 
 def caption_chunks(words: list, director: dict, duration: float, mode: str = "words",
-                   case: str = "lower") -> list:
+                   case: str = "lower", scenes: list | None = None) -> list:
     """Бегущие субтитры как в референсах: по слову-два, без знаков, предлоги не висят.
 
     Возвращает [{t0, t1, text, accent}] на шкале дубля. Где смысл несёт крупная
@@ -149,6 +149,9 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
     mode — режим стиля: words (по слову-два, как было), karaoke (2–3 слова, у каждого
     своё время подсветки — поле words), phrase (до 4 слов), sentence (предложение до 8
     слов), none. case natural оставляет регистр и знаки препинания как сказано.
+
+    scenes — стыки сборки (aroll.json → scenes, scripts/pack.py): там меняется сцена и человек в кадре, поэтому
+    вспышка не собирает слова с двух сторон стыка и не висит через него.
     """
     if mode == "none":
         return []
@@ -192,11 +195,14 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
         tokens.append({"text": bare, "raw": raw, "start": w["start"], "end": w["end"], "stop": stop,
                        "mark": pause_mark})
 
+    scenes = sorted(float(x) for x in scenes or [])
+    apart = lambda a, b: any(a["end"] - 0.05 <= x <= b["start"] + 0.05 for x in scenes)   # noqa: E731
     chunks, i = [], 0
     while i < len(tokens):
         group = [tokens[i]]
         if mode == "words":
             while (i + len(group) < len(tokens) and group[-1]["text"].lower() in CLINGY
+                   and not apart(group[-1], tokens[i + len(group)])
                    and len(" ".join(t["text"] for t in group)) + 1
                    + len(tokens[i + len(group)]["text"]) <= MAX_CHUNK + 4):
                 group.append(tokens[i + len(group)])
@@ -204,8 +210,8 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
             most, chars, gap = GROUPING[mode]
             while i + len(group) < len(tokens):
                 last, nxt = group[-1], tokens[i + len(group)]
-                if last["stop"] or nxt["start"] - last["end"] >= gap:
-                    break                   # конец фразы: точка или настоящая пауза
+                if last["stop"] or nxt["start"] - last["end"] >= gap or apart(last, nxt):
+                    break                   # конец фразы: точка, настоящая пауза или стык сцен
                 if len(group) >= most or len(" ".join(t["text"] for t in group)) + 1 + len(nxt["text"]) > chars:
                     # предлог в хвосте строки не оставляем — уносим его в следующую
                     if len(group) > 1 and last["text"].lower() in CLINGY:
@@ -224,8 +230,9 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
 
     for k, chunk in enumerate(chunks):
         nxt = chunks[k + 1]["t0"] if k + 1 < len(chunks) else duration
-        # держим до следующей вспышки, но не дольше секунды тишины после слова
-        chunk["t1"] = round(min(nxt, chunk.pop("end") + 1.0, duration), 3)
+        cut = next((x for x in scenes if x >= chunk["end"] - 0.05), duration)
+        # держим до следующей вспышки, но не дольше секунды тишины после слова и не через стык сцен
+        chunk["t1"] = round(min(nxt, chunk.pop("end") + 1.0, duration, max(cut, chunk["t0"] + MIN_FLASH)), 3)
 
     # Whisper ставит соседние слова вплотную («кто» и «не» через 20 мс). Такая вспышка
     # короче своего входа: уход срабатывал посреди появления, и при покадровом рендере
@@ -239,7 +246,8 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
 
     merged = []
     for chunk in chunks:
-        if merged and merged[-1]["t1"] - merged[-1]["t0"] < MIN_FLASH:
+        if (merged and merged[-1]["t1"] - merged[-1]["t0"] < MIN_FLASH
+                and not any(merged[-1]["t0"] < x <= chunk["t0"] for x in scenes)):
             join(merged[-1], chunk)
         else:
             merged.append(chunk)
@@ -317,9 +325,25 @@ def ruling_style(stem: str, variant: str | None = None) -> dict | None:
         overrides = brief.get("overrides") if brief.get("style") == variant else None
         return styles.effective(styles.load_style(variant), overrides)
     brief = styles.load_brief(stem)
-    if not brief.get("exists"):
+    if not brief.get("exists") and not own_project_style(stem):
         return None
     return styles.effective(styles.load_style(brief["style"]), brief.get("overrides"))
+
+
+def own_project_style(stem: str) -> bool:
+    """Ролик без своего brief.json собирается по стилю своего проекта, если это не проект по умолчанию.
+
+    Студия пишет brief.json при старте монтажа, а ролик, смонтированный из терминала, его не имел — и заказ «Вкудесника»
+    (20.10.2026) молча собрался субтитрами и камерой умолчаний скилла, а не стилем проекта (проект — граница, 14.10).
+    У проекта по умолчанию (Антишкола) ролики без брифа остаются как были: среди них эталоны серии (IMG_3292, IMG_3303),
+    и их пересборка не должна менять камеру и субтитры без разговора с Валерой.
+    """
+    import projects
+    try:
+        project = projects.of(stem)
+    except projects.ProjectError:
+        return False
+    return project.name != projects.DEFAULT and bool(project.config["brief"].get("style"))
 
 
 class SceneError(ValueError):
@@ -378,7 +402,7 @@ def scene(stem: str, variant: str | None = None, seconds: float | None = None) -
     frames = camera[:int(round(duration * fps)) + 1]
     transforms = [[round(v, 3) for v in css_transform(z, cx, cy, width, height)]
                   for z, cx, cy in frames]
-    chunks = caption_chunks(words, director, duration, caps["mode"], caps["case"])
+    chunks = caption_chunks(words, director, duration, caps["mode"], caps["case"], scenes=meta.get("scenes"))
     return {"meta": meta, "director": director, "edits": edits, "words": words, "style": style,
             "caps": caps, "fmt": fmt, "width": width, "height": height, "fps": fps,
             "duration": duration, "frames": frames, "chunks": chunks,

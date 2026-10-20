@@ -1,0 +1,43 @@
+{
+ "title": "Вкудесник — подарки",
+ "language": "ru",
+ "cta": false,
+ "face_max": null,
+ "brief": {
+  "style": "hormozi",
+  "formats": [
+   "9:16"
+  ],
+  "boldness": 0.5,
+  "goals": {
+   "reach": 4,
+   "retention": 5,
+   "trust": 4,
+   "saves": 2,
+   "sales": 3
+  },
+  "overrides": {
+   "camera.base_zoom": 1.0,
+   "camera.punch": "none",
+   "camera.punch_level": 1.08,
+   "captions.mode": "karaoke",
+   "captions.case": "upper",
+   "captions.font": "montserrat",
+   "captions.highlight": "#FFC93C",
+   "captions.color": "#FFFFFF",
+   "captions.size": 0.92,
+   "color.grade": "warm",
+   "color.brightness": 0,
+   "captions.position": "chest"
+  },
+  "notes": "Живые эмоции команды бренда подарков: субтитры — главный инструмент удержания, без ИИ-генераций."
+ },
+ "_note": "Бренд «Вкудесник» (20.10.2026). brief: hormozi как основа субтитров — караоке капсом, активное слово тёплым золотом под цвета бренда (жёлтые плакаты, золото); камера — штатив (base 1.0, punch none): клипы сняты с рук на широкий угол и сжаты до 720×1280 — слежение и смена плана добавили бы тряски и мыла; акценты — редкими наездами 1.08. Цвет warm, яркость 0: офис белый и светлый. music: свой праздничный трек на ролик (Mixkit, запас projects/vkudesnik/music/), тише голоса — 0.5. hook_flash нет: вспышка после хука — приём Антишколы. Паузы режем мягче Антишколы (0.6 → 0.25): в интервью паузы — часть живой речи. cta — нет: финальная плашка «смотри у меня в профиле» про профиль Валеры. Субтитры (20.10, проверка страницы новоселья): капс 64 px в колонке 590 px переносится в две строки и залезал в зону ника Instagram — кегль 0.92, линия «грудь» (compose ставит её под подбородок).",
+ "music": true,
+ "music_level": 0.5,
+ "soft_sounds": true,
+ "hook_flash": false,
+ "cut_pauses": true,
+ "pause_max": 0.6,
+ "pause_keep": 0.25
+}

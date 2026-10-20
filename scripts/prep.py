@@ -12,6 +12,11 @@
     "air_end": 0.6            # тишины после последнего слова, с (не дальше конца паузы); по умолчанию 0.12
   }
 
+Сборка (несколько видео → один ролик, scripts/pack.py): prep идёт по собранному input/<имя>.mov, края кусков
+уже в тишине, а стыки сборки (work/<имя>/pack.built.json) становятся границами кусков дубля и ложатся в
+aroll.json → scenes: на них меняется сцена — камера решается заново, субтитр через стык не висит, вспышка
+склейки не нужна. Паузы через стык и в кусках без речи не режутся.
+
 Если пропорции исходника и формата расходятся (горизонтальный урок под Reels), кадр
 перекадрируется по лицу (reframe.py), а не режется по центру. Если у ролика есть бриф
 (work/<имя>/brief.json, его пишет студия), цвет берётся из стиля брифа.
@@ -220,6 +225,43 @@ def blooper_spans(segments: list, bloopers: list) -> list:
     return out
 
 
+def load_pack(stem: str, video: Path) -> dict | None:
+    """Как собран исходник-сборка (scripts/pack.py → work/<имя>/pack.built.json); не сборка — None.
+
+    Отметка сверяется с файлом: пересобранная сборка без новой отметки — громкая ошибка, а не стыки чужой сборки.
+    """
+    path = WORK_DIR / stem / "pack.built.json"
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if Path(data.get("file", "")).resolve() != video.resolve():
+        return None
+    if data.get("size") != video.stat().st_size:
+        sys.exit(f"✗ {video.name} — не тот файл, что собрал pack.py (размер {video.stat().st_size}, а собран "
+                 f"{data.get('size')}): пересобери сборку — .venv/bin/python scripts/pack.py {stem} --build")
+    return data
+
+
+def split_at(pieces: list, joins: list) -> list:
+    """Куски дубля, разрезанные по стыкам сборки: через стык не идёт ни один кусок — там меняется сцена."""
+    out = []
+    for a, b in pieces:
+        cuts = sorted(j for j in joins if a + 1e-6 < j < b - 1e-6)
+        for x, y in zip([a] + cuts, cuts + [b]):
+            out.append((x, y))
+    return out
+
+
+def scene_marks(segments: list, joins: list) -> list:
+    """Стыки сборки на шкале дубля (aroll.json → scenes): граница куска дубля, совпавшая со стыком."""
+    acc, out = 0.0, []
+    for (s0, s1), _ in zip(segments, segments[1:]):
+        acc += s1 - s0
+        if any(abs(s1 - j) <= 0.02 for j in joins):
+            out.append(round(acc, 3))
+    return out
+
+
 def to_aroll(t: float, segments: list) -> float | None:
     """Секунда исходника → секунда дубля (None, если этот момент вырезан)."""
     acc = 0.0
@@ -268,6 +310,17 @@ def pick_format(stem: str, edit: dict) -> str:
     if brief.get("exists"):
         return formats.get(brief["formats"][0])["id"]
     return formats.DEFAULT
+
+
+def pick_look(stem: str) -> dict:
+    """Цвет дубля — из стиля брифа ролика, а без своего брифа — из умолчаний его проекта (project.json → brief).
+
+    До 20.10.2026 стиль брался только у ролика со своим brief.json, иначе — общий пресет (яркость −8 Антишколы): у
+    заказа «Вкудесника» с тёплым грейдом проекта субтитры шли по стилю проекта, а цвет — по чужому. Для Антишколы и
+    Фирузы это одно и то же (viral-behind: natural, −8), поэтому старые ролики не меняются.
+    """
+    brief = styles.load_brief(stem)
+    return styles.look(styles.effective(styles.load_style(brief["style"]), brief.get("overrides")))
 
 
 def refresh_words(video: Path, out_dir: Path, edit: dict) -> None:
@@ -350,6 +403,10 @@ def main():
     video = Path(args.video).resolve()
     if not video.exists():
         sys.exit(f"Нет файла: {video}")
+    if video.is_dir():
+        sys.exit(f"✗ {video.name}/ — сборка из нескольких видео: сначала разбор и сборка — scripts/pack.py "
+                 f"{video.name} (меню кусков), work/{video.name}/pack.json, scripts/pack.py {video.name} --build; "
+                 f"prep — по собранному input/{video.name}.mov")
     started = time.time()
     stem = video.stem
     out_dir = WORK_DIR / stem
@@ -364,10 +421,7 @@ def main():
     fps = preset["video"].get("fps", 30)
     try:
         fmt = pick_format(stem, edit)
-        brief = styles.load_brief(stem)
-        if brief.get("exists"):
-            style = styles.effective(styles.load_style(brief["style"]), brief.get("overrides"))
-            preset["look"] = styles.look(style)
+        preset["look"] = pick_look(stem)
     except (ValueError, styles.StyleError) as error:
         sys.exit(f"✗ {error}")
     preset["video"]["width"], preset["video"]["height"] = formats.size(fmt)
@@ -394,9 +448,16 @@ def main():
                               preset["cut"].get("silence_min", 0.10))
 
     voice = detect_voice(video)
+    pack = load_pack(stem, video)
+    joins = [float(j) for j in (pack or {}).get("joins") or []]
+    inner = [float(j) for j in (pack or {}).get("cuts") or []]      # склейки сборки внутри одного плана
     trim = edit.get("trim") or [0.0, info["duration"]]
-    start, end = find_edges(words, silences, float(trim[0]), float(trim[1]),
-                            float(edit.get("air_end", AIR)), voice=voice)
+    if pack and not edit.get("trim"):
+        # края кусков сборки уже в тишине (pack.py), а первый кусок бывает без слов — find_edges он не по зубам
+        start, end = 0.0, float(pack["duration"])
+    else:
+        start, end = find_edges(words, silences, float(trim[0]), float(trim[1]),
+                                float(edit.get("air_end", AIR)), voice=voice)
 
     try:
         drops = keep_bloopers(edit.get("drop") or [], edit.get("blooper") or [])
@@ -404,14 +465,27 @@ def main():
         project = project_config(stem)
         if edit.get("cut_pauses", project["cut_pauses"]):
             busy = [(float(a), float(b)) for a, b in drops + list(edit.get("bleep") or [])]
+            # в сборке пауза не режется через стык и в кусках без речи (там картинка и звук места, а не заминка)
+            busy += [(j, j) for j in joins + inner] + [(p["t0"], p["t1"]) for p in (pack or {}).get("pieces", [])
+                                                       if not p.get("speech")]
             cuts = [c for c in find_pauses(words, silences, voice, start, end, float(project["pause_max"]),
                                            float(project["pause_keep"]))
                     if not any(c[0] < b + 0.05 and c[1] > a - 0.05 for a, b in busy)]
-        pieces = split_by_drops(start, end, drops + cuts)
+        pieces = split_at(split_by_drops(start, end, drops + cuts), joins + inner)
     except ValueError as error:
         sys.exit(str(error))
     segments = snap_segments(pieces, fps)
-    jumps = pause_jumps(segments, cuts)
+    # куски дубля — строго по порядку и без нахлёста: иначе дубль длиннее исходника, и всё после нахлёста (субтитры,
+    # графика) уезжает (20.10.2026: несортированные стыки сборки дали 93,5 с дубля из 75,2 с — поймано глазами)
+    bad = [(a, b) for (a, b), (c, d) in zip(segments, segments[1:]) if c < b - 1e-6] + [x for x in segments if x[1] <= x[0]]
+    if bad or segments[-1][1] > info["duration"] + 0.05:
+        sys.exit(f"✗ куски дубля идут не по порядку или нахлёстом ({bad[:3] or segments[-1]}) — дубль вышел бы длиннее "
+                 f"исходника; это ошибка сборки кусков, не отдаю")
+    # склейки внутри плана — и вырезанные паузы, и стыки сборки одного клипа: их прячет смена плана (kit.Take.framing)
+    jumps = sorted(pause_jumps(segments, cuts) + scene_marks(segments, inner))
+    scenes = scene_marks(segments, joins)
+    if scenes:
+        print(f"  → сборка: {len(scenes) + 1} сцен — на стыках камера и субтитры не переезжают")
     if cuts:
         print(f"  → пауз вырезано: {len(cuts)} ({sum(b - a for a, b in cuts):.1f} с) — на склейках смена плана")
     bloopers = blooper_spans(segments, edit.get("blooper") or [])
@@ -419,7 +493,8 @@ def main():
     mark_dropped(words, drops)
     aroll_words = remap_words(words, segments)
     kept = sum(e - s for s, e in segments)
-    done = f", вырезано дублей: {len(segments) - 1 - len(bloopers) - len(jumps)}" if len(segments) > 1 + len(jumps) else ""
+    dropped = len(segments) - 1 - len(bloopers) - len(jumps) - len(scenes)
+    done = f", вырезано дублей: {dropped}" if dropped > 0 else ""
     done += f", угаров: {len(bloopers)}" if bloopers else ""
     print(f"  → дубль {segments[0][0]:.2f}–{segments[-1][1]:.2f} с исходника "
           f"({kept:.1f} с{done}), слов {len(aroll_words)}")
@@ -455,7 +530,7 @@ def main():
     (out_dir / "aroll.json").write_text(json.dumps({
         "source": str(video), "segments": segments, "fps": fps,
         "duration": sum(e - s for s, e in segments),
-        "look": preset.get("look"), "format": fmt, "bloopers": bloopers, "jumps": jumps,
+        "look": preset.get("look"), "format": fmt, "bloopers": bloopers, "jumps": jumps, "scenes": scenes,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  ✓ готово за {time.time() - started:.0f} с → {out.relative_to(WORK_DIR.parent)}")
 

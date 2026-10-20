@@ -115,15 +115,34 @@ def outputs_for(stem: str, project: "projects.Project | None" = None) -> list:
     return sorted(items, key=lambda i: -i["mtime"])
 
 
+def pack_state(stem: str, path: Path, project: "projects.Project") -> dict | None:
+    """Сборка ролика (папка input/<имя>/ с несколькими видео, scripts/pack.py): сколько клипов и секунд, собрана ли."""
+    folder = project.input / stem
+    if not folder.is_dir():
+        return None
+    clips = projects.pack_clips(folder)
+    if not clips:
+        return None
+    seconds = sum(quick_probe(c)["duration"] or 0 for c in clips)
+    return {"clips": len(clips), "seconds": round(seconds, 1), "built": not path.is_dir(),
+            "chosen": (WORK_DIR / stem / "pack.json").exists()}
+
+
 def video_state(path: Path, project: "projects.Project") -> dict:
-    stem = path.stem
+    stem = path.name if path.is_dir() else path.stem
     work = WORK_DIR / stem
     try:
         brief = styles.load_brief(stem)
     except styles.StyleError as e:
         # битый бриф одного ролика не должен ронять весь список: ролик помечается ошибкой
         brief = dict(styles.DEFAULT_BRIEF, exists=True, error=str(e))
-    info = quick_probe(path)
+    pack = pack_state(stem, path, project)
+    if path.is_dir():
+        # несобранная сборка: размеры — первого клипа, длительность — всех вместе (сырьё, ролик выйдет короче)
+        clips = projects.pack_clips(path)
+        info = dict(quick_probe(clips[0]), duration=pack["seconds"])
+    else:
+        info = quick_probe(path)
     fmt_src = None
     if info["width"] and info["height"]:
         fmt_src = "горизонталь" if info["width"] > info["height"] else (
@@ -131,7 +150,8 @@ def video_state(path: Path, project: "projects.Project") -> dict:
     return {
         "stem": stem, "name": path.name, "mtime": path.stat().st_mtime,
         "project": project.name, "project_title": project.title,
-        "size_mb": round(path.stat().st_size / 1_048_576, 1), **info, "orientation": fmt_src,
+        "size_mb": round(sum(c.stat().st_size for c in projects.pack_clips(path)) / 1_048_576, 1) if path.is_dir()
+        else round(path.stat().st_size / 1_048_576, 1), **info, "orientation": fmt_src, "pack": pack,
         "steps": {
             "transcribed": (WORK_DIR / f"{stem}.words.json").exists(),
             "prepped": (work / "aroll.mp4").exists(),
@@ -459,6 +479,11 @@ def video_thumb(stem: str):
     src = source_of(stem)
     if not src:
         raise HTTPException(404, "нет исходника")
+    if src.is_dir():                                  # несобранная сборка — кадр первого клипа
+        clips = projects.pack_clips(src)
+        if not clips:
+            raise HTTPException(404, "в сборке нет видео")
+        src = clips[0]
     folder = WORK_DIR / "_thumbs"
     folder.mkdir(parents=True, exist_ok=True)
     thumb = folder / f"{stem}.jpg"
@@ -762,6 +787,11 @@ def studio_file(folder: str, name: str):
         path = projects.locate(folder, name)
     except projects.ProjectError as e:
         raise HTTPException(404, str(e))
+    if path.is_dir():                                 # несобранная сборка: показать первый клип
+        clips = projects.pack_clips(path)
+        if not clips:
+            raise HTTPException(404, "в сборке нет видео")
+        path = clips[0]
     media = {".jpg": "image/jpeg", ".png": "image/png"}.get(path.suffix.lower(), "video/mp4")
     return FileResponse(path, media_type=media)
 
@@ -888,6 +918,42 @@ def brain_thread(thread_id: str):
     return thread
 
 
+def pack_context(stem: str, project: "projects.Project", path: Path | None) -> list:
+    """Что мозгу знать о сборке: ролик из нескольких видео собирается по шагам (scripts/pack.py)."""
+    folder = project.input / stem
+    clips = projects.pack_clips(folder) if folder.is_dir() else []
+    if not clips:
+        return []
+    rel = f"projects/{project.name}/input/{stem}"
+    built = path is not None and not path.is_dir()
+    return [f"Это СБОРКА: один ролик из {len(clips)} видео ({rel}/: {', '.join(c.name for c in clips[:12])}"
+            f"{' …' if len(clips) > 12 else ''}). Порядок: 1) разбор в очередь — jobqueue.py add 10-pack-{stem} "
+            f"\"python scripts/pack.py {stem}\" → прочитай work/{stem}/pack.md и листы кадров клипов (что в кадре, кто, "
+            f"эмоции) — это «дубль глазами» сборки; 2) реши сюжет и хронометраж и напиши work/{stem}/pack.json — какие "
+            f"куски каких клипов и в каком порядке (формат — docstring scripts/pack.py; `pack.py {stem} --check`); "
+            f"3) очередь 20-prep-{stem}: \"python scripts/pack.py {stem} --build\" \"python scripts/prep.py "
+            f"{rel}.mov\" \"python scripts/track.py work/{stem}/aroll.mp4\"; дальше — обычный монтаж. Стыки сборки — "
+            f"смена сцены (aroll.json → scenes): камера и субтитры через них не переезжают, вспышка склейки там не нужна; "
+            f"секунда клипа → дубль — tk.clip(\"<клип>\", сек). Сцены сняты в разных местах — вырезка без пустой комнаты "
+            f"(текст за спиной давай скромно или cutout=False)."
+            + (f" Сейчас собрано: {rel}.mov." if built else " Ещё не собрано.")]
+
+
+def references_context(project: "projects.Project") -> list:
+    """Референсы проекта (projects/<имя>/references/) — общие для всех роликов проекта: смотреть до плана."""
+    files = project.references_list()
+    links = project.references / "links.md"
+    text = links.read_text(encoding="utf-8") if links.exists() else ""
+    has_links = bool(re.search(r"https?://", text))
+    if not files and not has_links:
+        return []
+    return [f"Референсы проекта (на все его ролики) — projects/{project.name}/references/: "
+            f"{', '.join(f.name for f in files[:10]) or 'файлов нет'}{' …' if len(files) > 10 else ''}"
+            f"{'; ссылки и что в них взять — links.md' if has_links else ''}. Посмотри до плана (ролик — "
+            f"analyze_reference.py, картинку — глазами) и возьми оттуда то, что там сказано взять; помеченное как "
+            f"«антиреференс» — чего не делать."]
+
+
 def studio_context(stem: str | None, project_name: str | None = None) -> str:
     """Что мозгу знать о выбранном ролике (или о проекте — разговор о правилах): файлы, этапы и бриф."""
     if not stem and project_name:
@@ -918,10 +984,12 @@ def studio_context(stem: str | None, project_name: str | None = None) -> str:
                  f"Язык речи {project.config['language']}, финальная плашка CTA "
                  f"{'нужна' if project.config['cta'] else 'НЕ нужна (build_page(cta=False))'}; "
                  f"выпуски — projects/{project.name}/output/."]
+    if project:
+        lines += pack_context(stem, project, path) + references_context(project)
     mats = materials.context_line(stem)
     if mats:
         lines.append(mats)
-    if path:
+    if path and project:
         state = video_state(path, project)
         done = [k for k, v in state["steps"].items() if v]
         lines.append(f"Готовые этапы: {', '.join(done) or 'ничего'}. Выпуски: "
@@ -1307,7 +1375,12 @@ async def batch_autopilot(item: dict) -> None:
 async def batch_item(item: dict) -> None:
     """Один ролик пачки: автопилот или своя сессия мозга — ходы до «СТАТУС», ожидание своих задач очереди."""
     stem = item["stem"]
-    if batch.get("how") == "autopilot":
+    try:
+        is_pack = projects.pack_of(stem) is not None
+    except projects.ProjectError:
+        is_pack = False
+    # сборке нужен режиссёр с глазами: отобрать куски из клипов автопилот не умеет — её ведёт сессия мозга
+    if batch.get("how") == "autopilot" and not is_pack:
         gate = setup_gate(stem)
         if gate:
             item.update(status="needs_human", note=gate[:300])

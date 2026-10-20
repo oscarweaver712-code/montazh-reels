@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-montage" content="2026-10-19" />
+    <meta name="reels-hook" content="без вспышки: " />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Новоселье «Вкудесника»</title>
+    <script src="assets/gsap.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <script src="layers.js"></script>
+    <script src="edits.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 94px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+      @font-face { font-family: "Montserrat"; src: url("assets/fonts/Montserrat-ExtraBold.ttf"); font-weight: 800; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Montserrat"; font-weight: 800; font-size: 59px; line-height: 1.15; color: #FFFFFF; text-transform: uppercase; }
+      .cap.accent { color: #FFC93C; }
+      .cap .w { display: inline-block; }
+
+      @font-face { font-family: "Unbounded"; src: url("assets/fonts/Unbounded-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Caveat"; src: url("assets/fonts/Caveat-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Montserrat"; src: url("assets/fonts/Montserrat-ExtraBold.ttf"); font-weight: 800; }
+      /* субтитры на белых стенах и светлом полу: тёмная обводка в 8 сторон и мягкая тень */
+      .cap { text-shadow: 2px 2px 0 #2B1A0C, -2px 2px 0 #2B1A0C, 2px -2px 0 #2B1A0C, -2px -2px 0 #2B1A0C, 0 3px 0 #2B1A0C,
+             0 -3px 0 #2B1A0C, 3px 0 0 #2B1A0C, -3px 0 0 #2B1A0C, 0 8px 22px rgba(0,0,0,0.55); letter-spacing: 0.01em; }
+      .vk-gold { display: inline-block; font-family: "Unbounded"; font-weight: 800; text-transform: uppercase;
+                 background: linear-gradient(180deg, #FFF0B8 0%, #FFC93C 46%, #E8961C 100%); -webkit-background-clip: text;
+                 background-clip: text; color: transparent; filter: drop-shadow(0 4px 0 #2B1A0C) drop-shadow(0 10px 22px rgba(0,0,0,0.5));
+                 padding: 0 0.08em; line-height: 1.05; }
+      .vk-hand { font-family: "Caveat"; font-weight: 700; color: #FFF4D6; line-height: 1.0;
+                 text-shadow: 0 3px 0 #2B1A0C, 0 0 8px rgba(43,26,12,0.9), 0 8px 24px rgba(0,0,0,0.5); }
+      .vk-chip { font-family: "Montserrat"; font-weight: 800; font-size: 40px; color: #2B1A0C; background: #FFF4D6;
+                 border-radius: 999px; padding: 14px 34px 16px; box-shadow: 0 10px 0 rgba(43,26,12,0.35), 0 18px 40px rgba(0,0,0,0.4);
+                 white-space: nowrap; }
+      .vk-chip b { color: #C9711A; }
+      .vk-q { width: 700px; border-radius: 34px; overflow: hidden; background: #FFFFFF; box-shadow: 0 22px 50px rgba(0,0,0,0.45); }
+      .vk-q .top { padding: 18px 0 14px; text-align: center; font-family: "Montserrat"; font-weight: 800; font-size: 28px;
+                   letter-spacing: 0.16em; color: #FFFFFF; background: linear-gradient(90deg, #F2A93B, #E2622F); }
+      .vk-q .body { padding: 24px 24px 30px; text-align: center; font-family: "Montserrat"; font-weight: 800; font-size: 46px; white-space: nowrap;
+                    line-height: 1.12; color: #2B1A0C; }
+      .cf { position: absolute; border-radius: 3px; }
+      .vk-ring { width: 220px; height: 220px; border-radius: 50%; border: 10px solid #FFC93C; box-shadow: 0 0 30px rgba(255,201,60,0.8); }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="74.733" data-width="1080" data-height="1920">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="74.733" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+
+      </div>
+      <div id="cam-fg" class="cam"></div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <div id="t-title" class="g" style="left: 120px; top: 930px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 80px;">новоселье</span></div>
+        <div id="t-sub" class="g vk-hand" style="left: 120px; top: 1040px; width: 730px; text-align: center; font-size: 84px;">«Вкудесника»</div>
+        <div id="cfa0" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #FFFFFF;"></div>
+        <div id="cfa1" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #FFF4D6;"></div>
+        <div id="cfa2" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #FFFFFF;"></div>
+        <div id="cfa3" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #FFF4D6;"></div>
+        <div id="cfa4" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #3FA45B;"></div>
+        <div id="cfa5" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #FFF4D6;"></div>
+        <div id="cfa6" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #FFFFFF;"></div>
+        <div id="cfa7" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #F2A93B;"></div>
+        <div id="cfa8" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #E0393E;"></div>
+        <div id="cfa9" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFFFFF;"></div>
+        <div id="cfa10" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFC93C;"></div>
+        <div id="cfa11" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #3FA45B;"></div>
+        <div id="cfa12" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #3FA45B;"></div>
+        <div id="cfa13" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFC93C;"></div>
+        <div id="cfa14" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #3FA45B;"></div>
+        <div id="cfa15" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #E0393E;"></div>
+        <div id="cfa16" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #F2A93B;"></div>
+        <div id="cfa17" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #E0393E;"></div>
+        <div id="cfa18" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #F2A93B;"></div>
+        <div id="cfa19" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFC93C;"></div>
+        <div id="cfa20" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #E0393E;"></div>
+        <div id="cfa21" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFFFFF;"></div>
+        <div id="cfa22" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFF4D6;"></div>
+        <div id="cfa23" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #E0393E;"></div>
+        <div id="cfa24" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #E0393E;"></div>
+        <div id="cfa25" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #FFF4D6;"></div>
+        <div id="cfa26" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #FFFFFF;"></div>
+        <div id="cfa27" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #E0393E;"></div>
+        <div id="cfa28" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #F2A93B;"></div>
+        <div id="cfa29" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #E0393E;"></div>
+        <div id="ck" style="position: absolute; left: 560px; top: 300px; width: 470px;">
+          <div id="ck0" class="g" style="position: relative; display: block; margin-bottom: 6px;"><svg viewBox="0 0 60 50" width="62" height="52" style="vertical-align: -6px; margin-right: 14px;"><path pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d="M6 26 L23 42 L54 6" fill="none" stroke="#FFC93C" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="vk-hand" style="font-size: 96px;">фуршетик</span></div>
+          <div id="ck1" class="g" style="position: relative; display: block; margin-bottom: 6px;"><svg viewBox="0 0 60 50" width="62" height="52" style="vertical-align: -6px; margin-right: 14px;"><path pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d="M6 26 L23 42 L54 6" fill="none" stroke="#FFC93C" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="vk-hand" style="font-size: 96px;">тортик</span></div>
+          <div id="ck2" class="g" style="position: relative; display: block; margin-bottom: 6px;"><svg viewBox="0 0 60 50" width="62" height="52" style="vertical-align: -6px; margin-right: 14px;"><path pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d="M6 26 L23 42 L54 6" fill="none" stroke="#FFC93C" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="vk-hand" style="font-size: 96px;">закусочки</span></div>
+        </div>
+        <div id="ch-go" class="g vk-chip" style="left: 245px; top: 300px;">спускаюсь к команде <b>⏩</b></div>
+        <div id="ch-team" class="g vk-chip" style="left: 270px; top: 300px;">🔔 команда пришла!</div>
+        <div id="hz0" class="g" style="left: 630px; top: 560px;"><svg viewBox="0 0 32 29" width="96" height="86"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
+        <div id="hz1" class="g" style="left: 770px; top: 640px;"><svg viewBox="0 0 32 29" width="72" height="65"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
+        <div id="hz2" class="g" style="left: 540px; top: 690px;"><svg viewBox="0 0 32 29" width="60" height="54"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
+        <div id="ch-table" class="g vk-chip" style="left: 230px; top: 300px;">и сразу — к столу 🍰</div>
+        <div id="ch-taste" class="g vk-chip" style="left: 330px; top: 1240px;">дегустация 🍬</div>
+        <div id="liq" class="g vk-hand" style="left: 110px; top: 320px; width: 740px; text-align: center; font-size: 100px; transform: rotate(-3deg);">…а конфеты оказались<br>с ликёром 😂</div>
+        <div id="q" class="g vk-q" style="left: 190px; top: 236px;">
+          <div class="top">ВОПРОС КОМАНДЕ</div>
+          <div class="body">Как вам новый офис? 🏢</div>
+        </div>
+        <div id="st0" class="g" style="left: 250px; top: 1120px;"><svg viewBox="0 0 40 40" width="54" height="54"><path d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z" fill="#FFC93C"/></svg></div>
+        <div id="st1" class="g" style="left: 790px; top: 1100px;"><svg viewBox="0 0 40 40" width="44" height="44"><path d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z" fill="#FFC93C"/></svg></div>
+        <div id="st2" class="g" style="left: 300px; top: 1230px;"><svg viewBox="0 0 40 40" width="34" height="34"><path d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z" fill="#FFC93C"/></svg></div>
+        <div id="hz-love" class="g" style="left: 690px; top: 330px;"><svg viewBox="0 0 32 29" width="120" height="108"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
+        <div id="ch-wish" class="g vk-chip" style="left: 210px; top: 280px;">🎄 пожелания на сезон</div>
+        <div id="ring" class="g vk-ring" style="left: 140px; top: 1052px; width: 180px; height: 180px;"></div>
+        <div id="us0" class="g" style="left: 120px; top: 1048px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 66px;">успехов!</span></div>
+        <div id="us1" class="g" style="left: 120px; top: 1128px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 80px;">успехов!</span></div>
+        <div id="us2" class="g" style="left: 120px; top: 1222px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 96px;">успехов!</span></div>
+        <div id="cfb0" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #3FA45B;"></div>
+        <div id="cfb1" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #FFC93C;"></div>
+        <div id="cfb2" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #F2A93B;"></div>
+        <div id="cfb3" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #F2A93B;"></div>
+        <div id="cfb4" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #F2A93B;"></div>
+        <div id="cfb5" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #F2A93B;"></div>
+        <div id="cfb6" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFFFFF;"></div>
+        <div id="cfb7" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #FFFFFF;"></div>
+        <div id="cfb8" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFC93C;"></div>
+        <div id="cfb9" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #FFC93C;"></div>
+        <div id="cfb10" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #3FA45B;"></div>
+        <div id="cfb11" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #E0393E;"></div>
+        <div id="cfb12" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFF4D6;"></div>
+        <div id="cfb13" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFF4D6;"></div>
+        <div id="cfb14" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #3FA45B;"></div>
+        <div id="cfb15" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #E0393E;"></div>
+        <div id="cfb16" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFC93C;"></div>
+        <div id="cfb17" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #E0393E;"></div>
+        <div id="cfb18" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFC93C;"></div>
+        <div id="cfb19" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #F2A93B;"></div>
+        <div id="cfb20" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #F2A93B;"></div>
+        <div id="cfb21" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #FFFFFF;"></div>
+        <div id="cfb22" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #FFC93C;"></div>
+        <div id="cfb23" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #3FA45B;"></div>
+        <div id="cfb24" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFF4D6;"></div>
+        <div id="cfb25" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #E0393E;"></div>
+        <div id="cfb26" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #3FA45B;"></div>
+        <div id="cfb27" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFC93C;"></div>
+        <div id="cfb28" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #F2A93B;"></div>
+        <div id="cfb29" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFFFFF;"></div>
+        <div id="e-brand" class="g" data-hold="подпись бренда держится до конца ролика — так задумано" style="left: 120px; top: 300px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 84px;">вкудесник</span></div>
+        <div id="e-sub" class="g vk-hand" data-hold="подпись бренда держится до конца ролика — так задумано" style="left: 120px; top: 410px; width: 730px; text-align: center; font-size: 74px;">подарки с атмосферой<br>настоящего праздника</div>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-ura" src="assets/sfx/sparkle.mp3" data-start="2.12" data-volume="0.093"></audio>
+      <audio id="sfx-walk" src="assets/sfx/whoosh.mp3" data-start="17.75" data-volume="0.291"></audio>
+      <audio id="sfx-team" src="assets/sfx/notification.mp3" data-start="20.25" data-volume="0.203"></audio>
+      <audio id="sfx-table" src="assets/sfx/click.mp3" data-start="30.53" data-volume="0.877"></audio>
+      <audio id="sfx-liq" src="assets/sfx/error.mp3" data-start="36.37" data-volume="0.800"></audio>
+      <audio id="sfx-q" src="assets/sfx/ping.mp3" data-start="38.69" data-volume="0.596"></audio>
+      <audio id="sfx-wish" src="assets/sfx/whoosh.mp3" data-start="56.67" data-volume="0.194"></audio>
+      <audio id="sfx-thumb" src="assets/sfx/ping.mp3" data-start="66.23" data-volume="0.511"></audio>
+      <audio id="sfx-us" src="assets/sfx/pop.mp3" data-start="70.53" data-volume="0.452"></audio>
+      <audio id="sfx-end" src="assets/sfx/sparkle.mp3" data-start="72.53" data-volume="0.081"></audio>
+      <audio id="sfx-brand" src="assets/sfx/chime.mp3" data-start="73.63" data-volume="0.441"></audio>
+      <audio id="sfx-soft0" src="assets/sfx/tap-1.mp3" data-start="0.12" data-volume="0.295"></audio>
+      <audio id="sfx-soft1" src="assets/sfx/tap-2.mp3" data-start="8.39" data-volume="0.266"></audio>
+      <audio id="sfx-soft2" src="assets/sfx/tap-3.mp3" data-start="9.65" data-volume="0.254"></audio>
+      <audio id="sfx-soft3" src="assets/sfx/tap-1.mp3" data-start="10.59" data-volume="0.295"></audio>
+      <audio id="sfx-soft4" src="assets/sfx/swell-1.mp3" data-start="11.17" data-volume="0.250"></audio>
+      <audio id="sfx-soft5" src="assets/sfx/swell-3.mp3" data-start="16.04" data-volume="0.247"></audio>
+      <audio id="sfx-soft6" src="assets/sfx/swell-2.mp3" data-start="22.47" data-volume="0.294"></audio>
+      <audio id="sfx-soft7" src="assets/sfx/tap-2.mp3" data-start="23.18" data-volume="0.266"></audio>
+      <audio id="sfx-soft8" src="assets/sfx/tap-3.mp3" data-start="23.74" data-volume="0.254"></audio>
+      <audio id="sfx-soft9" src="assets/sfx/swell-1.mp3" data-start="25.67" data-volume="0.250"></audio>
+      <audio id="sfx-soft10" src="assets/sfx/swell-3.mp3" data-start="27.77" data-volume="0.247"></audio>
+      <audio id="sfx-soft11" src="assets/sfx/swell-2.mp3" data-start="32.11" data-volume="0.294"></audio>
+      <audio id="sfx-soft12" src="assets/sfx/tap-1.mp3" data-start="32.62" data-volume="0.295"></audio>
+      <audio id="sfx-soft13" src="assets/sfx/swell-1.mp3" data-start="35.11" data-volume="0.250"></audio>
+      <audio id="sfx-soft14" src="assets/sfx/tap-2.mp3" data-start="45.63" data-volume="0.266"></audio>
+      <audio id="sfx-soft15" src="assets/sfx/swell-3.mp3" data-start="51.57" data-volume="0.247"></audio>
+      <audio id="sfx-soft16" src="assets/sfx/swell-2.mp3" data-start="54.51" data-volume="0.294"></audio>
+      <audio id="sfx-soft17" src="assets/sfx/tap-3.mp3" data-start="55.21" data-volume="0.254"></audio>
+      <audio id="sfx-soft18" src="assets/sfx/swell-1.mp3" data-start="62.74" data-volume="0.250"></audio>
+      <audio id="sfx-soft19" src="assets/sfx/bubble-1.mp3" data-start="71.57" data-volume="0.221"></audio>
+      <audio id="sfx-bgm" src="assets/materials/mx-christmas-gifts.mp3" data-start="0.00" data-duration="74.73" data-fade-out="1.5" data-volume="0.078"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      []
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? window.DS_ENTER ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      // склейка (Валера 15.10: «склейки не спрятаны за переходами вспышками»): кадр приходит смазанным
+      // и наводится за 5 кадров, поверх — вспышка в 3 кадра; крупность бьёт наезд Take.splice_punches.
+      // Надписи через склейку не висят — уходят до неё, новая влетает на ней (verify_page).
+      function splice(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: flashes++ === 0 }, t - 0.033);
+        tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, t);
+        tl.fromTo(".cam", { filter: BLUR(16) }, { filter: BLUR(0), duration: 0.17, ease: "power2.out", immediateRender: false }, t);
+      }
+      // смена плана как у риелтора (15.10): кадр перескакивает крупнее с коротким смазом, без вспышки
+      function whip(t) {
+        tl.fromTo(".cam", { filter: BLUR(9) }, { filter: BLUR(0), duration: 0.12, ease: "power2.out", immediateRender: false }, t);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры: karaoke, pop ----------
+      const caps = document.getElementById("caps");
+      const CAP_BASE = "#FFFFFF", CAP_HL = "#FFC93C";
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        let inner = el;
+        if (false) { inner = document.createElement("span"); inner.className = "box"; el.appendChild(inner); }
+        const spans = [];
+        if (c.words) {
+          c.words.forEach((w, k) => {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.textContent = w.text;
+            inner.appendChild(s);
+            if (k < c.words.length - 1) inner.appendChild(document.createTextNode(" "));
+            spans.push(s);
+          });
+        } else {
+          inner.textContent = c.text;
+        }
+        if (c.y !== undefined) el.style.top = c.y + "px";   // линия ролика по лицу (compose.caption_lane)
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
+        const d = Math.min(0.12, c.t1 - c.t0);
+        tl.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: d, ease: "back.out(2.2)" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+        (c.words || []).forEach((w, k) => {
+          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
+          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
+          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+        });
+      });
+
+      enter("#t-title", 0.12, { fromScale: 0.6, dur: 0.36 });
+      enter("#t-sub", 0.42, { fromY: 30, fromScale: 0.8, dur: 0.3 });
+      leave(["#t-title", "#t-sub"], 2.67, { y: -50 });
+      // конфетти cfa: залп на 2.17 с
+      tl.fromTo("#cfa0", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 62, y: -252, rotation: 430, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa0", { opacity: 0, y: -56, rotation: 860, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa1", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 318, y: -170, rotation: -61, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa1", { opacity: 0, y: 130, rotation: -122, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa2", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -131, y: -460, rotation: -66, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa2", { opacity: 0, y: -242, rotation: -132, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa3", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 250, y: -339, rotation: -409, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa3", { opacity: 0, y: -149, rotation: -818, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa4", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 314, y: -346, rotation: 11, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa4", { opacity: 0, y: -67, rotation: 22, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa5", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -128, y: -442, rotation: 370, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa5", { opacity: 0, y: -169, rotation: 740, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa6", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -348, y: -122, rotation: -12, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa6", { opacity: 0, y: 169, rotation: -24, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa7", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -99, y: -459, rotation: 178, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa7", { opacity: 0, y: -175, rotation: 356, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa8", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 372, y: -205, rotation: -482, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa8", { opacity: 0, y: 16, rotation: -964, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa9", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 463, y: -166, rotation: -327, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa9", { opacity: 0, y: 68, rotation: -654, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa10", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -130, y: -201, rotation: 450, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa10", { opacity: 0, y: 67, rotation: 900, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa11", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -63, y: -258, rotation: 61, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa11", { opacity: 0, y: 28, rotation: 122, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa12", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -379, y: -142, rotation: -448, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa12", { opacity: 0, y: 122, rotation: -896, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa13", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 5, y: -520, rotation: 94, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa13", { opacity: 0, y: -321, rotation: 188, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa14", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 59, y: -222, rotation: -136, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa14", { opacity: 0, y: 32, rotation: -272, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa15", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -184, y: -142, rotation: 155, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa15", { opacity: 0, y: 130, rotation: 310, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa16", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 289, y: -167, rotation: 402, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa16", { opacity: 0, y: 111, rotation: 804, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa17", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 155, y: -478, rotation: 498, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa17", { opacity: 0, y: -188, rotation: 996, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa18", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 321, y: -143, rotation: -12, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa18", { opacity: 0, y: 114, rotation: -24, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa19", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -332, y: -93, rotation: 104, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa19", { opacity: 0, y: 183, rotation: 208, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa20", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -376, y: -159, rotation: 414, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa20", { opacity: 0, y: 111, rotation: 828, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa21", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 133, y: -184, rotation: -416, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa21", { opacity: 0, y: 1, rotation: -832, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa22", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -220, y: -281, rotation: 115, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa22", { opacity: 0, y: -8, rotation: 230, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa23", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -159, y: -290, rotation: 0, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa23", { opacity: 0, y: -14, rotation: 0, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa24", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 150, y: -172, rotation: -271, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa24", { opacity: 0, y: 136, rotation: -542, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa25", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 118, y: -277, rotation: 131, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa25", { opacity: 0, y: 14, rotation: 262, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa26", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -276, y: -155, rotation: 143, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa26", { opacity: 0, y: 82, rotation: 286, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa27", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 370, y: -348, rotation: -377, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa27", { opacity: 0, y: -113, rotation: -754, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa28", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -262, y: -373, rotation: -471, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa28", { opacity: 0, y: -145, rotation: -942, duration: 0.55, ease: "power1.in" }, 2.620);
+      tl.fromTo("#cfa29", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 341, y: -326, rotation: -165, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
+      tl.to("#cfa29", { opacity: 0, y: -59, rotation: -330, duration: 0.55, ease: "power1.in" }, 2.620);
+      enter("#ck0", 8.39, { fromX: 60, fromScale: 0.8, dur: 0.26 });
+      draw("#ck0 path", 8.51, 0.24);
+      enter("#ck1", 9.65, { fromX: 60, fromScale: 0.8, dur: 0.26 });
+      draw("#ck1 path", 9.77, 0.24);
+      enter("#ck2", 10.59, { fromX: 60, fromScale: 0.8, dur: 0.26 });
+      draw("#ck2 path", 10.71, 0.24);
+      leave(["#ck0", "#ck1", "#ck2"], 11.13, { x: 60, y: 0 });
+      enter("#ch-go", 17.88, { fromX: -80, fromScale: 0.85, dur: 0.26 });
+      leave("#ch-go", 19.89, { x: 120, y: 0 });
+      whip(17.80);
+      whip(20.13);
+      enter("#ch-team", 20.25, { fromY: -40, fromScale: 0.8, dur: 0.3 });
+      leave("#ch-team", 22.58, { y: -40 });
+      enter("#hz0", 23.18, { fromScale: 0.3, fromY: 40, dur: 0.3 });
+      tl.to("#hz0", { y: -260, duration: 1.6, ease: "none" }, 23.48);
+      leave("#hz0", 24.73, { y: -320 });
+      enter("#hz1", 23.46, { fromScale: 0.3, fromY: 40, dur: 0.3 });
+      tl.to("#hz1", { y: -260, duration: 1.6, ease: "none" }, 23.76);
+      leave("#hz1", 25.01, { y: -320 });
+      enter("#hz2", 23.74, { fromScale: 0.3, fromY: 40, dur: 0.3 });
+      tl.to("#hz2", { y: -260, duration: 1.6, ease: "none" }, 24.04);
+      leave("#hz2", 25.29, { y: -320 });
+      enter("#ch-table", 30.53, { fromX: 80, fromScale: 0.85, dur: 0.28 });
+      leave("#ch-table", 32.17, { x: -100, y: 0 });
+      enter("#ch-taste", 32.62, { fromY: -40, fromScale: 0.85, dur: 0.28 });
+      leave("#ch-taste", 35.17, { y: -40 });
+      enter("#liq", 36.37, { fromScale: 0.5, rot: -3, dur: 0.34 });
+      leave("#liq", 38.29, { rot: -3 });
+      enter("#q", 38.69, { fromScale: 0.6, fromY: -40, dur: 0.34 });
+      leave("#q", 43.31, { y: -60 });
+      enter("#st0", 45.63, { fromScale: 0, rot: 90, dur: 0.3 });
+      leave("#st0", 46.93, { scale: 0, rot: -90, y: 0 });
+      enter("#st1", 45.71, { fromScale: 0, rot: 90, dur: 0.3 });
+      leave("#st1", 47.01, { scale: 0, rot: -90, y: 0 });
+      enter("#st2", 45.79, { fromScale: 0, rot: 90, dur: 0.3 });
+      leave("#st2", 47.09, { scale: 0, rot: -90, y: 0 });
+      enter("#hz-love", 55.21, { fromScale: 0.2, dur: 0.3, ease: "back.out(3)" });
+      tl.to("#hz-love", { scale: 1.12, duration: 0.25, yoyo: true, repeat: 1, ease: "sine.inOut" }, 55.56);
+      leave("#hz-love", 56.42, { y: -60 });
+      enter("#ch-wish", 56.75, { fromY: -50, fromScale: 0.8, dur: 0.3 });
+      leave("#ch-wish", 59.07, { y: -50 });
+      enter("#ring", 66.23, { fromScale: 0.3, blur: 0, dur: 0.25, ease: "power2.out" });
+      leave("#ring", 66.78, { scale: 1.6, y: 0, blur: 0 });
+      slam("#us0", 70.53, { fromScale: 1.6, rot: -3 });
+      slam("#us1", 70.85, { fromScale: 1.6, rot: 2 });
+      slam("#us2", 71.57, { fromScale: 1.6, rot: -2 });
+      leave(["#us0", "#us1", "#us2"], 72.21, { y: -40 });
+      // конфетти cfb: залп на 72.53 с
+      tl.fromTo("#cfb0", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 392, y: -272, rotation: 413, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb0", { opacity: 0, y: 38, rotation: 826, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb1", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -278, y: -249, rotation: -159, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb1", { opacity: 0, y: 45, rotation: -318, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb2", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -311, y: -221, rotation: -455, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb2", { opacity: 0, y: 60, rotation: -910, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb3", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 159, y: -372, rotation: -218, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb3", { opacity: 0, y: -189, rotation: -436, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb4", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -255, y: -108, rotation: -45, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb4", { opacity: 0, y: 79, rotation: -90, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb5", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -178, y: -355, rotation: -140, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb5", { opacity: 0, y: -116, rotation: -280, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb6", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -2, y: -419, rotation: 396, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb6", { opacity: 0, y: -168, rotation: 792, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb7", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 502, y: -131, rotation: -370, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb7", { opacity: 0, y: 114, rotation: -740, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb8", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 235, y: -291, rotation: -480, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb8", { opacity: 0, y: -84, rotation: -960, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb9", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -266, y: -155, rotation: -404, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb9", { opacity: 0, y: 25, rotation: -808, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb10", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -344, y: -353, rotation: 422, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb10", { opacity: 0, y: -72, rotation: 844, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb11", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -371, y: -172, rotation: 12, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb11", { opacity: 0, y: 30, rotation: 24, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb12", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -221, y: -459, rotation: -299, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb12", { opacity: 0, y: -216, rotation: -598, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb13", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -346, y: -96, rotation: 457, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb13", { opacity: 0, y: 132, rotation: 914, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb14", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 10, y: -515, rotation: -272, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb14", { opacity: 0, y: -237, rotation: -544, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb15", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -144, y: -496, rotation: -540, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb15", { opacity: 0, y: -239, rotation: -1080, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb16", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -236, y: -243, rotation: -335, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb16", { opacity: 0, y: -26, rotation: -670, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb17", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -35, y: -220, rotation: 133, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb17", { opacity: 0, y: 58, rotation: 266, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb18", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -256, y: -120, rotation: -43, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb18", { opacity: 0, y: 154, rotation: -86, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb19", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 81, y: -245, rotation: 450, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb19", { opacity: 0, y: -31, rotation: 900, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb20", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -199, y: -177, rotation: -73, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb20", { opacity: 0, y: 66, rotation: -146, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb21", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -322, y: -251, rotation: -138, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb21", { opacity: 0, y: 28, rotation: -276, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb22", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 92, y: -334, rotation: -328, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb22", { opacity: 0, y: -145, rotation: -656, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb23", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -277, y: -331, rotation: -14, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb23", { opacity: 0, y: -26, rotation: -28, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb24", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 24, y: -498, rotation: -400, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb24", { opacity: 0, y: -260, rotation: -800, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb25", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 73, y: -470, rotation: -389, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb25", { opacity: 0, y: -236, rotation: -778, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb26", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 147, y: -191, rotation: 302, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb26", { opacity: 0, y: 52, rotation: 604, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb27", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -285, y: -109, rotation: -271, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb27", { opacity: 0, y: 163, rotation: -542, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb28", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 441, y: -264, rotation: 528, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb28", { opacity: 0, y: -49, rotation: 1056, duration: 0.55, ease: "power1.in" }, 72.983);
+      tl.fromTo("#cfb29", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 326, y: -158, rotation: 192, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
+      tl.to("#cfb29", { opacity: 0, y: 101, rotation: 384, duration: 0.55, ease: "power1.in" }, 72.983);
+      enter("#e-brand", 72.63, { fromScale: 0.6, dur: 0.36 });
+      enter("#e-sub", 72.98, { fromY: 30, fromScale: 0.85, dur: 0.32 });
+      splice(11.433);
+      splice(54.767);
+
+
+      try { REELS_EDITS(tl); } catch (e) { throw new Error(`правки студии: ${e.message}`); }
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

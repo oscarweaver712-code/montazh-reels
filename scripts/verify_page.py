@@ -1056,14 +1056,18 @@ def caption_gaps(project: Path, limit: float = CAP_GAP_MAX) -> list:
 
 
 def take_splices(project: Path) -> list:
-    """Секунды склеек на шкале дубля (по вырезам drop в aroll.json); нет дубля — пусто."""
+    """Секунды склеек на шкале дубля (по вырезам drop в aroll.json); нет дубля — пусто. Стыки сборки (scenes,
+    scripts/pack.py) — смена сцены, а не склейка дубля: их не прячут, и в список они не входят."""
     meta = take_dir(project) / "aroll.json"
     if not meta.exists():
         return []
+    data = json.loads(meta.read_text(encoding="utf-8"))
+    scenes = [float(j) for j in data.get("scenes") or []]
     acc, out = 0.0, []
-    for s0, s1 in json.loads(meta.read_text(encoding="utf-8")).get("segments", [])[:-1]:
+    for s0, s1 in data.get("segments", [])[:-1]:
         acc += s1 - s0
-        out.append(round(acc, 3))
+        if all(abs(acc - j) > 0.02 for j in scenes):
+            out.append(round(acc, 3))
     return out
 
 

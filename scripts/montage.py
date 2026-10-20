@@ -11,8 +11,8 @@
   вспышка хука    → вспышка с отъездом и звуком на первом слове основы (project.json → hook_flash; место — лучший
                     кандидат events.hook_candidates или m.hook(t); без неё — m.hook(None, "почему"));
   угар            → кусок edit.json → blooper: серый кадр, виньетка, штамп «НЕ ВОШЛО»; мат в субтитрах — «***»;
-  тихие звуки     → по движениям самой страницы (splice, whip, slam, enter, card, doc, draw, bars, вход перебивки)
-                    плюс свои события m.soft(t, вид) — раскладывает kit.soft_track по правилам п.9;
+  тихие звуки     → по движениям самой страницы (splice, whip, slam, enter, card, doc, draw, bars, вход перебивки),
+                    стыкам сцен сборки (aroll.json → scenes) и своим событиям m.soft(t, вид) — kit.soft_track по п.9;
   музыка          → music.pick: свой трек ролику из фонотеки YouTube без указания автора (project.json → music);
   лицо            → перебивки во весь кадр вместе не больше 1 − face_min ролика (Валера: «в 50+% видео моё лицо»);
   «Чертёж»        → m.blueprint(piece) (scripts/blueprint.py): за спиной — окно вырезки; на груди — поверх; сплит — лист
@@ -322,7 +322,8 @@ class Montage:
         beats = page_js + "".join(auto_js)
         if self.design:                              # функции движений системы — до движений страницы
             beats = self.design.js() + beats
-        soft = sorted(set(page_events(beats)) | set(self.extra_soft))
+        # стык сцен сборки (scripts/pack.py) — переход между клипами: тихий накат, как на склейке (20.10.2026)
+        soft = sorted(set(page_events(beats)) | set(self.extra_soft) | {(round(x, 3), "cut") for x in tk.scenes})
         # щелчок плашки призыва ставит build_page позже — раскладка тихих звуков должна знать его заранее, иначе тихий
         # звук встаёт вплотную к нему и check_sounds роняет сборку (19.10.2026, партитура аналитика IMG_3292: cta на 57,1 с)
         cta_pop = [kit.audio("cta", "pop", cta_at)] if self.cfg.get("cta", True) and cta_at is not None else []

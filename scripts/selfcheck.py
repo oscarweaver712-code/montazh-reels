@@ -3259,6 +3259,28 @@ def check_projects(report: Report, tmp: Path):
                  prep.speech_language("IMG_0001", {"language": "en"}))
         report.check(langs == ("en", "ru", "en"), "язык речи — из проекта, edit.json может переопределить",
                      " / ".join(langs))
+        saved = styles.WORK_DIR
+        styles.WORK_DIR = tmp / "p_work"
+        try:
+            looks = (prep.pick_look("IMG_0002"), prep.pick_look("IMG_0001"))
+        finally:
+            styles.WORK_DIR = saved
+        import compose
+        saved = styles.WORK_DIR
+        styles.WORK_DIR = tmp / "p_work"
+        try:
+            ruled = (compose.ruling_style("IMG_0002"), compose.ruling_style("IMG_0001"))
+        finally:
+            styles.WORK_DIR = saved
+        report.check(ruled[0] is not None and ruled[0]["id"] == "hormozi"
+                     and ruled[0]["params"]["captions"]["font"] == "cormorant" and ruled[1] is None,
+                     "сборка ролика заказчика без своего брифа — по стилю его проекта; ролики проекта по умолчанию — "
+                     "как были", f"заказчик: {ruled[0] and ruled[0]['id']}, свой: {ruled[1]}")
+        report.check(looks[0].get("grade") == "punchy" and looks[1] == {"enabled": True, "brightness": -8.0,
+                                                                         "grade": "natural"},
+                     "цвет дубля без своего брифа — из стиля проекта, а не общий пресет (у заказчика — свой грейд)",
+                     f"заказчик: {looks[0].get('grade')} {looks[0].get('brightness')}, свой: {looks[1].get('grade')} "
+                     f"{looks[1].get('brightness')}")
         cta = 'id="cta"'
         leaks = (verify_page.cta_leak("IMG_0002", cta), verify_page.cta_leak("IMG_0002--hormozi", cta),
                  verify_page.cta_leak("IMG_0002", ""), verify_page.cta_leak("IMG_0001", cta))
@@ -3292,6 +3314,158 @@ def check_projects(report: Report, tmp: Path):
                   matte.project_consent(ROOT / "work" / "IMG_9999" / "aroll.mp4"))
         report.check(agreed == ("main", None, None), "согласие на долгую маску — только у роликов своего проекта",
                      "чужой ролик и ролик вне проектов спросят" if agreed == ("main", None, None) else f"{agreed}")
+
+
+def make_pack_clip(path: Path, size: str, seconds: float, bursts: list, level: float):
+    """Клип сборки: тон «речи» во вспышках bursts [(от, до)] громкостью level, между ними — тишина."""
+    gate = "+".join(f"between(t\\,{a}\\,{b})" for a, b in bursts)
+    subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error",
+                    "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=30:duration={seconds}",
+                    "-f", "lavfi", "-i", f"aevalsrc={level}*sin(2*PI*330*t)*({gate}):s=48000:d={seconds}",
+                    *source_codec(), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-shortest", str(path)],
+                   check=True, capture_output=True)
+
+
+def check_packs(report: Report, tmp: Path):
+    """Сборка: один ролик из нескольких видео (20.10.2026, заказ «Вкудесника» — 9 клипов, ролик до 1,5 мин).
+
+    Куски с речью встают краями в тишину (инвариант 3), громкость речи разных клипов выравнивается, клип других
+    пропорций без явного fit и ускоренная речь — громкий отказ; длина сборки — ровно сумма кадров кусков (инвариант 4),
+    слова клипов переезжают на шкалу сборки; стыки — смена сцены: субтитр через стык не висит, склейкой дубля стык
+    не считается.
+    """
+    import compose
+    import pack
+    import prep
+    import projects
+    import verify_page
+
+    print("\nСборка из нескольких видео")
+    work = tmp / "k_work"
+    work.mkdir()
+    with temp_projects(tmp / "k_projects", "main") as made:
+        box = made["main"].input / "party"
+        box.mkdir()
+        made["main"].input.joinpath("IMG_0001.MOV").write_bytes(b"x")
+        clips = {"a.mov": ("720x1280", 3.0, [(0.5, 1.0), (1.4, 1.9)], 0.03),        # тихая речь
+                 "b.mov": ("1280x720", 2.0, [(0.2, 1.8)], 0.12),                   # горизонталь
+                 "c.mov": ("720x1280", 2.0, [(0.4, 1.2)], 0.12)}                   # громкая речь
+        for name, (size, sec, bursts, level) in clips.items():
+            make_pack_clip(box / name, size, sec, bursts, level)
+        words = {"a.mov": [("раз", 0.5, 1.0), ("два", 1.4, 1.85)], "b.mov": [("три", 0.3, 0.9), ("четыре", 1.0, 1.7)],
+                 "c.mov": [("пять", 0.4, 1.15)]}
+        found = projects.index().get("party")
+        report.check(bool(found) and found[1] == box and projects.pack_of("party") == box
+                     and projects.pack_of("IMG_0001") is None,
+                     "папка видео в input/ — один ролик (сборка), обычный файл сборкой не считается",
+                     f"{found[1].name if found else 'не найдена'}")
+        saved = (pack.WORK_DIR, prep.WORK_DIR, verify_page.WORK_DIR)
+        pack.WORK_DIR = prep.WORK_DIR = verify_page.WORK_DIR = work
+        try:
+            cache = work / "party" / "pack"
+            cache.mkdir(parents=True)
+            for name, ws in words.items():                   # речь «распознана» заранее — whisper тесту не нужен
+                stem = Path(name).stem
+                (cache / f"{stem}.words.json").write_text(json.dumps({"language": "ru", "text": "", "words": [
+                    {"word": w, "start": a, "end": b, "prob": 1.0} for w, a, b in ws]}), encoding="utf-8")
+                (cache / f"{stem}.source.json").write_text(json.dumps({"name": name, "size": (box / name).stat().st_size}),
+                                                           encoding="utf-8")
+            plan_path = work / "party" / "pack.json"
+
+            def refused(pieces: list, needle: str) -> str:
+                plan_path.write_text(json.dumps({"pieces": pieces}), encoding="utf-8")
+                try:
+                    pack.build("party")
+                    return "собралось молча"
+                except pack.PackError as e:
+                    return "" if needle in str(e) else str(e)[:90]
+
+            bad = (refused([{"clip": "b.mov", "from": 0, "to": 2, "mute": True}], "fit"),
+                   refused([{"clip": "c.mov", "from": 0, "to": 2, "speed": 2}], "мультяшн"),
+                   refused([{"clip": "z.mov", "from": 0, "to": 1}], "нет в сборке"))
+            report.check(not any(bad), "горизонталь без fit, ускоренная речь и чужой клип — громкий отказ",
+                         "; ".join(b for b in bad if b) or "все три пойманы")
+
+            plan_path.write_text(json.dumps({"pieces": [
+                {"clip": "a.mov", "from": 1.3, "to": 1.7},
+                {"clip": "b.mov", "from": 0, "to": 2, "speed": 2, "mute": True, "fit": "blur"},
+                {"clip": "c.mov", "from": 0, "to": 1.6}]}), encoding="utf-8")
+            out = pack.build("party")
+            built = json.loads((work / "party" / "pack.built.json").read_text(encoding="utf-8"))
+            a, b, c = built["pieces"]
+            report.check(a["start"] <= 1.4 and a["end"] >= 1.85 and a["speech"] and not b["speech"],
+                         "кусок с речью уехал краями в тишину: слово не обрезано ни с какой стороны",
+                         f"просили 1.30–1.70, вышло {a['start']:.2f}–{a['end']:.2f} (слово 1.40–1.85)")
+            frames = sum(p["frames"] for p in built["pieces"])
+            got = float(probe_value(out, "format=duration"))
+            report.check(abs(got - frames / 30) <= 1.5 / 30 and b["frames"] == 30
+                         and built["joins"] == [a["t1"], b["t1"]],
+                         "длина сборки — ровно сумма кадров кусков, ускорение ×2 — вдвое короче, стыки на месте",
+                         f"{got:.3f} с при {frames} кадрах, стыки {built['joins']}")
+
+            def lufs(t0: float, t1: float) -> float:
+                # замер свой, не pack.loudness: сломанный замер сборки не должен сам себя проверять
+                err = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostats", "-ss", f"{t0:.3f}", "-t", f"{t1 - t0:.3f}",
+                                      "-i", str(out), "-vn", "-af", "ebur128", "-f", "null", "-"],
+                                     capture_output=True, encoding="utf-8", errors="replace").stderr
+                found = re.findall(r"I:\s*(-?[\d.]+)\s*LUFS", err)
+                return float(found[-1]) if found else -99.0
+            gap = abs(lufs(a["t0"], a["t1"]) - lufs(c["t0"], c["t1"]))
+            report.check(gap <= 2.0, "громкость речи разных клипов выровнена",
+                         f"разница {gap:.1f} LU (в клипах — ~12 дБ); тихому {a['auto_gain']:+.1f} дБ")
+            moved = json.loads((work / "party.words.json").read_text(encoding="utf-8"))["words"]
+            said = [w["word"] for w in moved]
+            two = next((w for w in moved if w["word"] == "два"), None)
+            report.check(said == ["два", "пять"] and two and abs(two["start"] - (1.4 - a["start"])) < 0.02,
+                         "слова клипов — на шкале сборки, у куска без звука слов нет",
+                         f"{said}, «два» с {two['start'] if two else '?'}")
+
+            # вырезанная пауза внутри одного плана — склейка (её прячут), а не смена сцены
+            plan_path.write_text(json.dumps({"pieces": [
+                {"clip": "a.mov", "from": 0.4, "to": 1.1}, {"clip": "a.mov", "from": 1.3, "to": 2.0},
+                {"clip": "c.mov", "from": 0, "to": 1.6}]}), encoding="utf-8")
+            pack.build("party")
+            built = json.loads((work / "party" / "pack.built.json").read_text(encoding="utf-8"))
+            first, second, third = built["pieces"]
+            report.check(built["cuts"] == [second["t0"]] and built["joins"] == [third["t0"]],
+                         "кусок того же клипа дальше по времени — склейка внутри плана, другой клип — смена сцены",
+                         f"склейки {built['cuts']}, сцены {built['joins']}")
+        finally:
+            pack.WORK_DIR, prep.WORK_DIR, verify_page.WORK_DIR = saved
+
+    # whisper растягивает первое слово на паузу перед ним («Ну» 0,00–1,76 при голосе с 1,68) и даёт слова нулевой длины
+    words = pack.remap_clip_words(
+        [{"clip": "x", "start": 1.55, "end": 3.0, "speed": 1.0, "t0": 0.0, "mute": False}],
+        {"x": {"words": [{"word": "Ну", "start": 0.0, "end": 1.76}, {"word": "что", "start": 1.76, "end": 1.92},
+                         {"word": "ну", "start": 2.2, "end": 2.2}, {"word": "хвост", "start": 0.2, "end": 1.6}]}})
+    report.check([w["word"] for w in words] == ["Ну", "что", "ну"],
+                 "первое слово, растянутое whisper до куска, и слово нулевой длины не теряются; чужой хвост — не в куске",
+                 f"{[w['word'] for w in words]}")
+
+    # стыки: камера и субтитры не переезжают, склейкой дубля стык не считается
+    segments = prep.snap_segments(prep.split_at([(0.0, 3.0), (3.5, 6.0)], [2.0, 1.0, 5.0]), 30)
+    scenes = prep.scene_marks(segments, [1.0, 5.0])
+    report.check(segments == [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0), (3.5, 5.0), (5.0, 6.0)] and scenes == [1.0, 4.5],
+                 "стыки сборки (в любом порядке) делят дубль на куски по порядку и ложатся в aroll.json → scenes",
+                 f"{segments}, {scenes}")
+    words = [{"word": w, "start": s, "end": e} for w, s, e in
+             (("мы", 0.2, 0.4), ("рады", 0.45, 0.9), ("очень", 1.1, 1.4), ("рады", 1.45, 1.8))]
+    chunks = compose.caption_chunks(words, {}, 3.0, "phrase", "lower", scenes=[1.0])
+    across = [c["text"] for c in chunks if c["t0"] < 1.0 < c["t1"]]
+    report.check(not across and len(chunks) == 2, "субтитр не собирает слова с двух сторон стыка и не висит через него",
+                 f"{[(c['text'], c['t0'], c['t1']) for c in chunks]}")
+    project = tmp / "k_studio" / "party"
+    (work / "party").mkdir(parents=True, exist_ok=True)
+    (work / "party" / "aroll.json").write_text(json.dumps(
+        {"segments": [[0, 1], [1, 3], [3.5, 6]], "scenes": [1.0], "jumps": []}), encoding="utf-8")
+    saved = verify_page.WORK_DIR
+    verify_page.WORK_DIR = work
+    try:
+        cuts = verify_page.take_splices(project)
+    finally:
+        verify_page.WORK_DIR = saved
+    report.check(cuts == [3.0], "стык сборки — не склейка дубля: вспышку и наезд там не требуют",
+                 f"склейки {cuts}")
 
 
 def check_web_import(report: Report, tmp: Path):
@@ -4148,6 +4322,7 @@ def main():
         section(report, check_portable, tmp)
         section(report, check_approve, tmp)
         section(report, check_projects, tmp)
+        section(report, check_packs, tmp)
         section(report, check_batch, tmp)
         section(report, check_ai_workflow, tmp)
         section(report, check_viz, tmp)

@@ -12,6 +12,8 @@
     setup.json      анкета проекта (студия: «Проект → Настроить»): ответы ложатся блоком в rules.md
     references/     референсы: ссылки, ролики, скриншоты (analyze_reference.py их меряет)
     input/          исходники — ролик принадлежит тому проекту, в чьём input/ лежит
+    input/<имя>/    сборка: папка с несколькими видео — сырьё ОДНОГО ролика <имя> (scripts/pack.py);
+                    собранный дубль ложится рядом — input/<имя>.mp4, дальше обычный конвейер
     output/         готовые ролики проекта
 
 work/<имя>/ и studio/<имя>/ остаются общими: имя ролика (IMG_1803) — одно на все проекты.
@@ -111,6 +113,20 @@ class Project:
         return sorted(p for p in self.input.iterdir()
                       if p.suffix.lower() in VIDEO_EXT and not p.name.startswith(".") and p.is_file())
 
+    def packs(self) -> list:
+        """Сборки проекта: папки в input/ хотя бы с одним видео (scripts/pack.py). Имя папки — имя ролика."""
+        if not self.input.is_dir():
+            return []
+        return sorted(p for p in self.input.iterdir()
+                      if p.is_dir() and not p.name.startswith((".", "_")) and pack_clips(p))
+
+    def references_list(self) -> list:
+        """Файлы-референсы проекта (без служебных): их видит ИИ перед каждым монтажом проекта."""
+        if not self.references.is_dir():
+            return []
+        return sorted(p for p in self.references.iterdir()
+                      if p.is_file() and not p.name.startswith(".") and p.name != "links.md")
+
     def rules_text(self) -> str:
         return self.rules.read_text(encoding="utf-8") if self.rules.exists() else ""
 
@@ -137,6 +153,12 @@ def load_config(path: Path, name: str) -> dict:
             raise ProjectError(f"{where}: поле {key} должно быть {what}, а не {value!r}")
         config[key] = value
     return config
+
+
+def pack_clips(folder: Path) -> list:
+    """Видео сборки: файлы папки по имени (скрытые — недописанные загрузки и «._имя» macOS — нет)."""
+    return sorted(p for p in Path(folder).iterdir()
+                  if p.is_file() and p.suffix.lower() in VIDEO_EXT and not p.name.startswith("."))
 
 
 def names() -> list:
@@ -167,6 +189,9 @@ def index() -> dict:
 
     У айфонов команды одинаковые имена IMG_XXXX, а work/<имя>/ у ролика общий: если бы
     одно имя лежало в двух проектах, транскрипт, решения и бриф одного достались бы другому.
+
+    Сборка (папка input/<имя>/ с несколькими видео) до сборки — ролик с исходником-папкой; собрана
+    (рядом input/<имя>.mp4) — обычный ролик с этим файлом, папка остаётся его сырьём (pack_of).
     """
     found, clash = {}, []
     for project in all_projects():
@@ -175,10 +200,29 @@ def index() -> dict:
                 clash.append(f"{path.stem}: projects/{found[path.stem][0].name}/input и projects/{project.name}/input")
                 continue
             found[path.stem] = (project, path)
+    for project in all_projects():
+        for folder in project.packs():
+            if folder.name in found:
+                if found[folder.name][0] == project and found[folder.name][1].parent == folder.parent:
+                    continue                          # собранная сборка: ролик — файл рядом с папкой
+                clash.append(f"{folder.name}: сборка projects/{project.name}/input/{folder.name}/ и "
+                             f"projects/{found[folder.name][0].name}/input")
+                continue
+            found[folder.name] = (project, folder)
     if clash:
         raise ProjectError("Одно имя ролика в двух проектах — у них общий work/<имя>/, решения "
                            "перемешаются. Переименуй один из файлов (IMG_1803 → IMG_1803_2):\n  " + "\n  ".join(clash))
     return found
+
+
+def pack_of(stem: str) -> Path | None:
+    """Папка сборки ролика (input/<имя>/ его проекта) — собран он уже или нет; не сборка — None."""
+    entry = index().get(stem)
+    if not entry:
+        return None
+    project, path = entry
+    folder = project.input / stem
+    return folder if folder.is_dir() and pack_clips(folder) else None
 
 
 def sources() -> list:

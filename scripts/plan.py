@@ -244,6 +244,9 @@ def decisions(stem: str, fmt: str) -> list:
         project, source = projects.of(stem), projects.source(stem)
     except projects.ProjectError as e:
         return [f"- проект: {e} → сначала положи исходник в projects/<проект>/input/"]
+    if source and source.is_dir():
+        return [f"- {stem} — сборка из нескольких видео, ещё не собрана: pack.py {stem} → pack.json → "
+                f"pack.py {stem} --build, потом prep и план"]
     cfg = project.config
     lines.append(f"- проект {project.name} («{project.title}») → правила projects/{project.name}/rules.md "
                  f"важнее стиля: прочитай до раскадровки" + ("" if project.rules.exists() else " (rules.md нет — спроси автора)"))

@@ -19,6 +19,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
@@ -140,19 +141,56 @@ def forget_frames(stem: str):
         shot.unlink(missing_ok=True)
 
 
+PACK_RE = re.compile(r"^[A-Za-z0-9][\w\-]{0,40}$")
+
+
+def pack_folder(project: str, pack: str) -> Path:
+    """Папка сборки в input/ проекта (scripts/pack.py): «new» — новая с свободным именем sborka-ММДД[-N].
+
+    Имя сборки — имя ролика, а имена роликов одни на все проекты (общий work/<имя>/): занятое другим роликом
+    или чужой сборкой — отказ, а не молчаливое смешение клипов двух роликов.
+    """
+    folder = inbox(project)
+    taken = {stem for stem in projects.index()}
+    if pack == "new":
+        base = time.strftime("sborka-%m%d")
+        name, n = base, 2
+        while name in taken or (folder / name).exists():
+            name, n = f"{base}-{n}", n + 1
+        pack = name
+    if not PACK_RE.match(pack):
+        raise projects.ProjectError(f"Имя сборки «{pack}»: латиница, цифры, дефис, до 40 знаков")
+    target = folder / pack
+    if not target.is_dir() and pack in taken:
+        raise projects.ProjectError(f"Имя «{pack}» уже занято роликом — выбери другое имя сборки")
+    target.mkdir(exist_ok=True)
+    return target
+
+
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), project: str = Form("")):
+async def upload(file: UploadFile = File(...), project: str = Form(""), pack: str = Form("")):
     """Видео в input/ проекта (по умолчанию — антишкола). Имя занято — новое ложится рядом с номером (IMG_3305_2.MOV), а не поверх.
 
     У айфонов команды одинаковые имена IMG_XXXX, а у лежащего файла уже есть транскрипт и
     решения монтажа: подмена исходника молча дала бы чужие субтитры и чужой рез. Пока файл
     идёт, он лежит скрытым — оборванная загрузка не выглядит готовым видео.
+
+    pack — клипы одного ролика из нескольких видео (сборка, scripts/pack.py): файл ложится в input/<pack>/,
+    «new» — новая сборка со свободным именем (его вернёт ответ, следующие файлы шлются уже с ним).
     """
     name = Path(file.filename or "").name
     if not name:
         return {"error": "у файла нет имени"}
     try:
-        target = free_name(name, inbox(project))
+        if pack:
+            box = pack_folder(project, pack)
+            target = box / name
+            stem, n = target.stem, 2
+            while target.exists():
+                target = box / f"{stem}_{n}{target.suffix}"
+                n += 1
+        else:
+            target = free_name(name, inbox(project))
     except projects.ProjectError as e:
         return {"error": str(e)}
     forget_frames(target.stem)
@@ -164,6 +202,8 @@ async def upload(file: UploadFile = File(...), project: str = Form("")):
         part.replace(target)
     finally:
         part.unlink(missing_ok=True)
+    if pack:
+        return {"name": target.name, "project": target.parent.parent.parent.name, "pack": target.parent.name}
     return {"name": target.name, "project": target.parent.parent.name}
 
 
@@ -198,6 +238,7 @@ def free_name(name: str, folder: Path) -> Path:
     в input/ любого проекта, а не только этого.
     """
     taken = {p.stem for project in projects.all_projects() for p in project.sources()}
+    taken |= {p.name for project in projects.all_projects() for p in project.packs()}     # сборки — тоже ролики
     target = folder / name
     stem, suffix, n = target.stem, target.suffix, 2
     while target.exists() or target.stem in taken:

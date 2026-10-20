@@ -596,11 +596,15 @@ class Take:
         # склейки на шкале дубля: здесь кончается один кусок и начинается следующий. Склейки по вырезанным паузам
         # (prep, cut_pauses) — jumps: на них смена плана со смазом (framing), а вспышка splice — только на вырезах дублей
         self.jumps = [round(float(j), 3) for j in meta.get("jumps") or []]
+        # стыки сборки (scripts/pack.py, aroll.json → scenes): там меняется сцена — это не склейка дубля, её не прячут
+        self.scenes = [round(float(j), 3) for j in meta.get("scenes") or []]
         acc, self.splices = 0.0, []
         for s0, s1 in self.segments[:-1]:
             acc += s1 - s0
-            if all(abs(acc - j) > 0.02 for j in self.jumps):
+            if all(abs(acc - j) > 0.02 for j in self.jumps + self.scenes):
                 self.splices.append(round(acc, 3))
+        pack = work / stem / "pack.built.json"
+        self.pack = json.loads(pack.read_text(encoding="utf-8"))["pieces"] if self.scenes and pack.exists() else []
         self.src_words = json.loads((work / f"{stem}.words.json").read_text(encoding="utf-8"))["words"]
         self.words = json.loads((work / stem / "aroll.words.json").read_text(encoding="utf-8"))["words"]
 
@@ -615,6 +619,16 @@ class Take:
                 return round(acc + max(0.0, x - s), 2)
             acc += e - s
         raise ValueError(f"{x:.2f} с исходника нет в дубле (вырезано или за краем)")
+
+    def clip(self, name: str, x: float) -> float:
+        """Секунда клипа сборки → секунда дубля: tk.clip("IMG_6728.MOV", 9.1). Клип взят несколькими кусками —
+        берётся тот, куда попала секунда; её нет ни в одном — громкая ошибка."""
+        for p in self.pack:
+            if p["clip"] == name and p["start"] - 0.05 <= x <= p["end"] + 0.05:
+                return self.t(p["t0"] + (min(max(x, p["start"]), p["end"]) - p["start"]) / p["speed"])
+        took = [f"{p['start']:.2f}–{p['end']:.2f}" for p in self.pack if p["clip"] == name]
+        raise ValueError(f"{name} {x:.2f} с нет в сборке" + (f" (из клипа взято {', '.join(took)})" if took
+                                                             else " — клип в pack.json не взят"))
 
     def idx(self, i: int) -> int:
         """Номер слова исходника → номер в aroll.words.json (для text_fixes)."""
