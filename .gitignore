@@ -45,6 +45,8 @@ work/*/materials/*.m4v
 work/*/materials/*.webm
 # музыка из фонотеки YouTube (yt-*): по её условиям треки не распространяются отдельно от роликов — не в git
 work/*/materials/yt-*
+# Mixkit (mx-*, Stock Music Free License, 20.10.2026) — тоже не раздаём отдельно от роликов
+work/*/materials/mx-*
 projects/*/music/*
 !projects/*/music/.gitkeep
 !work/*/manim/

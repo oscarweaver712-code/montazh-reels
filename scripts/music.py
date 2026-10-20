@@ -8,7 +8,7 @@
       кладёт треки в work/<имя>/materials/ как yt-<название>.mp3 (не в git — условия фонотеки), меряет и советует
   .venv/bin/python scripts/music.py used
       какой трек в каком ролике уже стоит — один и тот же в двух роликах verify_page не пустит
-  .venv/bin/python scripts/music.py pool antishkola ~/Downloads/*.mp3 --yt-library
+  .venv/bin/python scripts/music.py pool antishkola ~/Downloads/*.mp3 --yt-library     # или --mixkit (mx-*.mp3)
       запас треков проекта (projects/<проект>/music/, не в git): montage.py берёт оттуда сам. --yt-library — подтверждение,
       что каждый файл из фонотеки YouTube с пометкой «указывать автора не требуется» (Валера 19.10: «музыка без авторских
       прав, на ютуб выкладываем»); без него запас файл не примет. Учёт — music/pool.json: откуда, когда, кто подтвердил
@@ -43,9 +43,10 @@ VOICE_BAND_MAX = 4.0      # % энергии в 1–4 кГц: больше — �
 SPREAD_MAX = 5.0          # дБ разброса громкости по секундам: больше — музыка «качается» под речью
 
 
-def slug(path: Path) -> str:
+def slug(path: Path, prefix: str = kit.BGM_PREFIX) -> str:
     title = path.stem.split(" - ")[0]                      # «No Rush - Dyalla» → «No Rush»
-    return kit.BGM_PREFIX + re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") + path.suffix.lower()
+    title = re.sub(r"^mixkit-|-\d+$", "", title.lower())   # «mixkit-sleepy-cat-135» → «sleepy-cat»
+    return prefix + re.sub(r"[^a-z0-9]+", "-", title).strip("-") + path.suffix.lower()
 
 
 def measure(path: Path, seconds: float = 70.0) -> dict:
@@ -66,7 +67,7 @@ def used() -> dict:
     """{трек: [ролики]} — по страницам studio/*/index.html."""
     found = {}
     for page in sorted((ROOT / "studio").glob("*/index.html")):
-        for name in set(re.findall(r'src="assets/materials/(yt-[^"]+)"', page.read_text(encoding="utf-8"))):
+        for name in set(re.findall(r'src="assets/materials/((?:yt|mx)-[^"]+)"', page.read_text(encoding="utf-8"))):
             found.setdefault(name, []).append(page.parent.name)
     return found
 
@@ -76,6 +77,14 @@ def pool_dir(project: str) -> Path:
 
 
 POOL_SOURCE = "фонотека YouTube, «указывать автора не требуется»"
+# источники фона: только те, где YouTube прямо разрешён и автора указывать не нужно (ролики идут на YouTube)
+SOURCES = {
+    "yt": ("yt-", POOL_SOURCE),
+    # 20.10.2026, Валера: «найди другой ресурс для музыки» (фонотека YouTube за VPN отдаёт 503). Лицензия Mixkit на музыку:
+    # «YouTube videos» — можно, коммерческое — можно, без указания автора; нельзя регистрировать в системах прав (Content
+    # ID); пришла заявка — переслать её на team@mixkit.co. Pixabay не берём: часть авторов там сама в Content ID
+    "mixkit": ("mx-", "Mixkit, Stock Music Free License: YouTube можно, автора не указывать; заявку — на team@mixkit.co"),
+}
 
 
 def pool_ledger(project: str) -> dict:
@@ -83,11 +92,12 @@ def pool_ledger(project: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def pool_add(project: str, files: list, confirmed: bool) -> None:
-    if not confirmed:
-        raise SystemExit("✗ В запас кладётся только музыка без авторских прав — фонотека YouTube с пометкой «указывать "
-                         "автора не требуется» (ролики идут на YouTube: чужой трек — Content ID и блок). Если файлы оттуда — "
-                         "повтори с --yt-library")
+def pool_add(project: str, files: list, source: str | None) -> None:
+    if source not in SOURCES:
+        raise SystemExit("✗ В запас кладётся только музыка, которую YouTube пропустит: фонотека YouTube с пометкой «указывать "
+                         "автора не требуется» (--yt-library) или Mixkit по Stock Music Free License (--mixkit). Чужой трек "
+                         "— Content ID и блок. Скажи, откуда файлы, одним из этих флагов")
+    prefix, label = SOURCES[source]
     box = pool_dir(project)
     box.mkdir(parents=True, exist_ok=True)
     ledger = pool_ledger(project)
@@ -96,9 +106,9 @@ def pool_add(project: str, files: list, confirmed: bool) -> None:
         if not src.exists():
             raise SystemExit(f"✗ нет файла {src}")
         m = measure(src)
-        target = box / slug(src)
+        target = box / slug(src, prefix)
         target.write_bytes(src.read_bytes())
-        ledger[target.name] = {"source": POOL_SOURCE, "file": src.name, "added": time.strftime("%Y-%m-%d %H:%M")}
+        ledger[target.name] = {"source": label, "file": src.name, "added": time.strftime("%Y-%m-%d %H:%M")}
         (box / "pool.json").write_text(json.dumps(ledger, ensure_ascii=False, indent=1), encoding="utf-8")
         fits = m["voice"] <= VOICE_BAND_MAX and m["spread"] <= SPREAD_MAX
         print(f"  {'✓' if fits else '·'} {target.name:28s} голос 1–4 кГц {m['voice']:.1f}%, разброс {m['spread']:.1f} дБ"
@@ -108,7 +118,7 @@ def pool_add(project: str, files: list, confirmed: bool) -> None:
 def pick(stem: str, project: str) -> str:
     """Трек ролику: уже стоящий в его странице → из его материалов → из запаса проекта и чужих неиспользованных.
 
-    Возвращает имя yt-*.mp3 в материалах ролика (из запаса копирует). Ни один трек не годится — громкая ошибка:
+    Возвращает имя yt-*.mp3 или mx-*.mp3 в материалах ролика (из запаса копирует). Ни один трек не годится — громкая ошибка:
     ролик без музыки verify_page всё равно не пустит, а молча собранный без неё — то, что ломалось (IMG_3292 v2).
     """
     taken = used()
@@ -117,14 +127,14 @@ def pick(stem: str, project: str) -> str:
     if mine and mine[0] not in busy and (materials.folder(stem) / mine[0]).exists():
         return mine[0]
     # только то, что точно из фонотеки YouTube без указания автора: yt-* в материалах кладёт music.py add (п.9 правил),
-    # из запаса — файлы с записью в pool.json (подтверждены при pool --yt-library); прочие mp3 в папке не берутся
+    # из запаса — файлы с записью в pool.json (подтверждены при pool --yt-library или --mixkit); прочие mp3 в папке не берутся
     ledger = pool_ledger(project)
-    candidates = sorted(materials.folder(stem).glob(f"{kit.BGM_PREFIX}*.mp3")) \
+    candidates = [p for pre in kit.BGM_PREFIXES for p in sorted(materials.folder(stem).glob(f"{pre}*.mp3"))] \
         + [p for p in sorted(pool_dir(project).glob("*.mp3")) if p.name in ledger] \
-        + sorted((ROOT / "work").glob(f"*/materials/{kit.BGM_PREFIX}*.mp3"))
+        + [p for pre in kit.BGM_PREFIXES for p in sorted((ROOT / "work").glob(f"*/materials/{pre}*.mp3"))]
     best, seen = None, set()
     for path in candidates:
-        name = path.name if path.name.startswith(kit.BGM_PREFIX) else kit.BGM_PREFIX + path.name
+        name = path.name if path.name.startswith(kit.BGM_PREFIXES) else kit.BGM_PREFIX + path.name
         name = re.sub(r"^(yt-)+", kit.BGM_PREFIX, name)
         if name in busy or name in seen:
             continue
@@ -136,8 +146,8 @@ def pick(stem: str, project: str) -> str:
             best = (m["voice"] + m["spread"], name, path)
     if best is None:
         raise RuntimeError(f"Для {stem} нет свободного лоу-фая под голос: запас projects/{project}/music/ кончился. "
-                           f"Скачай 3–5 спокойных лоу-фай из фонотеки YouTube (фильтр «указывать автора не требуется») и "
-                           f"положи: music.py pool {project} <файлы> --yt-library")
+                           f"Скачай 3–5 спокойных лоу-фай из фонотеки YouTube (фильтр «указывать автора не требуется») или "
+                           f"Mixkit и положи: music.py pool {project} <файлы> --yt-library | --mixkit")
     _, name, path = best
     if not (materials.folder(stem) / name).exists():
         materials.add(stem, name, path)
@@ -182,13 +192,16 @@ def main():
     pool = sub.add_parser("pool", help="положить треки в запас проекта — сборка возьмёт сама")
     pool.add_argument("project")
     pool.add_argument("files", nargs="+")
-    pool.add_argument("--yt-library", action="store_true",
-                      help="подтверждаю: все файлы из фонотеки YouTube, «указывать автора не требуется»")
+    src = pool.add_mutually_exclusive_group()
+    src.add_argument("--yt-library", action="store_const", const="yt", dest="source",
+                     help="подтверждаю: все файлы из фонотеки YouTube, «указывать автора не требуется»")
+    src.add_argument("--mixkit", action="store_const", const="mixkit", dest="source",
+                     help="подтверждаю: все файлы с Mixkit, Stock Music Free License")
     args = ap.parse_args()
     if args.cmd == "add":
         add(args.stem, args.files)
     elif args.cmd == "pool":
-        pool_add(args.project, args.files, args.yt_library)
+        pool_add(args.project, args.files, args.source)
     else:
         for name, stems in sorted(used().items()):
             print(f"  {name:28s} {', '.join(stems)}")

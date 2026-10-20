@@ -996,6 +996,32 @@ def check_sfx(report: Report):
     report.check(not quiet and any("громче" in p for p in loud_bgm) and any("уже стоит" in p for p in again) and not any_file,
                  "фоновая музыка: трек фонотеки, не громче «как сейчас», в двух роликах один трек — красное",
                  f"тихо: {quiet or 'чисто'}; громче: {len(loud_bgm)}; повтор: {len(again)}")
+    # Mixkit — второй источник фона (20.10.2026, Валера: «найди другой ресурс для музыки»): mx-*.mp3 ставится и меряется, как
+    # фонотека YouTube, страница с ним — с музыкой; в запас без указания источника (--yt-library | --mixkit) не кладётся
+    import music
+    with tempfile.TemporaryDirectory() as t:
+        tmp = Path(t)
+        (tmp / "w" / "X" / "materials").mkdir(parents=True)
+        shutil.copy2(folder / "swell-1.mp3", tmp / "w" / "X" / "materials" / "mx-test.mp3")
+        saved = (materials.WORK_DIR, verify_page.STUDIO)
+        materials.WORK_DIR, verify_page.STUDIO = tmp / "w", tmp / "studio"
+        try:
+            mx = kit.background_music("X", "mx-test.mp3", 30.0)
+            vol = float(re.search(r'data-volume="([\d.]+)"', mx).group(1))
+            mx_loud = sound_problems(mx.replace(f'data-volume="{vol:.3f}"', f'data-volume="{min(1.0, vol * 2):.3f}"'), "X")
+        finally:
+            materials.WORK_DIR, verify_page.STUDIO = saved
+    try:
+        music.pool_add("_нет_такого_", [], None)
+        refused = False
+    except SystemExit:
+        refused = True
+    named = music.slug(Path("mixkit-sleepy-cat-135.mp3"), music.SOURCES["mixkit"][0])
+    heard = verify_page.music_missing(mx, "IMG_3647") is None and verify_page.music_missing("", "IMG_3647") is not None
+    report.check(any("громче" in p for p in mx_loud) and refused and named == "mx-sleepy-cat.mp3" and heard,
+                 "фон с Mixkit: mx-*.mp3 ставится, меряется и считается музыкой, как фонотека YouTube; запас без источника — отказ",
+                 f"громче: {len(mx_loud)}, без источника {'отказ' if refused else 'принят'}, имя {named}, "
+                 f"страница {'с музыкой' if heard else 'без музыки'}")
 
 
 def check_footage(report: Report, tmp: Path):
@@ -1499,14 +1525,14 @@ def check_events(report: Report, tmp: Path):
         full = verify_page.required_missing(bare + soft + '<div id="hook-flash">', "IMG_0700")
         excused = verify_page.required_missing(bare + soft + '<meta name="reels-hook" content="без вспышки: x" />', "IMG_0700")
         try:
-            music.pool_add("main", [__file__], confirmed=False)
+            music.pool_add("main", [__file__], None)
             refused = False
         except SystemExit:
             refused = True
         refused = refused and not (music.pool_dir("main") / "pool.json").exists()
     report.check(len(missing) == 2 and not full and not excused and refused,
                  "обязательное проекта: без тихих звуков и вспышки хука страница красная; запас музыки без "
-                 "подтверждения «фонотека YouTube, без указания автора» файл не берёт",
+                 "указания источника (фонотека YouTube без автора или Mixkit) файл не берёт",
                  f"пустая: {len(missing)} провала, полная: {len(full)}, без вспышки с причиной: {len(excused)}, "
                  f"запас {'отказал' if refused else 'ВЗЯЛ'}")
 

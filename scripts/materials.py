@@ -164,6 +164,10 @@ def origin(stem: str, area: str, name: str) -> dict:
     if area == "materials" and name.startswith("yt-"):
         return {"code": "library", "label": "фонотека YouTube · автора указывать не нужно",
                 "detail": "условия фонотеки: только в своих роликах, отдельно не распространять (не в git)"}
+    if area == "materials" and name.startswith("mx-"):
+        return {"code": "library", "label": "Mixkit · Stock Music Free License · автора указывать не нужно",
+                "detail": "YouTube и соцсети — можно; не ремиксовать отдельно и не регистрировать в Content ID; "
+                          "пришла заявка — переслать на team@mixkit.co (не в git)"}
     if area == "materials" or (area == "img" and (folder(stem) / name).exists()):
         return {"code": "mine", "label": "добавил ты"}
     if area == "img":

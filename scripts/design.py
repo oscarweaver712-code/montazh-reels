@@ -245,7 +245,7 @@ class Design:
             f"      :root {{ --cream: {c['text']}; --red: {c['pen']}; --ink: {c['plate']}; --ds-text: {c['text']}; "
             f"--ds-plate: {c['plate']}; --ds-pen: {c['pen']}; --ds-acc: {c['accent']}; --ds-on-acc: {c['on-accent']}; "
             f"--ds-grad: {self.gradient}; --ds-label-font: {fam('hand')}; --ds-label-weight: {wt('hand')}; "
-            f"--ds-label-size: 44px; --ds-label-track: 0; --ds-label-case: none; }}",
+            f"--ds-label-size: 64px; --ds-label-track: 0; --ds-label-case: none; }}",
             f"      #root {{ font-family: {fam('caption')}, sans-serif; }}",
             f"      .lead, .pill, .label, .cta-small {{ font-family: {fam('caption')}; font-weight: {wt('caption')}; }}",
             f"      .cta {{ background: {_rgba(c['plate'], 0.86)}; border-color: {_rgba(c['text'], 0.16)}; }}",

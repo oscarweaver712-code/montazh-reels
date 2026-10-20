@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="ru" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="reels-score" content="score.json" />
+    <meta name="reels-montage" content="2026-10-19" />
+    <meta name="reels-design" content="antishkola" />
+    <meta name="reels-sfx-norm" content="2026-10-12" />
+    <title>Почему карты ставят тебя на СВО</title>
+    <script src="assets/gsap.min.js"></script>
+    <script src="camera.js"></script>
+    <script src="captions.js"></script>
+    <script src="layers.js"></script>
+    <script src="edits.js"></script>
+    <style>
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Manrope"; src: url("assets/fonts/Manrope-ExtraBold.ttf"); font-weight: 800; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "Cormorant"; src: url("assets/fonts/CormorantGaramond-Italic.ttf"); font-weight: 300 700; font-style: italic; }
+
+      :root {
+        --cream: #F2EBDD;
+        --red: #F0352C;
+        --ink: #141210;
+        --paper: #F1E9D8;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; }
+
+      /* камера: две обёртки с одинаковым движением — фон и вырезанный человек */
+      .cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+      .cam video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+      #cam-fg { opacity: 0; }
+      .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+
+      /* всё графическое скрыто, пока таймлайн не покажет */
+      .g { position: absolute; opacity: 0; }
+
+      /* подменённый фон: картина XVI века */
+      #plate { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; opacity: 0; }
+      #plate-img { position: absolute; left: -200px; top: 0; width: 1480px; height: 1920px; object-fit: cover; object-position: 52% 50%;
+                   filter: sepia(0.45) saturate(0.85) brightness(0.58) contrast(1.08); }
+      #plate-vignette { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+                        background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+
+      /* крупная типографика за спиной */
+      .big { left: 0; width: 1080px; text-align: center; font-family: "Oswald"; font-weight: 700; text-transform: uppercase;
+             color: var(--cream); line-height: 0.92; letter-spacing: -0.01em; text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .red { color: var(--red); }
+      .lead { left: 0; width: 1080px; text-align: center; font-family: "Manrope"; font-weight: 800; font-size: 34px;
+              letter-spacing: 0.22em; text-transform: uppercase; color: var(--cream); text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .serif { font-family: "Cormorant"; font-weight: 700; }
+      #aeq-full span { display: inline-block; }
+      .bar { height: 118px; border-radius: 8px; background: var(--cream); box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+
+      /* бегущие субтитры: по слову-два на уровне груди, как в референсах */
+      .cap { position: absolute; left: 245px; width: 590px; top: 1150px; text-align: center; opacity: 0;
+             font-family: "Manrope"; font-weight: 800; font-size: 58px; line-height: 1.1; color: var(--cream);
+             text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 6px 24px rgba(0,0,0,0.5); }
+      .cap.accent { color: #FF4A3D; }
+
+      /* карточки-портреты */
+      .card { width: 300px; padding: 16px 16px 14px; background: var(--paper); border-radius: 6px;
+              box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+      .card .ph { width: 268px; height: 300px; overflow: hidden; }
+      .card img { display: block; width: 268px; height: 300px; object-fit: cover; object-position: 50% 25%; }
+      .card-name { margin-top: 12px; font-family: "Manrope"; font-weight: 800; font-size: 24px; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--ink); }
+      .card-sub { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 27px; color: #5A4E3C; }
+      .card-right { left: 660px; top: 270px; }
+      .card-left { left: 120px; top: 270px; }
+
+      /* штампы и стикеры */
+      .stamp { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; color: var(--red);
+               border: 6px solid var(--red); border-radius: 10px; padding: 2px 18px; letter-spacing: 0.04em; }
+      .sticker { font-family: "Cormorant"; font-style: italic; font-weight: 700; color: var(--ink); background: var(--cream);
+                 border-radius: 40px; padding: 4px 26px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+      .pill { font-family: "Manrope"; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream);
+              background: rgba(16,14,12,0.82); border: 2px solid rgba(242,235,221,0.25); border-radius: 40px; padding: 10px 28px; }
+
+      /* документы снизу: страницы книги, формулы, бланк */
+      .doc { padding: 20px; background: #F6F1E4; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .doc-cap { margin-top: 10px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                 font-size: 30px; color: #4A3F30; }
+      .formula { font-family: "Cormorant"; font-weight: 600; font-size: 70px; color: var(--ink); text-align: center; line-height: 1.25;
+                  font-variant-numeric: lining-nums; }
+      .formula.small { font-size: 56px; }
+      .formula sub { font-size: 0.55em; }
+
+      .censor { left: 280px; top: 230px; width: 520px; height: 150px; border-radius: 18px; background: #0C0C0D;
+                display: flex; align-items: center; justify-content: center; gap: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+      .censor span { font-family: "Oswald"; font-weight: 700; font-size: 86px; letter-spacing: 0.08em; color: var(--cream); }
+      .censor b { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: #fff; background: var(--red);
+                  width: 84px; height: 84px; border-radius: 42px; display: flex; align-items: center; justify-content: center; }
+
+      .rows { left: 40px; width: 1000px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+              font-size: 50px; color: rgba(242,235,221,0.62); }
+
+      .ege { padding: 26px 30px 30px; background: #FBFBF8; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .ege-head { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; color: #2B3A67; }
+      .ege-row { margin-top: 18px; display: flex; align-items: center; gap: 22px; }
+      .ege-label { font-family: "Manrope"; font-weight: 800; font-size: 34px; color: var(--ink); }
+      .cells { display: flex; }
+      .cells i { width: 82px; height: 104px; border: 3px solid #2B3A67; margin-left: -3px; display: flex; align-items: center;
+                 justify-content: center; font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 76px; color: #1F3FA8;
+                 font-variant-numeric: lining-nums; }
+
+      #flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; }
+      .cta { padding: 34px 40px 40px; border-radius: 34px; background: rgba(12,12,14,0.86); border: 2px solid rgba(242,235,221,0.16);
+             box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .cta-big { font-family: "Oswald"; font-weight: 700; font-size: 94px; line-height: 0.95; text-transform: uppercase; color: var(--cream); }
+      .cta-small { margin-top: 14px; font-family: "Manrope"; font-weight: 800; font-size: 40px; color: rgba(242,235,221,0.85); }
+          #plate { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%);
+               mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 68%); }
+      .eq-line { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-style: italic; font-weight: 700;
+                 font-size: 110px; color: var(--cream); font-variant-numeric: lining-nums; text-shadow: 0 6px 30px rgba(0,0,0,0.45); }
+      .letter { top: 150px; width: 230px; text-align: center; font-family: "Oswald"; font-weight: 700; font-size: 300px;
+                line-height: 0.95; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+      .tale { left: 0; width: 1080px; text-align: center; font-family: "Cormorant"; font-weight: 700; color: var(--cream);
+              line-height: 0.95; text-shadow: 0 6px 30px rgba(0,0,0,0.7); }
+      #scan { position: absolute; left: 0; top: 0; width: 100%; height: 90px; opacity: 0;
+              background: linear-gradient(180deg, rgba(90,220,255,0) 0%, rgba(90,220,255,0.55) 50%, rgba(90,220,255,0) 100%); }
+      .diamond { width: 150px; height: 150px; }
+      @font-face { font-family: "JBMono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      .mono { font-family: "JBMono"; font-weight: 700; }
+      .glyph { text-align: center; line-height: 1; color: var(--cream); text-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+      .dot { width: 150px; height: 150px; border-radius: 75px; background: var(--red); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+      .label { font-family: "Manrope"; font-weight: 800; font-size: 32px; letter-spacing: 0.2em; text-transform: uppercase;
+               color: var(--cream); text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+      .notebook { padding: 30px 40px 26px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FBFBF6;
+                  background-image: linear-gradient(#C9DBF2 2px, transparent 2px), linear-gradient(90deg, #C9DBF2 2px, transparent 2px);
+                  background-size: 44px 44px; }
+      .legal { padding: 30px 40px 26px 90px; border-radius: 8px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); background-color: #FFF4AE;
+               background-image: linear-gradient(90deg, transparent 64px, #E86A6A 64px, #E86A6A 67px, transparent 67px),
+                                 repeating-linear-gradient(#FFF4AE 0px, #FFF4AE 52px, #8FB0D8 52px, #8FB0D8 54px); }
+      .hand { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 120px; color: #1F3FA8;
+              font-variant-numeric: lining-nums; line-height: 1.1; }
+      .note { font-family: "Manrope"; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; color: #5B6B86; }
+      .code { padding: 34px 40px; border-radius: 18px; background: #16181D; border: 2px solid #2A2E37; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+              font-family: "JBMono"; font-weight: 600; font-size: 54px; color: #E6E6E6; }
+      .code .k { color: #FF7AB6; } .code .n { color: #9CDCFE; } .code .v { color: #F7C873; } .code .s { color: #F0352C; }
+      .code .c { color: #6B7385; font-size: 34px; }
+      .keys { display: flex; gap: 34px; }
+      .key { position: relative; width: 170px; height: 170px; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+             background: linear-gradient(180deg, #F7F7F4, #D6D6D0); box-shadow: 0 10px 0 #A9A9A2, 0 26px 50px rgba(0,0,0,0.55);
+             font-family: "JBMono"; font-weight: 700; font-size: 104px; color: #23252B; }
+      .key .no { position: absolute; left: 18px; top: 80px; width: 134px; height: 12px; border-radius: 6px; background: var(--red); }
+      .key-glow { position: absolute; left: -16px; top: -16px; width: 202px; height: 202px; border-radius: 34px; border: 6px solid #4FE3E6; }
+      .paper { padding: 34px 44px 30px; border-radius: 8px; background: #F3EAD6; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+      .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
+      .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
+      .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Inter Display"; font-weight: 800; font-size: 58px; line-height: 1.15; color: #F2EBDD; text-transform: none; }
+      .cap.accent { color: #F2EBDD; }
+      .cap.accent { font-size: 67px; }
+      .cap .w { display: inline-block; }
+
+      /* «Чертёж» (scripts/blueprint.py, 19.10.2026): кремовые линии, красный акцент, подписи Manrope */
+      /* толщина и кегли — под экран телефона (19.10.2026: «почему такая маленькая»): 3,5 px линии и 30 px подписи
+         читались как тонкий технический чертёж, рядом со словом за головой в 150 px — мелко */
+      .bp-svg { position: absolute; left: 0; top: 0; overflow: visible; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.6)); }
+      .bp-ln { fill: none; stroke: #F2EBDD; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .bp-ln.red { stroke: #F0352C; stroke-width: 7; }
+      .bp-ln.thin { stroke-width: 3; stroke: rgba(242,235,221,0.6); }
+      .bp-dot { fill: #F2EBDD; opacity: 0; }
+      .bp-dot.red { fill: #F0352C; }
+      .bp-fill { fill: #F0352C; opacity: 0; }
+      .bp-lbl { position: absolute; white-space: nowrap; opacity: 0; text-align: center;
+                font-family: "Manrope"; font-weight: 800; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase;
+                color: #F2EBDD; text-shadow: 0 2px 10px rgba(0,0,0,0.65); }
+      .bp-lbl.red { color: #F0352C; }
+      /* середина подписи на точке — xPercent/yPercent GSAP (_piece), не translate(−50%) в CSS: его GSAP узнаёт только при
+         точном совпадении округлённой ширины, и подпись с дробной шириной съезжала вправо на половину себя (19.10.2026,
+         «1202 · ФИБОНАЧЧИ» в проверке ушла в обрезку). У края — выравнивание внутрь: left или right от точки */
+      .bp-lbl.al { text-align: left; }
+      .bp-lbl.ar { text-align: right; }
+      [data-safe] .bp-lbl { background: rgba(20,18,16,0.78); padding: 4px 14px 6px; border-radius: 4px; }
+      .bp-lbl.big { font-family: "Oswald"; font-weight: 700; font-size: 80px; letter-spacing: 0.02em; line-height: 1; }
+      .bp-lbl .sub { display: block; margin-top: 4px; font-family: "Cormorant"; font-style: italic; font-weight: 600;
+                     font-size: 38px; letter-spacing: 0; text-transform: none; opacity: 0.9; }
+      .bp-write { fill: rgba(242,235,221,0); stroke: #F2EBDD; stroke-width: 5; stroke-dasharray: 3000; stroke-dashoffset: 3000;
+                  font-family: "Oswald"; font-weight: 700; paint-order: stroke; direction: ltr; unicode-bidi: bidi-override; }
+      /* порядок знаков — как написан (19.10.2026: восточные цифры «١ ٢ ٣ ٤ ٥» через пробел браузер клал справа налево) */
+      .bp-mark { fill: #F0352C; opacity: 0; }
+      .bp-sheet { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; opacity: 0; }
+      #stage { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; transform-origin: 0 0; }
+      #caps { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+
+      @font-face { font-family: "Inter Display"; src: url("assets/fonts/InterDisplay-ExtraBold.ttf"); font-weight: 800; font-style: normal; }
+      @font-face { font-family: "Inter Display"; src: url("assets/fonts/InterDisplay-Light.ttf"); font-weight: 300; font-style: normal; }
+      @font-face { font-family: "Oswald"; src: url("assets/fonts/Oswald-Bold.ttf"); font-weight: 700; font-style: normal; }
+      @font-face { font-family: "Unbounded"; src: url("assets/fonts/Unbounded-ExtraBold.ttf"); font-weight: 800; font-style: normal; }
+      @font-face { font-family: "Caveat"; src: url("assets/fonts/Caveat-Bold.ttf"); font-weight: 700; font-style: normal; }
+      @font-face { font-family: "Playfair Display"; src: url("assets/fonts/PlayfairDisplay-SemiBoldItalic.ttf"); font-weight: 600; font-style: italic; }
+      /* дизайн-система проекта (antishkola/DESIGN.md, scripts/design.py): поверх kit — цвета, шрифты ролей, приёмы */
+      :root { --cream: #F2EBDD; --red: #F0352C; --ink: #141210; --ds-text: #F2EBDD; --ds-plate: #141210; --ds-pen: #F0352C; --ds-acc: #C8202D; --ds-on-acc: #F7F1E6; --ds-grad: linear-gradient(165deg, #E4473A 0%, #C41A2A 40%, #E0372F 58%, #B01325 100%); --ds-label-font: "Caveat"; --ds-label-weight: 700; --ds-label-size: 64px; --ds-label-track: 0; --ds-label-case: none; }
+      #root { font-family: "Inter Display", sans-serif; }
+      .lead, .pill, .label, .cta-small { font-family: "Inter Display"; font-weight: 800; }
+      .cta { background: rgba(20,18,16,0.86); border-color: rgba(242,235,221,0.16); }
+      .stamp { color: var(--ds-acc); border-color: var(--ds-acc); }
+      .bp-lbl { font-family: "Caveat"; font-weight: 700; font-size: 76px; letter-spacing: 0; text-transform: none; }
+      .bp-lbl.big { font-family: "Oswald"; font-weight: 700; text-transform: uppercase; }
+      .bp-lbl .sub { font-family: "Caveat"; font-style: normal; font-weight: 700; font-size: 56px; }
+      .bp-ln { stroke-width: 8; }
+      .bp-ln.thin { stroke-width: 4; }
+      .bp-lbl.red { color: var(--ds-acc); }
+      .bp-ln.red { stroke: url(#ds-grad); stroke-width: 10; }
+      .bp-dot.red, .bp-fill, .bp-mark { fill: url(#ds-grad); }
+      .ds-ch { display: inline-block; padding: 0 0.14em; margin: 0 -0.14em; }
+      .ds-hand { left: 0; width: 1080px; text-align: center; white-space: nowrap; font-family: "Caveat"; font-weight: 700; line-height: 1.1; color: var(--ds-text); text-shadow: 0 4px 18px rgba(0,0,0,0.55); }
+      .ds-uline { position: absolute; overflow: visible; }
+      .ds-uline path { fill: none; stroke: url(#ds-grad); stroke-width: 10; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+      .ds-num-wrap { left: 0; width: 1080px; text-align: center; white-space: nowrap; }
+      .ds-numcap { display: block; font-family: "Inter Display"; font-weight: 300; font-size: 60px; line-height: 1.15; color: var(--ds-text); text-shadow: 0 3px 12px rgba(0,0,0,0.55); }
+      .ds-num { display: inline-block; padding: 0 0.04em; font-family: "Unbounded"; font-weight: 800; line-height: 1; background-image: var(--ds-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+      .ds-list { left: 160px; width: 760px; display: grid; gap: 14px; text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.75), 0 3px 10px rgba(0,0,0,0.55); }
+      .ds-list-h { font-family: "Inter Display"; font-weight: 800; font-size: 70px; line-height: 1.1; color: var(--ds-text); }
+      .ds-list-h .ds-n { font-family: "Unbounded"; font-weight: 800; background-image: var(--ds-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+      .ds-row { display: flex; align-items: center; gap: 24px; font-family: "Inter Display"; font-weight: 300; font-size: 58px; line-height: 1.15; color: rgba(242,235,221,0.45); white-space: nowrap; }
+      .ds-box { position: relative; flex: none; display: block; width: 52px; height: 52px; border: 4px solid rgba(242,235,221,0.55); border-radius: 11px; }
+      .ds-box::after { content: ""; position: absolute; inset: 5px; border-radius: 6px; background: var(--ds-grad); transform: scale(var(--k, 0)); }
+      .ds-strike-w { left: 0; width: 1080px; text-align: center; white-space: nowrap; font-family: "Inter Display"; font-weight: 800; line-height: 1.1; color: var(--ds-text); text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.75), 0 3px 10px rgba(0,0,0,0.55); }
+      .ds-in { position: relative; display: inline-block; }
+      .ds-strike { position: absolute; left: -6%; top: 0; width: 112%; height: 100%; overflow: visible; }
+      .ds-strike path { fill: none; stroke: var(--ds-pen); stroke-width: 12; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+      .ds-mk { position: relative; display: inline-block; }
+      .ds-mk-fill { position: absolute; left: -0.18em; right: -0.18em; top: -0.03em; bottom: -0.09em; padding: 0.03em 0.18em 0.09em; color: var(--ds-on-acc); white-space: nowrap; text-shadow: none; isolation: isolate; clip-path: inset(-12% 100% -12% -6%); }
+      .ds-mk-fill::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--ds-grad); border-radius: 0.14em; transform: rotate(-1.4deg); }
+
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="65.433" data-width="1080" data-height="1920">
+      <div id="stage">
+      <div id="cam-bg" class="cam">
+        <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
+               data-start="0" data-duration="65.433" data-track-index="0"></video>
+      </div>
+      <div id="behind" class="layer">
+        <div id="s0-word" class="g big" style="top: 262px; font-size: 170px;"><span class="ds-ch">С</span><span class="ds-ch">В</span><span class="ds-ch">О</span></div>
+        <div id="s3-clip" class="g footage" style="left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000;">
+          <video id="s3-clip-clip" class="clip" src="assets/footage/a_orbit.mp4" muted playsinline data-start="9.82" data-duration="3.04" data-track-index="2"
+                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(0.9) contrast(1.04) brightness(1.1);"></video>
+          <div style="position: absolute; inset: 0; background: #F2EBDD; mix-blend-mode: soft-light; opacity: 0.22;"></div>
+          <svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="lk1-g" width="90" height="90" patternUnits="userSpaceOnUse"><path d="M 90 0 L 0 0 0 90" fill="none" stroke="#F2EBDD" stroke-opacity="0.1" stroke-width="1.2" /></pattern></defs><rect width="1080" height="1920" fill="url(#lk1-g)" /><rect x="36" y="36" width="1008" height="1848" fill="none" stroke="#F2EBDD" stroke-opacity="0.55" stroke-width="2.5" /><path d="M 54 300 H 106 M 80 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 300 H 1026 M 1000 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 54 1300 H 106 M 80 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 1300 H 1026 M 1000 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /></svg>
+          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; font-family: var(--ds-label-font, Manrope); font-weight: var(--ds-label-weight, 800); font-size: var(--ds-label-size, 32px); letter-spacing: var(--ds-label-track, 0.18em); text-transform: var(--ds-label-case, uppercase); color: #F2EBDD; text-shadow: 0 2px 8px rgba(0,0,0,0.7); background: rgba(20,18,16,0.6); padding: 6px 14px 8px; border-radius: 4px;">20 200 км над тобой</div>
+        </div>
+        <div id="s7-clip" class="g footage" style="left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000;">
+          <video id="s7-clip-clip" class="clip" src="assets/footage/b_mast.mp4" muted playsinline data-start="42.64" data-duration="2.54" data-track-index="2"
+                 style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(0.9) contrast(1.04) brightness(1.1);"></video>
+          <div style="position: absolute; inset: 0; background: #F2EBDD; mix-blend-mode: soft-light; opacity: 0.22;"></div>
+          <svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="lk2-g" width="90" height="90" patternUnits="userSpaceOnUse"><path d="M 90 0 L 0 0 0 90" fill="none" stroke="#F2EBDD" stroke-opacity="0.1" stroke-width="1.2" /></pattern></defs><rect width="1080" height="1920" fill="url(#lk2-g)" /><rect x="36" y="36" width="1008" height="1848" fill="none" stroke="#F2EBDD" stroke-opacity="0.55" stroke-width="2.5" /><path d="M 54 300 H 106 M 80 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 300 H 1026 M 1000 274 V 326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 54 1300 H 106 M 80 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /><path d="M 974 1300 H 1026 M 1000 1274 V 1326" stroke="#F0352C" stroke-width="3" fill="none" /></svg>
+          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; font-family: var(--ds-label-font, Manrope); font-weight: var(--ds-label-weight, 800); font-size: var(--ds-label-size, 32px); letter-spacing: var(--ds-label-track, 0.18em); text-transform: var(--ds-label-case, uppercase); color: #F2EBDD; text-shadow: 0 2px 8px rgba(0,0,0,0.7); background: rgba(20,18,16,0.6); padding: 6px 14px 8px; border-radius: 4px;">РЭБ</div>
+        </div>
+      </div>
+      <div id="cam-fg" class="cam">
+        <video id="cutout" class="clip" src="assets/cutout.webm" muted playsinline
+               data-start="0" data-duration="65.433" data-track-index="1"></video>
+      </div>
+      </div>
+      <div id="front" class="layer">
+        <div id="caps"></div>
+        <svg width="0" height="0" style="position: absolute;" aria-hidden="true"><defs><linearGradient id="ds-grad" x1="0.371" y1="0.017" x2="0.629" y2="0.983"><stop offset="0" stop-color="#E4473A" /><stop offset="0.4" stop-color="#C41A2A" /><stop offset="0.58" stop-color="#E0372F" /><stop offset="1" stop-color="#B01325" /></linearGradient></defs></svg>
+        <div id="s5-trilat-sheet" class="bp-sheet"><svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="s5-trilat-sheet-g1" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#F2EBDD" stroke-opacity="0.07" stroke-width="1" /></pattern><pattern id="s5-trilat-sheet-g2" width="180" height="180" patternUnits="userSpaceOnUse"><path d="M 180 0 L 0 0 0 180" fill="none" stroke="#F2EBDD" stroke-opacity="0.14" stroke-width="1.5" /></pattern></defs><path d="M 0 0 H 1080 V 1920 H 0 Z M 192 760 V 1741 H 862 V 760 Z" fill="#141210" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 192 760 V 1741 H 862 V 760 Z" fill="url(#s5-trilat-sheet-g1)" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 192 760 V 1741 H 862 V 760 Z" fill="url(#s5-trilat-sheet-g2)" fill-rule="evenodd" /><rect x="30" y="30" width="1020" height="1860" fill="none" stroke="#F2EBDD" stroke-opacity="0.35" stroke-width="2" /><path d="M 32 54 H 76 M 54 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 54 H 1048 M 1026 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 32 1866 H 76 M 54 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 1866 H 1048 M 1026 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><rect x="192" y="760" width="670" height="981" fill="none" stroke="#F2EBDD" stroke-width="3" /><path d="M 166 760 H 184 M 870 760 H 888 M 166 1741 H 184 M 870 1741 H 888 M 175 760 V 1741 M 879 760 V 1741" stroke="#F2EBDD" stroke-opacity="0.5" stroke-width="2" fill="none" /></svg></div>
+        <div id="s8-route-sheet" class="bp-sheet"><svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position: absolute; left: 0; top: 0;"><defs><pattern id="s8-route-sheet-g1" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#F2EBDD" stroke-opacity="0.07" stroke-width="1" /></pattern><pattern id="s8-route-sheet-g2" width="180" height="180" patternUnits="userSpaceOnUse"><path d="M 180 0 L 0 0 0 180" fill="none" stroke="#F2EBDD" stroke-opacity="0.14" stroke-width="1.5" /></pattern></defs><path d="M 0 0 H 1080 V 1920 H 0 Z M 202 760 V 1741 H 872 V 760 Z" fill="#141210" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 202 760 V 1741 H 872 V 760 Z" fill="url(#s8-route-sheet-g1)" fill-rule="evenodd" /><path d="M 0 0 H 1080 V 1920 H 0 Z M 202 760 V 1741 H 872 V 760 Z" fill="url(#s8-route-sheet-g2)" fill-rule="evenodd" /><rect x="30" y="30" width="1020" height="1860" fill="none" stroke="#F2EBDD" stroke-opacity="0.35" stroke-width="2" /><path d="M 32 54 H 76 M 54 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 54 H 1048 M 1026 32 V 76" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 32 1866 H 76 M 54 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><path d="M 1004 1866 H 1048 M 1026 1844 V 1888" stroke="#F2EBDD" stroke-width="2" stroke-opacity="0.6" fill="none" /><rect x="202" y="760" width="670" height="981" fill="none" stroke="#F2EBDD" stroke-width="3" /><path d="M 176 760 H 194 M 880 760 H 898 M 176 1741 H 194 M 880 1741 H 898 M 185 760 V 1741 M 889 760 V 1741" stroke="#F2EBDD" stroke-opacity="0.5" stroke-width="2" fill="none" /></svg></div>
+        <div id="s1-write" class="g bp" data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" data-safe-zones="низ" style="left: 190px; top: 1225px; width: 700px; height: 400px;">
+          <svg class="bp-svg" viewBox="0 0 700 400" width="700" height="400">
+            <text id="s1-write-w" class="bp-write" x="350" y="276" text-anchor="middle" font-size="210">SVO</text>
+          </svg>
+          <div id="s1-write-s" class="bp-lbl " style="left: 350px; top: 346px;">так пишут в билетах</div>
+        </div>
+        <div id="s2-promise" class="g ds-list" data-safe="список-обещание на груди ниже подбородка" data-safe-zones="низ" style="top: 1262px;"><div class="ds-list-h">разберём</div><div id="s2-promise-r0" class="ds-row"><i id="s2-promise-b0" class="ds-box"></i><span>как работает GPS</span></div><div id="s2-promise-r1" class="ds-row"><i id="s2-promise-b1" class="ds-box"></i><span>при чём стереометрия</span></div></div>
+        <div id="s4-write" class="g bp" data-safe="«Чертёж» на груди ниже подбородка, под линией субтитров (как схемы IMG_3303 v5)" data-safe-zones="низ" style="left: 190px; top: 1225px; width: 700px; height: 400px;">
+          <svg class="bp-svg" viewBox="0 0 700 400" width="700" height="400">
+            <text id="s4-write-w" class="bp-write" x="350" y="266" text-anchor="middle" font-size="184">d = c · t</text>
+          </svg>
+          <div id="s4-write-s" class="bp-lbl " style="left: 350px; top: 336px;">c — скорость света</div>
+        </div>
+        <div id="s5-trilat" class="g bp" style="left: 60px; top: 280px; width: 960px; height: 440px;">
+          <svg class="bp-svg" viewBox="0 0 960 440" width="960" height="440">
+            <path id="s5-trilat-s0" class="bp-dot" d="M 346 227 L 370 250 L 346 274 L 322 250 Z M 260 236 H 311 V 265 H 260 Z M 381 236 H 432 V 265 H 381 Z" />
+            <path id="s5-trilat-r0" class="bp-ln thin" d="M 346 250 L 531 250" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-c0" class="bp-ln" d="M 531 250 A 185 185 0 1 1 161 250 A 185 185 0 1 1 531 250" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-e0" class="bp-ln thin" d="M 161 250 A 185 55 0 1 0 531 250 A 185 55 0 1 0 161 250" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-s1" class="bp-dot" d="M 647 129 L 671 153 L 647 177 L 623 153 Z M 561 139 H 612 V 167 H 561 Z M 682 139 H 733 V 167 H 682 Z" />
+            <path id="s5-trilat-r1" class="bp-ln thin" d="M 647 153 L 531 250" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-c1" class="bp-ln" d="M 799 153 A 152 152 0 1 1 496 153 A 152 152 0 1 1 799 153" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-e1" class="bp-ln thin" d="M 496 153 A 152 45 0 1 0 799 153 A 152 45 0 1 0 496 153" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-s2" class="bp-dot" d="M 658 278 L 682 302 L 658 326 L 634 302 Z M 571 287 H 623 V 316 H 571 Z M 693 287 H 744 V 316 H 693 Z" />
+            <path id="s5-trilat-r2" class="bp-ln thin" d="M 658 302 L 531 250" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-c2" class="bp-ln" d="M 795 302 A 137 137 0 1 1 521 302 A 137 137 0 1 1 795 302" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <path id="s5-trilat-e2" class="bp-ln thin" d="M 521 302 A 137 41 0 1 0 795 302 A 137 41 0 1 0 521 302" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <g id="s5-trilat-roam"><circle id="s5-trilat-rd" class="bp-dot" cx="531" cy="250" r="12" /></g>
+            <circle id="s5-trilat-q" class="bp-dot" cx="496" cy="142" r="12" />
+            <circle id="s5-trilat-p" class="bp-dot" cx="531" cy="250" r="12" />
+            <circle id="s5-trilat-pulse" class="bp-ln red" style="opacity: 0;" cx="531" cy="250" r="22" />
+            <circle id="s5-trilat-fix" class="bp-dot red" cx="531" cy="250" r="20" />
+          </svg>
+        </div>
+        <div id="s6-strike" class="g ds-strike-w" data-safe="слово на груди ниже подбородка" data-safe-zones="низ" style="top: 1262px; font-size: 110px;"><span class="ds-in">GPS<svg class="ds-strike" viewBox="0 0 300 100" preserveAspectRatio="none" aria-hidden="true"><path d="M 0 62 Q 150 42 300 48" pathLength="1" /></svg></span></div>
+        <div id="s8-route" class="g bp" style="left: 60px; top: 280px; width: 960px; height: 440px;">
+          <svg class="bp-svg" viewBox="0 0 960 440" width="960" height="440">
+            <circle id="s8-route-p0" class="bp-dot" cx="144" cy="330" r="14" />
+            <path id="s8-route-a1" class="bp-ln red" d="M 144 330 Q 480 182 816 330" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+            <circle id="s8-route-p1" class="bp-dot red" cx="816" cy="330" r="18" />
+          </svg>
+          <div id="s8-route-l0" class="bp-lbl " style="left: 144px; top: 388px;">ты</div>
+          <div id="s8-route-l1" class="bp-lbl red" style="left: 816px; top: 388px;">SVO</div>
+        </div>
+        <div id="s9-strike" class="g ds-strike-w" data-safe="слово на груди ниже подбородка" data-safe-zones="низ" style="top: 1262px; font-size: 110px;"><span class="ds-in">не нужна<svg class="ds-strike" viewBox="0 0 300 100" preserveAspectRatio="none" aria-hidden="true"><path d="M 0 62 Q 150 42 300 48" pathLength="1" /></svg></span></div>
+        <div id="s10-stamp" class="g stamp" data-safe="на груди ниже подбородка" style="left: 381px; top: 1250px; font-size: 72px; transform: rotate(-5deg); background: rgba(20,18,16,0.72);">уловка</div>
+        <div id="hook-flash" style="position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0;"></div>
+        <div id="cta" class="g cta" data-hold="призыв держится до конца ролика — так задумано" data-safe="плашка в конце — ниже лица, показывает на ник автора" style="left: 245px; top: 1170px; width: 590px;">
+          <div class="cta-big">Больше математики</div>
+          <div class="cta-small">смотри у меня в профиле</div>
+        </div>
+        <svg id="cta-arrow" class="g" data-hold="призыв держится до конца ролика — так задумано" viewBox="0 0 220 200" style="left: 70px; top: 1480px; width: 220px; height: 200px;">
+          <path id="arrow-path" d="M 190 20 C 150 90, 110 130, 40 160" fill="none" stroke="#F2EBDD" stroke-width="12"
+                stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />
+          <path id="arrow-head" d="M 40 160 L 92 168 M 40 160 L 66 116" fill="none" stroke="#F2EBDD" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <div id="flash"></div>
+      </div>
+      <audio id="sfx-s0-word-hit" src="assets/sfx/impact-bass-1.mp3" data-start="2.20" data-volume="0.080"></audio>
+      <audio id="sfx-hook" src="assets/sfx/whoosh-cinematic.mp3" data-start="5.35" data-volume="0.134"></audio>
+      <audio id="sfx-soft0" src="assets/sfx/tap-1.mp3" data-start="3.42" data-volume="0.295"></audio>
+      <audio id="sfx-soft1" src="assets/sfx/tap-2.mp3" data-start="6.12" data-volume="0.266"></audio>
+      <audio id="sfx-soft2" src="assets/sfx/tick-1.mp3" data-start="7.22" data-volume="0.380"></audio>
+      <audio id="sfx-soft3" src="assets/sfx/tick-2.mp3" data-start="8.70" data-volume="0.376"></audio>
+      <audio id="sfx-soft4" src="assets/sfx/swell-1.mp3" data-start="9.56" data-volume="0.250"></audio>
+      <audio id="sfx-soft5" src="assets/sfx/swell-3.mp3" data-start="12.60" data-volume="0.247"></audio>
+      <audio id="sfx-soft6" src="assets/sfx/tap-3.mp3" data-start="15.62" data-volume="0.254"></audio>
+      <audio id="sfx-soft7" src="assets/sfx/swell-3.mp3" data-start="16.80" data-volume="0.155"></audio>
+      <audio id="sfx-soft8" src="assets/sfx/swell-2.mp3" data-start="21.57" data-volume="0.294"></audio>
+      <audio id="sfx-soft9" src="assets/sfx/tick-1.mp3" data-start="22.20" data-volume="0.380"></audio>
+      <audio id="sfx-soft10" src="assets/sfx/tick-2.mp3" data-start="28.96" data-volume="0.376"></audio>
+      <audio id="sfx-soft11" src="assets/sfx/tick-1.mp3" data-start="30.40" data-volume="0.380"></audio>
+      <audio id="sfx-soft12" src="assets/sfx/tick-2.mp3" data-start="33.88" data-volume="0.376"></audio>
+      <audio id="sfx-soft13" src="assets/sfx/swell-1.mp3" data-start="35.66" data-volume="0.250"></audio>
+      <audio id="sfx-soft14" src="assets/sfx/swell-3.mp3" data-start="37.68" data-volume="0.155"></audio>
+      <audio id="sfx-soft15" src="assets/sfx/tap-1.mp3" data-start="40.46" data-volume="0.295"></audio>
+      <audio id="sfx-soft16" src="assets/sfx/swell-3.mp3" data-start="42.38" data-volume="0.247"></audio>
+      <audio id="sfx-soft17" src="assets/sfx/swell-2.mp3" data-start="44.92" data-volume="0.294"></audio>
+      <audio id="sfx-soft18" src="assets/sfx/swell-1.mp3" data-start="45.57" data-volume="0.250"></audio>
+      <audio id="sfx-soft19" src="assets/sfx/tap-2.mp3" data-start="46.12" data-volume="0.266"></audio>
+      <audio id="sfx-soft20" src="assets/sfx/tap-3.mp3" data-start="49.34" data-volume="0.254"></audio>
+      <audio id="sfx-soft21" src="assets/sfx/swell-3.mp3" data-start="50.98" data-volume="0.247"></audio>
+      <audio id="sfx-soft22" src="assets/sfx/tap-1.mp3" data-start="52.58" data-volume="0.295"></audio>
+      <audio id="sfx-soft23" src="assets/sfx/swell-1.mp3" data-start="56.06" data-volume="0.156"></audio>
+      <audio id="sfx-soft24" src="assets/sfx/bubble-1.mp3" data-start="58.94" data-volume="0.221"></audio>
+      <audio id="sfx-soft25" src="assets/sfx/swell-3.mp3" data-start="59.58" data-volume="0.155"></audio>
+      <audio id="sfx-bgm" src="assets/materials/mx-relax-beat.mp3" data-start="0.00" data-duration="65.43" data-fade-out="1.5" data-volume="0.523"></audio>
+      <audio id="sfx-cta" src="assets/sfx/pop.mp3" data-start="62.88" data-volume="0.646"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const cam = window.CAMERA, step = 1 / window.CAMERA_FPS;
+      tl.set(".cam", { transformOrigin: "0 0", x: cam[0][0], y: cam[0][1], scale: cam[0][2] }, 0);
+      tl.to(".cam", {
+        keyframes: cam.slice(1).map(([x, y, s]) => ({ x, y, scale: s, duration: step, ease: "none" })),
+      }, 0);
+      [[1.68, 3.13]]
+        .forEach(([a, b]) => { tl.set("#cam-fg", { opacity: 1 }, a); tl.set("#cam-fg", { opacity: 0 }, b); });
+
+      // ---------- словарь движения: всё входит И выходит движением, а не растворением ----------
+      const BLUR = (px) => `blur(${px}px)`;
+
+      // влёт со смазом: элемент прилетает размытым и встаёт в фокус
+      function enter(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 0.7, x: o.fromX ?? 0, y: o.fromY ?? 0, filter: BLUR(o.blur ?? 12) };
+        const to = { opacity: 1, scale: 1, x: 0, y: 0, filter: BLUR(0), duration: o.dur ?? 0.32, ease: o.ease ?? window.DS_ENTER ?? "back.out(1.7)" };
+        if (o.rot !== undefined || o.fromRot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot ?? 0; }
+        tl.fromTo(sel, from, to, t);
+      }
+      // уход: улетает, сжимается и смазывается
+      function leave(sel, t, o = {}) {
+        const to = { opacity: 0, scale: o.scale ?? 0.82, x: o.x ?? 0, y: o.y ?? -40, filter: BLUR(o.blur ?? 12),
+                     duration: o.dur ?? 0.24, ease: o.ease ?? "power2.in" };
+        if (o.rot !== undefined) to.rotation = o.rot;
+        tl.to(sel, to, t);
+      }
+      // «впечатывание»: крупное слово или штамп бьёт в кадр с размаха
+      function slam(sel, t, o = {}) {
+        const from = { opacity: 0, scale: o.fromScale ?? 1.45, filter: BLUR(o.blur ?? 16) };
+        const to = { opacity: 1, scale: 1, filter: BLUR(0), duration: o.dur ?? 0.16, ease: "power4.out" };
+        if (o.rot !== undefined) { from.rotation = o.fromRot ?? o.rot; to.rotation = o.rot; }
+        tl.fromTo(sel, from, to, t);
+      }
+      function draw(sel, t, dur = 0.4) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, t);
+      }
+      // портрет: вылет сбоку с поворотом, медленный наезд внутри картинки, улёт обратно
+      function card(sel, tIn, tOut, side) {
+        const s = side === "right" ? 1 : -1;
+        tl.fromTo(sel, { opacity: 0, x: 460 * s, rotation: 16 * s, filter: BLUR(14) },
+                  { opacity: 1, x: 0, rotation: 4 * s, filter: BLUR(0), duration: 0.45, ease: "power3.out" }, tIn);
+        tl.fromTo(`${sel} img`, { scale: 1 }, { scale: 1.12, duration: tOut - tIn + 0.3, ease: "none" }, tIn);
+        tl.to(sel, { opacity: 0, x: 460 * s, rotation: 18 * s, filter: BLUR(14), duration: 0.32, ease: "power2.in" }, tOut);
+      }
+      // документ снизу: выезжает с поворотом и уезжает вниз
+      function doc(sel, tIn, tOut, o = {}) {
+        tl.fromTo(sel, { opacity: 0, y: 560, rotation: o.fromRot ?? 7, filter: BLUR(12) },
+                  { opacity: 1, y: 0, rotation: o.rot ?? -2, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, tIn);
+        if (tOut !== null) {
+          tl.to(sel, { opacity: 0, y: 520, rotation: (o.rot ?? -2) - 8, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, tOut);
+        }
+      }
+      // белая вспышка на главном ударе
+      let flashes = 0;
+      function flash(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.38, duration: 0.04, ease: "none", immediateRender: flashes++ === 0 }, t);
+        tl.to("#flash", { opacity: 0, duration: 0.18, ease: "power1.out" }, t + 0.04);
+      }
+      // склейка (Валера 15.10: «склейки не спрятаны за переходами вспышками»): кадр приходит смазанным
+      // и наводится за 5 кадров, поверх — вспышка в 3 кадра; крупность бьёт наезд Take.splice_punches.
+      // Надписи через склейку не висят — уходят до неё, новая влетает на ней (verify_page).
+      function splice(t) {
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: flashes++ === 0 }, t - 0.033);
+        tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, t);
+        tl.fromTo(".cam", { filter: BLUR(16) }, { filter: BLUR(0), duration: 0.17, ease: "power2.out", immediateRender: false }, t);
+      }
+      // смена плана как у риелтора (15.10): кадр перескакивает крупнее с коротким смазом, без вспышки
+      function whip(t) {
+        tl.fromTo(".cam", { filter: BLUR(9) }, { filter: BLUR(0), duration: 0.12, ease: "power2.out", immediateRender: false }, t);
+      }
+      function bars(sel, t, stagger = 0.06) {
+        tl.fromTo(sel, { opacity: 0, scaleX: 0, filter: BLUR(10) },
+                  { opacity: 1, scaleX: 1, filter: BLUR(0), duration: 0.2, ease: "expo.out", stagger }, t);
+      }
+
+      // ---------- бегущие субтитры: words, blur ----------
+      const caps = document.getElementById("caps");
+      const CAP_BASE = "#F2EBDD", CAP_HL = "#F2EBDD";
+      window.CAPTIONS.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "cap" + (c.accent ? " accent" : "");
+        let inner = el;
+        if (false) { inner = document.createElement("span"); inner.className = "box"; el.appendChild(inner); }
+        if (c.accent) { const mk = document.createElement("span"); mk.className = "ds-mk"; inner.appendChild(mk); inner = mk; }
+        const spans = [];
+        if (c.words) {
+          c.words.forEach((w, k) => {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.textContent = w.text;
+            inner.appendChild(s);
+            if (k < c.words.length - 1) inner.appendChild(document.createTextNode(" "));
+            spans.push(s);
+          });
+        } else {
+          inner.textContent = c.text;
+        }
+        if (c.accent) {
+          const fill = document.createElement("span");
+          fill.className = "ds-mk-fill";
+          fill.setAttribute("aria-hidden", "true");
+          fill.textContent = c.words ? c.words.map((w) => w.text).join(" ") : c.text;
+          inner.appendChild(fill);
+          dsMark(fill, c.t0 + Math.min(0.03, (c.t1 - c.t0) / 4), Math.min(0.22, Math.max(0.05, c.t1 - c.t0 - 0.05)));
+        }
+        if (c.y !== undefined) el.style.top = c.y + "px";   // линия ролика по лицу (compose.caption_lane)
+        caps.appendChild(el);
+        // вход не длиннее самой вспышки: уход посреди входа в покадровом рендере залипает
+        const d = Math.min(0.09, c.t1 - c.t0);
+        tl.fromTo(el, { opacity: 0, y: 12, scale: 0.92, filter: BLUR(4) }, { opacity: 1, y: 0, scale: 1, filter: BLUR(0), duration: d, ease: "power2.out" }, c.t0);
+        tl.set(el, { opacity: 0 }, c.t1);
+        (c.words || []).forEach((w, k) => {
+          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
+          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
+          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+        });
+      });
+
+      // ---------- дизайн-система проекта (DESIGN.md): буквы дымом и рукой, маркер, квадраты, ручка ----------
+      // без отскоков: вход kit (enter) и точки «Чертежа» берут ход системы вместо back.out
+      window.DS_ENTER = "expo.out";
+      function dsSmoke(sel, t, o = {}) {
+        tl.set(sel, { opacity: 1 }, t);
+        tl.fromTo(`${sel} .ds-ch`, { opacity: 0, y: o.y ?? 34, filter: BLUR(o.blur ?? 16) },
+                  { opacity: 1, y: 0, filter: BLUR(0), duration: o.dur ?? 0.5, ease: "expo.out", stagger: o.stagger ?? 0.04 }, t);
+      }
+      function dsHand(sel, t, o = {}) {
+        tl.set(sel, { opacity: 1 }, t);
+        tl.fromTo(`${sel} .ds-ch`, { opacity: 0, y: 14, rotation: -6, filter: BLUR(3) },
+                  { opacity: 1, y: 0, rotation: 0, filter: BLUR(0), duration: 0.22, ease: "power2.out", stagger: o.stagger ?? 0.028 }, t);
+      }
+      function dsMark(sel, t, dur = 0.22) {
+        tl.fromTo(sel, { clipPath: "inset(-12% 100% -12% -6%)" }, { clipPath: "inset(-12% -6% -12% -6%)", duration: dur,
+                  ease: "power3.out", immediateRender: false }, t);
+      }
+      function dsBox(sel, t) {
+        tl.fromTo(sel, { "--k": 0 }, { "--k": 1, duration: 0.18, ease: "power4.out", immediateRender: false }, t);
+      }
+      function dsPen(sel, t, dur = 0.3) {
+        tl.fromTo(sel, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "power2.out", immediateRender: false }, t);
+      }
+      dsSmoke("#s0-word", 1.98);
+      leave("#s0-word", 2.88, { y: -60, dur: 0.2 });
+      tl.set("#s1-write", { opacity: 1 }, 2.68);
+      gsap.set("#s1-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s1-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 2.70);
+      tl.to("#s1-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 3.38);
+      enter("#s1-write-s", 3.42, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s1-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 5.60);
+      leave("#s1-write .bp-lbl", 5.60, { y: -30, dur: 0.24 });
+      tl.set("#s1-write", { opacity: 0 }, 5.95);
+      enter("#s2-promise", 6.12, { fromY: 40, fromScale: 0.96, blur: 10, dur: 0.3, ease: "expo.out" });
+      dsBox("#s2-promise-b0", 7.22);
+      tl.to("#s2-promise-r0", { color: "rgba(242,235,221,1)", duration: 0.12 }, 7.22);
+      dsBox("#s2-promise-b1", 8.70);
+      tl.to("#s2-promise-r1", { color: "rgba(242,235,221,1)", duration: 0.12 }, 8.70);
+      leave("#s2-promise", 9.60, { y: 30, dur: 0.22 });
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.5, duration: 0.033, ease: "none", immediateRender: false }, 9.787);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 9.820);
+      tl.set("#s3-clip", { opacity: 1 }, 9.820);
+      tl.fromTo("#s3-clip", { scale: 1.12, filter: BLUR(16) }, { scale: 1, filter: BLUR(0), duration: 0.22, ease: "power2.out", immediateRender: false }, 9.820);
+      tl.fromTo("#s3-clip-clip", { scale: 1 }, { scale: 1.08, duration: 3.04, ease: "none", immediateRender: false }, 9.820);
+      tl.to("#s3-clip", { scale: 1.06, filter: BLUR(14), duration: 0.12, ease: "power2.in" }, 12.740);
+      tl.set("#s3-clip", { opacity: 0, scale: 1, filter: BLUR(0) }, 12.860);
+      splice(12.860);
+      tl.set("#s4-write", { opacity: 1 }, 14.88);
+      gsap.set("#s4-write .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s4-write-w", { strokeDashoffset: 3000 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 14.90);
+      tl.to("#s4-write-w", { fill: "#F2EBDD", duration: 0.3, ease: "power1.out" }, 15.58);
+      enter("#s4-write-s", 15.62, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s4-write .bp-write", { strokeDashoffset: 3000, fill: "rgba(242,235,221,0)", duration: 0.3, ease: "power2.in" }, 19.18);
+      leave("#s4-write .bp-lbl", 19.18, { y: -30, dur: 0.24 });
+      tl.set("#s4-write", { opacity: 0 }, 19.53);
+      enter("#s6-strike", 40.46, { fromY: 24, fromScale: 0.9, blur: 10, dur: 0.28, ease: "expo.out" });
+      dsPen("#s6-strike .ds-strike path", 41.14);
+      leave("#s6-strike", 41.84, { y: -30, dur: 0.22 });
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.5, duration: 0.033, ease: "none", immediateRender: false }, 42.607);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 42.640);
+      tl.set("#s7-clip", { opacity: 1 }, 42.640);
+      tl.fromTo("#s7-clip", { scale: 1.12, filter: BLUR(16) }, { scale: 1, filter: BLUR(0), duration: 0.22, ease: "power2.out", immediateRender: false }, 42.640);
+      tl.fromTo("#s7-clip-clip", { scale: 1 }, { scale: 1.08, duration: 2.54, ease: "none", immediateRender: false }, 42.640);
+      tl.to("#s7-clip", { scale: 1.06, filter: BLUR(14), duration: 0.12, ease: "power2.in" }, 45.060);
+      tl.set("#s7-clip", { opacity: 0, scale: 1, filter: BLUR(0) }, 45.180);
+      splice(45.180);
+      enter("#s9-strike", 52.58, { fromY: 24, fromScale: 0.9, blur: 10, dur: 0.28, ease: "expo.out" });
+      dsPen("#s9-strike .ds-strike path", 54.42);
+      leave("#s9-strike", 55.12, { y: -30, dur: 0.22 });
+      slam("#s10-stamp", 58.94, { fromScale: 2.0, blur: 10, rot: -5 });
+      leave("#s10-stamp", 60.44, { rot: -5 });
+      // вспышка с отъездом после хука (Валера 19.10.2026): белый удар, кадр крупнее и отъезд за 0.9 с
+      tl.fromTo("#hook-flash", { opacity: 0 }, { opacity: 0.9, duration: 0.05, ease: "none", immediateRender: false }, 5.530);
+      tl.to("#hook-flash", { opacity: 0, duration: 0.32, ease: "power2.out" }, 5.580);
+      tl.fromTo(".cam", { filter: BLUR(10) }, { filter: BLUR(0), duration: 0.2, ease: "power2.out", immediateRender: false }, 5.580);
+      tl.set("#s5-trilat", { opacity: 1 }, 22.06);
+      tl.fromTo("#s5-trilat-s0", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 22.08);
+      draw("#s5-trilat-r0", 22.20, 0.25);
+      draw("#s5-trilat-c0", 22.38, 0.8);
+      draw("#s5-trilat-e0", 33.88, 0.5);
+      tl.fromTo("#s5-trilat-s1", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 28.84);
+      draw("#s5-trilat-r1", 28.96, 0.25);
+      draw("#s5-trilat-c1", 29.14, 0.8);
+      draw("#s5-trilat-e1", 34.00, 0.5);
+      tl.fromTo("#s5-trilat-s2", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 30.28);
+      draw("#s5-trilat-r2", 30.40, 0.25);
+      draw("#s5-trilat-c2", 30.58, 0.8);
+      draw("#s5-trilat-e2", 34.12, 0.5);
+      tl.fromTo("#s5-trilat-rd", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 26.96);
+      tl.fromTo("#s5-trilat-roam", { rotation: 0, svgOrigin: "346 250" }, { rotation: -360, svgOrigin: "346 250", duration: 1.4, ease: "power1.inOut", immediateRender: false }, 27.06);
+      tl.to("#s5-trilat-rd", { scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.2, ease: "power2.in" }, 28.46);
+      tl.fromTo("#s5-trilat-q", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 29.94);
+      tl.fromTo("#s5-trilat-p", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 29.94);
+      tl.to("#s5-trilat-q", { scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.25, ease: "power2.in" }, 31.38);
+      tl.fromTo("#s5-trilat-fix", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 32.54);
+      tl.fromTo("#s5-trilat-pulse", { opacity: 1, scale: 0.6, transformOrigin: "50% 50%" }, { opacity: 0, scale: 3.2, duration: 0.7, ease: "power2.out", immediateRender: false }, 32.54);
+      tl.to("#s5-trilat .bp-ln", { strokeDashoffset: 1, duration: 0.3, ease: "power2.in" }, 35.62);
+      tl.to("#s5-trilat .bp-dot", { scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.22, ease: "power2.in" }, 35.62);
+      tl.set("#s5-trilat", { opacity: 0 }, 35.97);
+      // «Чертёж», сплит: человек в окне листа (192, 760, 862, 1741), лицо (419, 868, 661, 1232)
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 21.797);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 21.830);
+      tl.set("#s5-trilat-sheet", { opacity: 1 }, 21.830);
+      tl.set("#caps", { zIndex: 5 }, 21.830);
+      tl.fromTo("#stage", { scale: 0.6696, x: 165.4, y: 498.9, filter: BLUR(14) }, { scale: 0.62, x: 192.2, y: 551.0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 21.830);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 35.887);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 35.920);
+      tl.set("#s5-trilat-sheet", { opacity: 0 }, 35.920);
+      tl.set("#caps", { zIndex: 0 }, 35.920);
+      tl.fromTo("#stage", { scale: 1.06, x: -32, y: -58, filter: BLUR(14) }, { scale: 1, x: 0, y: 0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 35.920);
+      tl.set("#s8-route", { opacity: 1 }, 46.06);
+      gsap.set("#s8-route .bp-lbl", { xPercent: -50, yPercent: -50 });
+      tl.fromTo("#s8-route-p0", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 46.08);
+      enter("#s8-route-l0", 46.12, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      draw("#s8-route-a1", 48.88, 0.42);
+      tl.fromTo("#s8-route-p1", { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }, 49.30);
+      enter("#s8-route-l1", 49.34, { fromY: 24, fromScale: 0.9, dur: 0.28 });
+      tl.to("#s8-route .bp-ln", { strokeDashoffset: 1, duration: 0.3, ease: "power2.in" }, 50.94);
+      tl.to("#s8-route .bp-dot", { scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.22, ease: "power2.in" }, 50.94);
+      leave("#s8-route .bp-lbl", 50.94, { y: -30, dur: 0.24 });
+      tl.set("#s8-route", { opacity: 0 }, 51.29);
+      // «Чертёж», сплит: человек в окне листа (202, 760, 872, 1741), лицо (420, 866, 660, 1234)
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 45.797);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 45.830);
+      tl.set("#s8-route-sheet", { opacity: 1 }, 45.830);
+      tl.set("#caps", { zIndex: 5 }, 45.830);
+      tl.fromTo("#stage", { scale: 0.6696, x: 175.3, y: 498.9, filter: BLUR(14) }, { scale: 0.62, x: 202.1, y: 551.0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 45.830);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }, 51.207);
+      tl.to("#flash", { opacity: 0, duration: 0.16, ease: "power1.out" }, 51.240);
+      tl.set("#s8-route-sheet", { opacity: 0 }, 51.240);
+      tl.set("#caps", { zIndex: 0 }, 51.240);
+      tl.fromTo("#stage", { scale: 1.06, x: -32, y: -58, filter: BLUR(14) }, { scale: 1, x: 0, y: 0, filter: BLUR(0), duration: 0.3, ease: "power3.out", immediateRender: false }, 51.240);
+      whip(3.13);
+      whip(6.80);
+      whip(12.86);
+      whip(17.06);
+      whip(37.94);
+      whip(51.34);
+      whip(56.32);
+      whip(59.84);
+
+      tl.fromTo("#cta", { opacity: 0, y: 300, filter: BLUR(12) }, { opacity: 1, y: 0, filter: BLUR(0), duration: 0.42, ease: "power3.out" }, 62.88);
+      tl.set("#cta-arrow", { opacity: 1 }, 63.23);
+      draw("#arrow-path", 63.23, 0.35);
+      tl.fromTo("#arrow-head", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 63.55);
+      tl.to("#cta", { scale: 1.03, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 1 }, 63.88);
+
+
+      try { REELS_EDITS(tl); } catch (e) { throw new Error(`правки студии: ${e.message}`); }
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

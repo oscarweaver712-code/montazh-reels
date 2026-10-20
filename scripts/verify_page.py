@@ -805,7 +805,7 @@ def music_problems(page: str, project: str | None) -> list:
     stem = project.split("--")[0]
     problems, limit = [], kit.SFX_TARGET + 20 * math.log10(kit.bgm_level(stem)) + 0.5
     for name, volume in tracks:
-        if not name.startswith(kit.BGM_PREFIX):
+        if not name.startswith(kit.BGM_PREFIXES):
             continue                           # свой звук человека из материалов — его громкость решает он
         try:
             level = materials.loudness(stem, name) + 20 * math.log10(max(float(volume), 1e-6))
@@ -836,9 +836,9 @@ def music_missing(page: str, project: str) -> str | None:
         wants = projects.of(project.split("--")[0]).config.get("music")
     except projects.ProjectError:
         return None
-    if not wants or re.search(rf'src="assets/materials/{re.escape(kit.BGM_PREFIX)}[^"]+"', page):
+    if not wants or re.search(rf'src="assets/materials/(?:{"|".join(map(re.escape, kit.BGM_PREFIXES))})[^"]+"', page):
         return None
-    return ("нет фоновой музыки, а проект просит её в каждом ролике: скачай 2–3 лоу-фай из фонотеки YouTube → "
+    return ("нет фоновой музыки, а проект просит её в каждом ролике: скачай 2–3 лоу-фай из фонотеки YouTube или Mixkit → "
             "scripts/music.py add <имя> <файлы> → kit.background_music(…); нет трека — спроси человека, не рендерь без него")
 
 

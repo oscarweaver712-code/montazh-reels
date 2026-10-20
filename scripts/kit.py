@@ -54,6 +54,9 @@ SOFT_PER_10S = 6
 # голоса). Громче — verify_page краснеет; трек одного ролика в другом не повторяется.
 BGM_LEVEL = 0.55
 BGM_PREFIX = "yt-"
+# откуда фон может быть (music.py SOURCES): yt- — фонотека YouTube без указания автора, mx- — Mixkit Stock Music Free
+# License (20.10.2026, Валера: «найди другой ресурс для музыки» — фонотека за VPN отдаёт 503)
+BGM_PREFIXES = ("yt-", "mx-")
 _AUDIO_TAG = _re.compile(r'<audio id="sfx-[^"]*" src="assets/sfx/([\w.\-]+)\.mp3" data-start="([\d.]+)"')
 
 
@@ -106,8 +109,8 @@ def bgm_level(stem: str) -> float:
 
 def background_music(stem: str, name: str, duration: float) -> str:
     """Фоновый лоу-фай на весь ролик — громкость проекта (bgm_level), уход в конце за 1,5 с. Трек — yt-*.mp3 из материалов."""
-    if not name.startswith(BGM_PREFIX):
-        raise ValueError(f"фоновая музыка — трек фонотеки YouTube в материалах ({BGM_PREFIX}*.mp3, scripts/music.py), "
+    if not name.startswith(BGM_PREFIXES):
+        raise ValueError(f"фоновая музыка — трек фонотеки YouTube или Mixkit в материалах ({', '.join(p + '*.mp3' for p in BGM_PREFIXES)}, scripts/music.py), "
                          f"а не «{name}»")
     return material_audio("bgm", stem, name, 0.0, bgm_level(stem), duration=round(duration, 2), fade_out=1.5)
 
