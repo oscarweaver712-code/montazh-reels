@@ -422,6 +422,8 @@ def _number(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
         m.fg(a0 - 0.3, leave + 0.25)
     else:
         size = int(min(180, 0.9 * 700 / max(bp._em(text, "Unbounded"), 1e-3)))
+        # на груди подпись — в колонке под кнопками ленты (formats.GREY_ZONES: справа с x 834–865 от y 727)
+        cap = cap.replace('class="ds-numcap"', 'class="ds-numcap" style="font-size: 44px;"')
         m.front(f'        <div id="{pid}" class="g ds-num-wrap" data-safe="число на груди: над головой нет места" '
                 f'data-safe-zones="низ" style="top: {LIST_TOP - 12}px;">{cap}'
                 f'<span class="ds-num" style="font-size: {size}px;">{html.escape(text)}</span></div>')

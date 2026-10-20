@@ -1595,6 +1595,41 @@ def check_blueprint(report: Report, tmp: Path):
     report.check(loud == 4, "кривой вызов «Чертежа» — громкая ошибка: времена, длина на экране, раскладка", f"{loud} из 4")
 
 
+def check_trim(report: Report, tmp: Path):
+    """Обрезка готового ролика (scripts/trim.py, 20.10.2026: IMG_3645 v1 открывался полусекундой вдоха): срез в тишине
+    даёт ровно столько кадров, сколько осталось, и первый кадр — тот самый кадр исходника; срез по голосу — громкий
+    отказ с ближайшими тихими кадрами, а не оборванное слово."""
+    import trim as tr
+    from common import probe
+
+    print("\nОбрезка готового ролика")
+    src, out = tmp / "trim_src.mp4", tmp / "trim_out.mp4"
+    subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=30:duration=3",
+                    "-f", "lavfi", "-i", "aevalsrc=if(gte(t\\,1)\\,0.5*sin(2*PI*440*t)\\,0):s=48000:d=3",
+                    *source_codec(), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest", str(src)],
+                   check=True, capture_output=True)
+    done = tr.trim(src, out, 15)
+    frames = round(probe(out)["duration"] * 30)
+
+    def frame(path: Path, n: int) -> bytes:
+        return subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(path), "-vf", f"select=eq(n\\,{n}),scale=90:160",
+                               "-vframes", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+    first = frame(out, 0)
+    diff = lambda n: sum(abs(p - q) for p, q in zip(frame(src, n), first)) / max(1, len(first))   # noqa: E731
+    near = {n: diff(n) for n in (14, 15, 16)}
+    report.check(done["frames"] == 75 and frames == 75 and near[15] < min(near[14], near[16]),
+                 "срез 15 кадров в тишине: осталось ровно 75 кадров, первый кадр — кадр 15 исходника, не сосед",
+                 f"кадров {frames}, отличие от кадров 14/15/16 — " + " / ".join(f"{v:.2f}" for v in near.values()))
+    try:
+        tr.trim(src, tmp / "trim_bad.mp4", 33)
+        refused = ""
+    except tr.TrimError as e:
+        refused = str(e)
+    report.check("режет голос" in refused and not (tmp / "trim_bad.mp4").exists(),
+                 "срез по голосу — громкий отказ с ближайшими тихими кадрами, файла нет", refused[:90] or "срезал слово")
+
+
 class _DesignTake:
     """Сборка для приёмов дизайн-системы без дубля: то же, что Montage даёт приёмам score.py, — слои, js, окна."""
 
@@ -4014,6 +4049,7 @@ def main():
         section(report, check_events, tmp)
         section(report, check_blueprint, tmp)
         section(report, check_design, tmp)
+        section(report, check_trim, tmp)
         section(report, check_board, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)
