@@ -799,7 +799,19 @@ def music_problems(page: str, project: str | None) -> list:
     тот, что уже стоит в другом ролике."""
     import kit
     import materials
-    tracks = re.findall(r'<audio id="sfx-[^"]*" src="assets/materials/([^"]+)"[^>]*?data-volume="([\d.]+)"', page)
+    tracks = []
+    for tag in re.findall(r'<audio id="sfx-[^"]*" src="assets/materials/[^"]+"[^>]*>', page):
+        name, volume = re.search(r'src="assets/materials/([^"]+)"', tag).group(1), re.search(r'data-volume="([\d.]+)"', tag)
+        lane = re.search(r"data-automation='([^']+)'", tag)
+        if lane:                                   # лента главнее data-volume: «под голосом» — её нижний ненулевой уровень
+            try:
+                values = [pt["v"] for ln in json.loads(lane.group(1))["lanes"] for pt in ln["points"] if pt["v"] > 0]
+                tracks.append((name, str(min(values))))
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+        if volume:
+            tracks.append((name, volume.group(1)))
     if not tracks or project is None:
         return []
     stem = project.split("--")[0]

@@ -1568,16 +1568,21 @@ def check_events(report: Report, tmp: Path):
     tone(tmp / "ev_work" / stem / "aroll.mp4", voice)
     tone(tmp / "ev_work" / "with.m4a", voice + "+0.02*sin(2*PI*110*t)")
     tone(tmp / "ev_work" / "without.m4a", voice)
+    tone(tmp / "ev_work" / "loud.m4a", voice + "+0.25*sin(2*PI*110*t)")       # музыка вровень с голосом (новоселье v2)
     saved = verify_render.WORK_DIR
     verify_render.WORK_DIR = tmp / "ev_work"
     try:
         with_bed = verify_render.music_bed(tmp / "ev_work" / "with.m4a", stem)
         dry = verify_render.music_bed(tmp / "ev_work" / "without.m4a", stem)
+        loud = verify_render.music_bed(tmp / "ev_work" / "loud.m4a", stem)
     finally:
         verify_render.WORK_DIR = saved
-    heard = lambda b: b is not None and b[0] >= verify_render.MUSIC_BED_DB and b[1] >= verify_render.MUSIC_QUIETEST  # noqa: E731
-    report.check(heard(with_bed) and not heard(dry), "готовый ролик: музыка в паузах речи слышна — без неё красный",
-                 f"с подложкой {with_bed and round(with_bed[0], 1)} дБ, без — {dry and round(dry[0], 1)} дБ")
+    heard = lambda b: (b is not None and b[0] >= verify_render.MUSIC_BED_DB                       # noqa: E731
+                       and verify_render.MUSIC_QUIETEST <= b[1] <= verify_render.MUSIC_LOUDEST)
+    report.check(heard(with_bed) and not heard(dry) and not heard(loud),
+                 "готовый ролик: музыка в паузах речи слышна — без неё красный, вровень с голосом — тоже",
+                 f"с подложкой {with_bed and round(with_bed[1], 1)} дБ от речи, без — {dry and round(dry[0], 1)}, "
+                 f"громкая — {loud and round(loud[1], 1)} дБ от речи")
 
 
 def check_score(report: Report):
@@ -3468,6 +3473,148 @@ def check_packs(report: Report, tmp: Path):
                  f"склейки {cuts}")
 
 
+def check_life_edit(report: Report, tmp: Path):
+    """Лайф-монтаж (20.10.2026, «Вкудесник» v2): музыка уходит под живой звук и поднимается в тишине, доли трека,
+    ускорение рывком, стоп-кадр и конец куска в долю, активное слово субтитров на плашке, склейка внутри плана смазом."""
+    import kit
+    import montage
+    import music
+    import pack
+    import prep
+    import styles
+
+    print("\nЛайф-монтаж: музыка, доли, рывок, стоп-кадр, плашка")
+    # приглушение: тон 1–3 с и 5–6 с, между ними тишина 2 с — там музыка выше; в конце уход
+    dry = tmp / "l_dry.wav"
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "aevalsrc=0.2*sin(2*PI*300*t)*(between(t\\,1\\,3)+between(t\\,5\\,6)):s=22050:d=7", str(dry)],
+                   check=True, capture_output=True)
+    lane = music.duck_lane(dry, 7.0)
+    up = [t for (t, v), (_, w) in zip(lane, lane[1:]) if v == 1.0 and w > 1.0]
+    low = [v for t, v in lane if 1.2 <= t <= 2.9 or 5.1 <= t <= 5.9]
+    report.check(lane and lane[0][1] > 1.0 and len(up) == 2 and all(v == 1.0 for v in low),
+                 "музыка под живым звуком — уровень проекта, в тишине дубля поднимается",
+                 f"лента {lane}")
+    auto = '{"version":1'
+    saved = (kit.material_audio, kit.material_gain)   # громкость по замеру файла не нужна — проверяется разметка тега
+    kit.material_gain = lambda stem, name, level: 0.3      # лента — абсолютная громкость: уровень × множитель
+    kit.material_audio = lambda sid, stem, name, start, level, duration=None, fade_out=None: (
+        f'      <audio id="sfx-{sid}" src="assets/materials/{name}" data-start="{start:.2f}"'
+        + (f' data-duration="{duration}"' if duration else "") + (f' data-fade-out="{fade_out}"' if fade_out else "")
+        + ' data-volume="0.300"></audio>')
+    try:
+        tag = kit.background_music("X", "mx-x.mp3", 7.0, lane=lane, media_start=0.5, fade_out=0.5)
+        plain = kit.background_music("X", "mx-x.mp3", 7.0)
+    finally:
+        kit.material_audio, kit.material_gain = saved
+    report.check(auto in tag and "data-fade-out" not in tag and '"t":7.0,"v":0.0' in tag and '"v":0.3}' in tag
+                 and f'"v":{round(0.3 * lane[0][1], 4)}' in tag
+                 and 'data-media-start="0.500"' in tag and "data-automation" not in plain and "data-fade-out" in plain,
+                 "лента громкости (абсолютная: уровень проекта × подъём) и сильная доля — в теге музыки; уход — точками ленты",
+                 tag[-120:])
+
+    # доли: щелчки 120 BPM со сдвигом 0.25 с
+    clicks = tmp / "l_clicks.wav"
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "aevalsrc=0.8*sin(2*PI*1000*t)*lt(mod(t-0.25\\,0.5)\\,0.03)*gte(t\\,0.25):s=22050:d=20", str(clicks)],
+                   check=True, capture_output=True)
+    bpm, offset = music.beat_grid(clicks)
+    report.check(abs(bpm - 120) < 2 and abs(offset - 0.25) < 0.04, "темп и сильная доля трека находятся",
+                 f"{bpm} BPM, доля с {offset} с (ждали 120 и 0.25)")
+
+    # рывок: разгон и торможение по кривой, середина быстрее краёв
+    speeds = pack.ramp_speeds([1, 4, 1])
+    report.check(len(speeds) == pack.RAMP_STEPS and speeds[0] < 1.5 and max(speeds) > 3.5 and speeds[-1] < 1.5
+                 and speeds == speeds[::-1], "ускорение рывком: плавно разгоняется и тормозит",
+                 " ".join(f"{v:.2f}" for v in speeds))
+
+    # сборка: рывок без звука, стоп-кадр, конец в долю
+    work = tmp / "l_work"
+    with temp_projects(tmp / "l_projects", "main") as made:
+        box = made["main"].input / "life"
+        box.mkdir()
+        make_pack_clip(box / "a.mov", "720x1280", 4.0, [(0.5, 1.5)], 0.1)
+        make_pack_clip(box / "b.mov", "720x1280", 4.0, [(0.2, 3.8)], 0.1)
+        saved = (pack.WORK_DIR, prep.WORK_DIR)
+        pack.WORK_DIR = prep.WORK_DIR = work
+        try:
+            cache = work / "life" / "pack"
+            cache.mkdir(parents=True)
+            for name, ws in {"a.mov": [("раз", 0.5, 1.5)], "b.mov": []}.items():
+                stem = Path(name).stem
+                (cache / f"{stem}.words.json").write_text(json.dumps({"language": "ru", "text": "", "words": [
+                    {"word": w, "start": a, "end": b, "prob": 1.0} for w, a, b in ws]}), encoding="utf-8")
+                (cache / f"{stem}.source.json").write_text(json.dumps({"name": name, "size": (box / name).stat().st_size}),
+                                                           encoding="utf-8")
+            plan_path = work / "life" / "pack.json"
+
+            def refused(data: dict, needle: str) -> str:
+                plan_path.write_text(json.dumps(data), encoding="utf-8")
+                try:
+                    pack.build("life")
+                    return "собралось молча"
+                except pack.PackError as e:
+                    return "" if needle in str(e) else str(e)[:90]
+
+            bad = (refused({"pieces": [{"clip": "b.mov", "from": 0, "to": 3, "ramp": [1, 4, 1]}]}, "mute"),
+                   refused({"beat": {"bpm": 120}, "pieces": [{"clip": "a.mov", "from": 0.3, "to": 1.8, "snap": True}]},
+                           "без речи"),
+                   refused({"pieces": [{"clip": "b.mov", "from": 0, "to": 1, "mute": True, "snap": True}]}, "beat"))
+            report.check(not any(bad), "рывок со звуком, «в долю» на речи и без долей — громкий отказ",
+                         "; ".join(b for b in bad if b) or "все три пойманы")
+            plan_path.write_text(json.dumps({"beat": {"bpm": 120, "offset": 0.0}, "pieces": [
+                {"clip": "a.mov", "from": 0.4, "to": 1.7, "hold": 0.6, "exact": True},
+                {"clip": "b.mov", "from": 0.0, "to": 3.6, "ramp": [1, 4, 1], "mute": True, "snap": True},
+                {"clip": "b.mov", "from": 3.6, "to": 3.9, "mute": True, "hold": 0.5, "snap": True, "cut": "scene"}]}),
+                encoding="utf-8")
+            out = pack.build("life")
+            built = json.loads((work / "life" / "pack.built.json").read_text(encoding="utf-8"))
+            a, b, c = built["pieces"]
+            got = float(probe_value(out, "format=duration"))
+            on_beat = all(abs(p["t1"] / 0.5 - round(p["t1"] / 0.5)) < 1 / 30 / 0.5 for p in (b, c))
+            report.check(a["frames"] == 39 + 18 and on_beat and b["frames"] < 3.6 * 30 * 0.6
+                         and abs(got - sum(p["frames"] for p in built["pieces"]) / 30) <= 1.5 / 30,
+                         "стоп-кадр добавляет кадры, рывок короче ×1, концы кусков «в долю» — на долях",
+                         f"стоп: {a['frames']} кадров (39 + 18), рывок: {b['frames']} кадров, доли: {b['t1']:.3f} и "
+                         f"{c['t1']:.3f} с, файл {got:.3f} с")
+        finally:
+            pack.WORK_DIR, prep.WORK_DIR = saved
+
+    kinds = (pack.cut_kind({"clip": "x", "end": 3.0, "speed": 1.0}, {"clip": "x", "start": 6.0, "speed": 1.0, "ramp": [1, 4]}),
+             pack.cut_kind({"clip": "x", "end": 3.0, "speed": 1.0, "hold": 1.0}, {"clip": "x", "start": 6.0, "speed": 1.0}),
+             pack.cut_kind({"clip": "x", "end": 3.0, "speed": 1.0}, {"clip": "x", "start": 6.0, "speed": 1.0}))
+    report.check(kinds == ("scene", "scene", "jump"), "стык с рывком или после стоп-кадра — смена сцены; пауза в плане — склейка",
+                 f"{kinds}")
+
+    # мастеринг: истинный пик между отсчётами — редкие короткие всплески на четверти частоты дискретизации со сдвигом
+    # 45° (отсчёты на 3 дБ ниже волны) поверх ровной подложки: лимитер по отсчётам их пропускал (новоселье v2: +0.6 dBTP
+    # после мастеринга); мастеринг повторяет проход с потолком ниже на превышение, а громкость остаётся
+    import master
+    src, dst = tmp / "l_tp.mov", tmp / "l_tp_master.mp4"
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=320x568:r=30:d=6",
+                    "-f", "lavfi", "-i", "aevalsrc=0.35*sin(2*PI*12000*t+PI/4)*lt(mod(t\\,1)\\,0.005)"
+                                         "+0.1*sin(2*PI*1000*t):s=48000:d=6",
+                    *source_codec(), "-c:a", "pcm_s16le", "-shortest", str(src)], check=True, capture_output=True)
+    try:
+        stats = master.master(src, dst)
+        report.check(stats["after"]["tp"] <= -1.4, "мастеринг держит истинный пик (между отсчётами), громкость — в норме",
+                     f"{stats['after']['tp']:.1f} dBTP, {stats['after']['i']:.1f} LUFS, потолок {stats['ceiling']} дБ")
+    except RuntimeError as e:
+        report.check(False, "мастеринг держит истинный пик (между отсчётами), громкость — в норме", str(e)[:120])
+
+    # активное слово на плашке; склейка внутри плана — смаз, а не вспышка
+    st = styles.effective(styles.load_style("hormozi"), {"captions.active_box": "#FFD60A", "captions.active_text": "#111111"})
+    js = kit.caption_js(styles.kit_captions(st))
+    plain = kit.caption_js(styles.kit_captions(styles.load_style("hormozi")))
+    report.check('CAP_BOX = "#FFD60A"' in js and "backgroundColor: CAP_BOX" in js and 'CAP_BOX = ""' in plain,
+                 "караоке с плашкой: активное слово на цветной плашке, без опции — как было", "")
+    splices, whips = montage.cover_cuts([4.0], [7.5, 9.2], "      whip(9.20);\n", framing=False, jump_whip=True)
+    flash, _ = montage.cover_cuts([4.0], [7.5], "", framing=False, jump_whip=False)
+    report.check(splices == [4.0] and whips == [7.5] and flash == [4.0, 7.5],
+                 "склейка внутри плана — смазом (jump_whip), вырез дубля — вспышкой; смаз страницы не дублируется",
+                 f"вспышки {splices}, смазы {whips}; без опции вспышки {flash}")
+
+
 def check_web_import(report: Report, tmp: Path):
     """Перетаскивание из Telegram даёт странице путь к файлу, а не сам файл.
 
@@ -4323,6 +4470,7 @@ def main():
         section(report, check_approve, tmp)
         section(report, check_projects, tmp)
         section(report, check_packs, tmp)
+        section(report, check_life_edit, tmp)
         section(report, check_batch, tmp)
         section(report, check_ai_workflow, tmp)
         section(report, check_viz, tmp)

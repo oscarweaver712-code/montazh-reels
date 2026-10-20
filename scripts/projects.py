@@ -62,6 +62,7 @@ CONFIG = {
     "pause_max": 0.5,                         # с: пауза длиннее режется …
     "pause_keep": 0.2,                        # с: … и от неё остаётся столько тишины
     "music_level": 0.55,                      # громкость фоновой музыки от нормы материалов (kit.background_music)
+    "music_duck": False,                      # музыка поднимается в тишине дубля и уходит под голос (music.duck_lane)
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
@@ -76,7 +77,8 @@ CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строк�
                 "cut_pauses": (bool, "true или false"),
                 "pause_max": ((int, float), "числом секунд — пауза длиннее режется"),
                 "pause_keep": ((int, float), "числом секунд — сколько тишины остаётся от вырезанной паузы"),
-                "music_level": ((int, float), "числом от 0 до 1 — громкость музыки от нормы материалов")}
+                "music_level": ((int, float), "числом от 0 до 1 — громкость музыки от нормы материалов"),
+                "music_duck": (bool, "true или false — музыка громче в тишине, тише под голосом")}
 
 
 class ProjectError(Exception):

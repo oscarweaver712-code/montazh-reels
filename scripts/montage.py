@@ -68,6 +68,22 @@ def page_events(js: str) -> list:
     return sorted(set(out))
 
 
+def cover_cuts(splices: list, jumps: list, page_js: str, framing: bool, jump_whip: bool) -> tuple:
+    """Чем сборка прячет склейки, которые страница не спрятала сама: ([splice() — вспышка], [whip() — смаз]).
+
+    Вырез дубля — всегда вспышкой splice. Склейку внутри плана (jumps) прячет смена плана framing; без неё — вспышка, а с
+    jump_whip — смаз и наезд (наезд даёт tk.splice_punches(jumps=True)).
+    """
+    have = {round(float(x), 2) for x in re.findall(r"\bsplice\(\s*([\d.]+)\s*\)", page_js)}
+    cuts = splices if framing or jump_whip else sorted(splices + jumps)
+    missing = [j for j in cuts if all(abs(j - h) > 0.05 for h in have)]
+    whips = []
+    if jump_whip and not framing:
+        whipped = [float(x) for x in re.findall(r"\bwhip\(\s*([\d.]+)\s*\)", page_js)]
+        whips = [j for j in jumps if all(abs(j - w) > 0.02 for w in whipped) and all(abs(j - h) > 0.05 for h in have)]
+    return missing, whips
+
+
 class Montage:
     def __init__(self, stem: str, variant: str | None = None):
         import design
@@ -232,8 +248,17 @@ class Montage:
 
     def build(self, title: str, cta_at: float | None = None, text_fixes: dict | None = None,
               accent_words: list | None = None, keep_case: list | None = None, track: str | None = None,
-              framing: bool = True, cutout: bool = True, director_extra: dict | None = None, **page_kw) -> str:
-        """Собирает studio/<проект>/index.html и work/<имя>/director.json; печатает, что поставлено само."""
+              framing: bool = True, cutout: bool = True, director_extra: dict | None = None, jump_whip: bool = False,
+              music_start: float = 0.0, music_fade: float = 1.5, **page_kw) -> str:
+        """Собирает studio/<проект>/index.html и work/<имя>/director.json; печатает, что поставлено само.
+
+        jump_whip — склейки внутри плана (tk.jumps: вырезанная пауза, стык кусков одного клипа сборки) без смены плана
+        framing прячутся не вспышкой, а смазом whip и наездом (20.10.2026, «Вкудесник»: динамичный лайф-монтаж, белая
+        вспышка на каждой паузе интервью — слишком громко). Вырезы дублей (tk.splices) — по-прежнему splice().
+        music_start — с какой секунды трека начать (music.beat_grid: сильная доля на 0 ролика), music_fade — уход в
+        конце (короткий — для ролика-петли). С project.json → music_duck музыка уходит под живой звук дубля и
+        поднимается в тишине (music.duck_lane).
+        """
         import events
         tk, dur = self.tk, self.duration
         kit.check_sounds(self.sounds)                       # свои звуки режиссёра — сначала по правилам п.9
@@ -268,13 +293,17 @@ class Montage:
                 fixes[str(i)] = "***"
 
         page_js = "".join(self._js)
-        have = {round(float(x), 2) for x in re.findall(r"\bsplice\(\s*([\d.]+)\s*\)", page_js)}
-        # склейки по паузам (tk.jumps) прячет смена плана framing; без неё — как вырезы дублей, вспышкой
-        cuts = tk.splices if framing else sorted(tk.splices + tk.jumps)
-        missing = [j for j in cuts if all(abs(j - h) > 0.05 for h in have)]
+        # склейки по паузам (tk.jumps) прячет смена плана framing; без неё — как вырезы дублей, вспышкой (или смазом)
+        missing, whips_added = cover_cuts(tk.splices, tk.jumps, page_js, framing, jump_whip)
         if missing:
             auto_js.append("".join(f"      splice({j:.3f});\n" for j in missing))
             self.notes.append(f"склеек дубля спрятано сборкой: {len(missing)}")
+        if whips_added:
+            # смаз стартует на 4 мс раньше склейки: время склейки округлено до мс (29.767), а её кадр — 893/30 = 29.7667;
+            # смаз, начатый после кадра склейки, на нём не виден (verify_page: «ни вспышки, ни смаза»). splice() по той же
+            # причине начинает вспышку на кадр раньше
+            auto_js.append("".join(f"      whip({j - 0.004:.3f});\n" for j in whips_added))
+            self.notes.append(f"склеек внутри плана спрятано смазом и наездом: {len(whips_added)}")
 
         # перебивки и сплиты не налезают друг на друга: клип внутри окна листа, две вспышки подряд (19.10.2026, демо
         # IMG_3292: сплит вошёл, пока шёл клип «Индия»). Стык — можно: вспышки сливаются в одну
@@ -335,8 +364,12 @@ class Montage:
         if self.cfg.get("music"):
             import music
             track = track or music.pick(self.stem, self.project.name)
-            self.sounds.append(kit.background_music(self.stem, track, dur))
-            self.notes.append(f"музыка: {track}")
+            lane = music.duck_lane(WORK_DIR / self.stem / "aroll.mp4", dur) if self.cfg.get("music_duck") else None
+            self.sounds.append(kit.background_music(self.stem, track, dur, lane=lane, media_start=music_start,
+                                                    fade_out=music_fade))
+            lifted = sum(1 for (_, v), (_, w) in zip(lane or [], (lane or [])[1:]) if v == 1.0 and w > 1.0)
+            self.notes.append(f"музыка: {track}" + (f" с {music_start:.2f} с трека" if music_start else "")
+                              + (f", поднимается в тишине дубля: {lifted} раз" if lane is not None else ""))
 
         covered = sum(b - a for a, b in self.cutaways)
         face = 1 - covered / dur

@@ -151,42 +151,34 @@
       .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
       .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
       .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
-      @font-face { font-family: "Montserrat"; src: url("assets/fonts/Montserrat-ExtraBold.ttf"); font-weight: 800; }
-      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Montserrat"; font-weight: 800; font-size: 59px; line-height: 1.15; color: #FFFFFF; text-transform: uppercase; }
-      .cap.accent { color: #FFC93C; }
+      @font-face { font-family: "Golos"; src: url("assets/fonts/GolosText-Black.ttf"); font-weight: 900; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Golos"; font-weight: 900; font-size: 64px; line-height: 1.15; color: #FFFFFF; text-transform: none; }
+      .cap.accent { color: #FFD60A; }
       .cap .w { display: inline-block; }
+      .cap .w { padding: 0.04em 0.16em 0.08em; margin: 0 -0.06em; border-radius: 0.22em; }
 
-      @font-face { font-family: "Unbounded"; src: url("assets/fonts/Unbounded-ExtraBold.ttf"); font-weight: 800; }
-      @font-face { font-family: "Caveat"; src: url("assets/fonts/Caveat-Bold.ttf"); font-weight: 700; }
-      @font-face { font-family: "Montserrat"; src: url("assets/fonts/Montserrat-ExtraBold.ttf"); font-weight: 800; }
-      /* субтитры на белых стенах и светлом полу: тёмная обводка в 8 сторон и мягкая тень */
-      .cap { text-shadow: 2px 2px 0 #2B1A0C, -2px 2px 0 #2B1A0C, 2px -2px 0 #2B1A0C, -2px -2px 0 #2B1A0C, 0 3px 0 #2B1A0C,
-             0 -3px 0 #2B1A0C, 3px 0 0 #2B1A0C, -3px 0 0 #2B1A0C, 0 8px 22px rgba(0,0,0,0.55); letter-spacing: 0.01em; }
-      .vk-gold { display: inline-block; font-family: "Unbounded"; font-weight: 800; text-transform: uppercase;
-                 background: linear-gradient(180deg, #FFF0B8 0%, #FFC93C 46%, #E8961C 100%); -webkit-background-clip: text;
-                 background-clip: text; color: transparent; filter: drop-shadow(0 4px 0 #2B1A0C) drop-shadow(0 10px 22px rgba(0,0,0,0.5));
-                 padding: 0 0.08em; line-height: 1.05; }
-      .vk-hand { font-family: "Caveat"; font-weight: 700; color: #FFF4D6; line-height: 1.0;
-                 text-shadow: 0 3px 0 #2B1A0C, 0 0 8px rgba(43,26,12,0.9), 0 8px 24px rgba(0,0,0,0.5); }
-      .vk-chip { font-family: "Montserrat"; font-weight: 800; font-size: 40px; color: #2B1A0C; background: #FFF4D6;
-                 border-radius: 999px; padding: 14px 34px 16px; box-shadow: 0 10px 0 rgba(43,26,12,0.35), 0 18px 40px rgba(0,0,0,0.4);
-                 white-space: nowrap; }
-      .vk-chip b { color: #C9711A; }
-      .vk-q { width: 700px; border-radius: 34px; overflow: hidden; background: #FFFFFF; box-shadow: 0 22px 50px rgba(0,0,0,0.45); }
-      .vk-q .top { padding: 18px 0 14px; text-align: center; font-family: "Montserrat"; font-weight: 800; font-size: 28px;
-                   letter-spacing: 0.16em; color: #FFFFFF; background: linear-gradient(90deg, #F2A93B, #E2622F); }
-      .vk-q .body { padding: 24px 24px 30px; text-align: center; font-family: "Montserrat"; font-weight: 800; font-size: 46px; white-space: nowrap;
-                    line-height: 1.12; color: #2B1A0C; }
-      .cf { position: absolute; border-radius: 3px; }
-      .vk-ring { width: 220px; height: 220px; border-radius: 50%; border: 10px solid #FFC93C; box-shadow: 0 0 30px rgba(255,201,60,0.8); }
+      @font-face { font-family: "Alumni"; src: url("assets/fonts/AlumniSans-Black.ttf"); font-weight: 900; }
+      @font-face { font-family: "Onest"; src: url("assets/fonts/Onest-Black.ttf"); font-weight: 900; }
+      @font-face { font-family: "Golos"; src: url("assets/fonts/GolosText-Black.ttf"); font-weight: 900; }
+      .cap { text-shadow: 0 2px 2px rgba(0,0,0,0.55), 0 6px 22px rgba(0,0,0,0.45); letter-spacing: -0.01em; }
+      .x-huge { font-family: "Alumni"; font-weight: 900; text-transform: uppercase; line-height: 0.84; letter-spacing: 0.005em;
+                color: #FFFFFF; text-shadow: 0 10px 34px rgba(0,0,0,0.45); }
+      .x-huge .y { color: #FFD60A; }
+      .x-tag { font-family: "Onest"; font-weight: 900; font-size: 36px; letter-spacing: 0.02em; color: #111111; background: #FFD60A;
+               border-radius: 12px; padding: 10px 22px 12px; white-space: nowrap; }
+      .x-tag.dark { color: #FFFFFF; background: rgba(17,17,17,0.86); }
+      .x-tag.big { font-size: 48px; padding: 12px 26px 14px; }
+      .x-meme { font-family: "Golos"; font-weight: 900; font-size: 64px; line-height: 1.08; color: #111111; background: #FFFFFF;
+                border-radius: 18px; padding: 16px 30px 20px; text-align: center; box-shadow: 0 16px 40px rgba(0,0,0,0.35); }
+      .x-meme small { display: block; font-size: 38px; color: #6B6B6B; margin-bottom: 4px; }
 
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="74.733" data-width="1080" data-height="1920">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="57.567" data-width="1080" data-height="1920">
       <div id="cam-bg" class="cam">
         <video id="aroll" class="clip" src="assets/aroll.mp4" playsinline data-has-audio="true"
-               data-start="0" data-duration="74.733" data-track-index="0"></video>
+               data-start="0" data-duration="57.567" data-track-index="0"></video>
       </div>
       <div id="behind" class="layer">
 
@@ -194,130 +186,58 @@
       <div id="cam-fg" class="cam"></div>
       <div id="front" class="layer">
         <div id="caps"></div>
-        <div id="t-title" class="g" style="left: 120px; top: 930px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 80px;">новоселье</span></div>
-        <div id="t-sub" class="g vk-hand" style="left: 120px; top: 1040px; width: 730px; text-align: center; font-size: 84px;">«Вкудесника»</div>
-        <div id="cfa0" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #FFFFFF;"></div>
-        <div id="cfa1" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #FFF4D6;"></div>
-        <div id="cfa2" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #FFFFFF;"></div>
-        <div id="cfa3" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #FFF4D6;"></div>
-        <div id="cfa4" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #3FA45B;"></div>
-        <div id="cfa5" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #FFF4D6;"></div>
-        <div id="cfa6" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #FFFFFF;"></div>
-        <div id="cfa7" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #F2A93B;"></div>
-        <div id="cfa8" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #E0393E;"></div>
-        <div id="cfa9" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFFFFF;"></div>
-        <div id="cfa10" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFC93C;"></div>
-        <div id="cfa11" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #3FA45B;"></div>
-        <div id="cfa12" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #3FA45B;"></div>
-        <div id="cfa13" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFC93C;"></div>
-        <div id="cfa14" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #3FA45B;"></div>
-        <div id="cfa15" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #E0393E;"></div>
-        <div id="cfa16" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #F2A93B;"></div>
-        <div id="cfa17" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #E0393E;"></div>
-        <div id="cfa18" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #F2A93B;"></div>
-        <div id="cfa19" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFC93C;"></div>
-        <div id="cfa20" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #E0393E;"></div>
-        <div id="cfa21" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFFFFF;"></div>
-        <div id="cfa22" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #FFF4D6;"></div>
-        <div id="cfa23" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #E0393E;"></div>
-        <div id="cfa24" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #E0393E;"></div>
-        <div id="cfa25" class="g cf" style="left: 531px; top: 971px; width: 18px; height: 18px; background: #FFF4D6;"></div>
-        <div id="cfa26" class="g cf" style="left: 533px; top: 968px; width: 14px; height: 24px; background: #FFFFFF;"></div>
-        <div id="cfa27" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #E0393E;"></div>
-        <div id="cfa28" class="g cf" style="left: 532px; top: 969px; width: 16px; height: 22px; background: #F2A93B;"></div>
-        <div id="cfa29" class="g cf" style="left: 535px; top: 966px; width: 10px; height: 28px; background: #E0393E;"></div>
-        <div id="ck" style="position: absolute; left: 560px; top: 300px; width: 470px;">
-          <div id="ck0" class="g" style="position: relative; display: block; margin-bottom: 6px;"><svg viewBox="0 0 60 50" width="62" height="52" style="vertical-align: -6px; margin-right: 14px;"><path pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d="M6 26 L23 42 L54 6" fill="none" stroke="#FFC93C" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="vk-hand" style="font-size: 96px;">фуршетик</span></div>
-          <div id="ck1" class="g" style="position: relative; display: block; margin-bottom: 6px;"><svg viewBox="0 0 60 50" width="62" height="52" style="vertical-align: -6px; margin-right: 14px;"><path pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d="M6 26 L23 42 L54 6" fill="none" stroke="#FFC93C" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="vk-hand" style="font-size: 96px;">тортик</span></div>
-          <div id="ck2" class="g" style="position: relative; display: block; margin-bottom: 6px;"><svg viewBox="0 0 60 50" width="62" height="52" style="vertical-align: -6px; margin-right: 14px;"><path pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d="M6 26 L23 42 L54 6" fill="none" stroke="#FFC93C" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="vk-hand" style="font-size: 96px;">закусочки</span></div>
-        </div>
-        <div id="ch-go" class="g vk-chip" style="left: 245px; top: 300px;">спускаюсь к команде <b>⏩</b></div>
-        <div id="ch-team" class="g vk-chip" style="left: 270px; top: 300px;">🔔 команда пришла!</div>
-        <div id="hz0" class="g" style="left: 630px; top: 560px;"><svg viewBox="0 0 32 29" width="96" height="86"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
-        <div id="hz1" class="g" style="left: 770px; top: 640px;"><svg viewBox="0 0 32 29" width="72" height="65"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
-        <div id="hz2" class="g" style="left: 540px; top: 690px;"><svg viewBox="0 0 32 29" width="60" height="54"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
-        <div id="ch-table" class="g vk-chip" style="left: 230px; top: 300px;">и сразу — к столу 🍰</div>
-        <div id="ch-taste" class="g vk-chip" style="left: 330px; top: 1240px;">дегустация 🍬</div>
-        <div id="liq" class="g vk-hand" style="left: 110px; top: 320px; width: 740px; text-align: center; font-size: 100px; transform: rotate(-3deg);">…а конфеты оказались<br>с ликёром 😂</div>
-        <div id="q" class="g vk-q" style="left: 190px; top: 236px;">
-          <div class="top">ВОПРОС КОМАНДЕ</div>
-          <div class="body">Как вам новый офис? 🏢</div>
-        </div>
-        <div id="st0" class="g" style="left: 250px; top: 1120px;"><svg viewBox="0 0 40 40" width="54" height="54"><path d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z" fill="#FFC93C"/></svg></div>
-        <div id="st1" class="g" style="left: 790px; top: 1100px;"><svg viewBox="0 0 40 40" width="44" height="44"><path d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z" fill="#FFC93C"/></svg></div>
-        <div id="st2" class="g" style="left: 300px; top: 1230px;"><svg viewBox="0 0 40 40" width="34" height="34"><path d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z" fill="#FFC93C"/></svg></div>
-        <div id="hz-love" class="g" style="left: 690px; top: 330px;"><svg viewBox="0 0 32 29" width="120" height="108"><path d="M16 29 L3.2 16.2 C-1.6 11.3 1.2 2 8.2 2 C11.9 2 14.3 4.2 16 7 C17.7 4.2 20.1 2 23.8 2 C30.8 2 33.6 11.3 28.8 16.2 Z" fill="#E0393E" stroke="#FFF4D6" stroke-width="1.6"/></svg></div>
-        <div id="ch-wish" class="g vk-chip" style="left: 210px; top: 280px;">🎄 пожелания на сезон</div>
-        <div id="ring" class="g vk-ring" style="left: 140px; top: 1052px; width: 180px; height: 180px;"></div>
-        <div id="us0" class="g" style="left: 120px; top: 1048px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 66px;">успехов!</span></div>
-        <div id="us1" class="g" style="left: 120px; top: 1128px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 80px;">успехов!</span></div>
-        <div id="us2" class="g" style="left: 120px; top: 1222px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 96px;">успехов!</span></div>
-        <div id="cfb0" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #3FA45B;"></div>
-        <div id="cfb1" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #FFC93C;"></div>
-        <div id="cfb2" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #F2A93B;"></div>
-        <div id="cfb3" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #F2A93B;"></div>
-        <div id="cfb4" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #F2A93B;"></div>
-        <div id="cfb5" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #F2A93B;"></div>
-        <div id="cfb6" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFFFFF;"></div>
-        <div id="cfb7" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #FFFFFF;"></div>
-        <div id="cfb8" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFC93C;"></div>
-        <div id="cfb9" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #FFC93C;"></div>
-        <div id="cfb10" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #3FA45B;"></div>
-        <div id="cfb11" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #E0393E;"></div>
-        <div id="cfb12" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFF4D6;"></div>
-        <div id="cfb13" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFF4D6;"></div>
-        <div id="cfb14" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #3FA45B;"></div>
-        <div id="cfb15" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #E0393E;"></div>
-        <div id="cfb16" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFC93C;"></div>
-        <div id="cfb17" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #E0393E;"></div>
-        <div id="cfb18" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFC93C;"></div>
-        <div id="cfb19" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #F2A93B;"></div>
-        <div id="cfb20" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #F2A93B;"></div>
-        <div id="cfb21" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #FFFFFF;"></div>
-        <div id="cfb22" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #FFC93C;"></div>
-        <div id="cfb23" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #3FA45B;"></div>
-        <div id="cfb24" class="g cf" style="left: 535px; top: 886px; width: 10px; height: 28px; background: #FFF4D6;"></div>
-        <div id="cfb25" class="g cf" style="left: 532px; top: 889px; width: 16px; height: 22px; background: #E0393E;"></div>
-        <div id="cfb26" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #3FA45B;"></div>
-        <div id="cfb27" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFC93C;"></div>
-        <div id="cfb28" class="g cf" style="left: 531px; top: 891px; width: 18px; height: 18px; background: #F2A93B;"></div>
-        <div id="cfb29" class="g cf" style="left: 533px; top: 888px; width: 14px; height: 24px; background: #FFFFFF;"></div>
-        <div id="e-brand" class="g" data-hold="подпись бренда держится до конца ролика — так задумано" style="left: 120px; top: 300px; width: 730px; text-align: center;"><span class="vk-gold" style="font-size: 84px;">вкудесник</span></div>
-        <div id="e-sub" class="g vk-hand" data-hold="подпись бренда держится до конца ролика — так задумано" style="left: 120px; top: 410px; width: 730px; text-align: center; font-size: 74px;">подарки с атмосферой<br>настоящего праздника</div>
+        <div id="o-1" class="g x-huge" style="left: 120px; top: 430px; width: 730px; font-size: 250px;">ново</div>
+        <div id="o-2" class="g x-huge" style="left: 120px; top: 640px; width: 730px; font-size: 250px;"><span class="y">селье</span></div>
+        <div id="o-tag" class="g x-tag dark" style="left: 120px; top: 862px;">вкудесник · мы переехали</div>
+        <div id="o-3" class="g x-huge" style="left: 120px; top: 948px; width: 730px; font-size: 250px;">ново</div>
+        <div id="o-4" class="g x-huge" style="left: 120px; top: 1158px; width: 730px; font-size: 250px;"><span class="y">селье</span></div>
+        <div id="ck0" class="g x-tag big" style="left: 120px; top: 320px;">✓ фуршетик</div>
+        <div id="ck1" class="g x-tag big" style="left: 144px; top: 412px;">✓ тортик</div>
+        <div id="ck2" class="g x-tag big" style="left: 168px; top: 504px;">✓ закусочки</div>
+        <div id="t-walk" class="g x-tag" style="left: 120px; top: 300px;">встречаю команду →</div>
+        <div id="t-table" class="g x-tag" style="left: 120px; top: 300px;">первым делом — к столу</div>
+        <div id="meme" class="g x-meme" style="left: 150px; top: 300px; width: 670px; transform: rotate(-2deg);">
+          <small>стоп…</small>конфеты<br>С ЛИКЁРОМ?! 🥃</div>
+        <div id="q" class="g x-tag dark" style="left: 120px; top: 290px;">что говорит команда 👇</div>
+        <div id="w" class="g x-tag dark" style="left: 120px; top: 290px;">а пожелания на сезон?</div>
+        <div id="us0" class="g x-huge" style="left: 120px; top: 1046px; width: 730px; font-size: 100px;">успехов!</div>
+        <div id="us1" class="g x-huge" style="left: 120px; top: 1134px; width: 730px; font-size: 116px;">успехов!</div>
+        <div id="us2" class="g x-huge" style="left: 120px; top: 1236px; width: 730px; font-size: 136px;"><span class=y>успехов!</span></div>
         <div id="flash"></div>
       </div>
-      <audio id="sfx-ura" src="assets/sfx/sparkle.mp3" data-start="2.12" data-volume="0.093"></audio>
-      <audio id="sfx-walk" src="assets/sfx/whoosh.mp3" data-start="17.75" data-volume="0.291"></audio>
-      <audio id="sfx-team" src="assets/sfx/notification.mp3" data-start="20.25" data-volume="0.203"></audio>
-      <audio id="sfx-table" src="assets/sfx/click.mp3" data-start="30.53" data-volume="0.877"></audio>
-      <audio id="sfx-liq" src="assets/sfx/error.mp3" data-start="36.37" data-volume="0.800"></audio>
-      <audio id="sfx-q" src="assets/sfx/ping.mp3" data-start="38.69" data-volume="0.596"></audio>
-      <audio id="sfx-wish" src="assets/sfx/whoosh.mp3" data-start="56.67" data-volume="0.194"></audio>
-      <audio id="sfx-thumb" src="assets/sfx/ping.mp3" data-start="66.23" data-volume="0.511"></audio>
-      <audio id="sfx-us" src="assets/sfx/pop.mp3" data-start="70.53" data-volume="0.452"></audio>
-      <audio id="sfx-end" src="assets/sfx/sparkle.mp3" data-start="72.53" data-volume="0.081"></audio>
-      <audio id="sfx-brand" src="assets/sfx/chime.mp3" data-start="73.63" data-volume="0.441"></audio>
-      <audio id="sfx-soft0" src="assets/sfx/tap-1.mp3" data-start="0.12" data-volume="0.295"></audio>
-      <audio id="sfx-soft1" src="assets/sfx/tap-2.mp3" data-start="8.39" data-volume="0.266"></audio>
-      <audio id="sfx-soft2" src="assets/sfx/tap-3.mp3" data-start="9.65" data-volume="0.254"></audio>
-      <audio id="sfx-soft3" src="assets/sfx/tap-1.mp3" data-start="10.59" data-volume="0.295"></audio>
-      <audio id="sfx-soft4" src="assets/sfx/swell-1.mp3" data-start="11.17" data-volume="0.250"></audio>
-      <audio id="sfx-soft5" src="assets/sfx/swell-3.mp3" data-start="16.04" data-volume="0.247"></audio>
-      <audio id="sfx-soft6" src="assets/sfx/swell-2.mp3" data-start="22.47" data-volume="0.294"></audio>
-      <audio id="sfx-soft7" src="assets/sfx/tap-2.mp3" data-start="23.18" data-volume="0.266"></audio>
-      <audio id="sfx-soft8" src="assets/sfx/tap-3.mp3" data-start="23.74" data-volume="0.254"></audio>
-      <audio id="sfx-soft9" src="assets/sfx/swell-1.mp3" data-start="25.67" data-volume="0.250"></audio>
-      <audio id="sfx-soft10" src="assets/sfx/swell-3.mp3" data-start="27.77" data-volume="0.247"></audio>
-      <audio id="sfx-soft11" src="assets/sfx/swell-2.mp3" data-start="32.11" data-volume="0.294"></audio>
-      <audio id="sfx-soft12" src="assets/sfx/tap-1.mp3" data-start="32.62" data-volume="0.295"></audio>
-      <audio id="sfx-soft13" src="assets/sfx/swell-1.mp3" data-start="35.11" data-volume="0.250"></audio>
-      <audio id="sfx-soft14" src="assets/sfx/tap-2.mp3" data-start="45.63" data-volume="0.266"></audio>
-      <audio id="sfx-soft15" src="assets/sfx/swell-3.mp3" data-start="51.57" data-volume="0.247"></audio>
-      <audio id="sfx-soft16" src="assets/sfx/swell-2.mp3" data-start="54.51" data-volume="0.294"></audio>
-      <audio id="sfx-soft17" src="assets/sfx/tap-3.mp3" data-start="55.21" data-volume="0.254"></audio>
-      <audio id="sfx-soft18" src="assets/sfx/swell-1.mp3" data-start="62.74" data-volume="0.250"></audio>
-      <audio id="sfx-soft19" src="assets/sfx/bubble-1.mp3" data-start="71.57" data-volume="0.221"></audio>
-      <audio id="sfx-bgm" src="assets/materials/mx-christmas-gifts.mp3" data-start="0.00" data-duration="74.73" data-fade-out="1.5" data-volume="0.078"></audio>
+      <audio id="sfx-open" src="assets/sfx/impact-bass-1.mp3" data-start="0.00" data-volume="0.062"></audio>
+      <audio id="sfx-walk" src="assets/sfx/whoosh.mp3" data-start="11.92" data-volume="0.291"></audio>
+      <audio id="sfx-hello" src="assets/sfx/notification.mp3" data-start="14.93" data-volume="0.169"></audio>
+      <audio id="sfx-enter" src="assets/sfx/whoosh-cinematic.mp3" data-start="21.27" data-volume="0.084"></audio>
+      <audio id="sfx-scratch" src="assets/sfx/error.mp3" data-start="26.19" data-volume="0.933"></audio>
+      <audio id="sfx-q" src="assets/sfx/pop.mp3" data-start="27.41" data-volume="0.452"></audio>
+      <audio id="sfx-w" src="assets/sfx/click.mp3" data-start="42.51" data-volume="0.877"></audio>
+      <audio id="sfx-us" src="assets/sfx/impact-bass-2.mp3" data-start="55.40" data-volume="0.041"></audio>
+      <audio id="sfx-soft0" src="assets/sfx/swell-1.mp3" data-start="0.71" data-volume="0.250"></audio>
+      <audio id="sfx-soft1" src="assets/sfx/swell-3.mp3" data-start="1.21" data-volume="0.247"></audio>
+      <audio id="sfx-soft2" src="assets/sfx/swell-2.mp3" data-start="1.71" data-volume="0.294"></audio>
+      <audio id="sfx-soft3" src="assets/sfx/bubble-1.mp3" data-start="7.43" data-volume="0.221"></audio>
+      <audio id="sfx-soft4" src="assets/sfx/bubble-2.mp3" data-start="8.69" data-volume="0.216"></audio>
+      <audio id="sfx-soft5" src="assets/sfx/swell-1.mp3" data-start="10.27" data-volume="0.250"></audio>
+      <audio id="sfx-soft6" src="assets/sfx/swell-3.mp3" data-start="16.67" data-volume="0.247"></audio>
+      <audio id="sfx-soft7" src="assets/sfx/swell-2.mp3" data-start="18.77" data-volume="0.294"></audio>
+      <audio id="sfx-soft8" src="assets/sfx/swell-1.mp3" data-start="22.67" data-volume="0.250"></audio>
+      <audio id="sfx-soft9" src="assets/sfx/swell-3.mp3" data-start="25.11" data-volume="0.247"></audio>
+      <audio id="sfx-soft10" src="assets/sfx/swell-1.mp3" data-start="29.50" data-volume="0.156"></audio>
+      <audio id="sfx-soft11" src="assets/sfx/swell-3.mp3" data-start="30.34" data-volume="0.155"></audio>
+      <audio id="sfx-soft12" src="assets/sfx/swell-1.mp3" data-start="31.30" data-volume="0.156"></audio>
+      <audio id="sfx-soft13" src="assets/sfx/swell-2.mp3" data-start="33.01" data-volume="0.294"></audio>
+      <audio id="sfx-soft14" src="assets/sfx/swell-3.mp3" data-start="35.44" data-volume="0.155"></audio>
+      <audio id="sfx-soft15" src="assets/sfx/swell-1.mp3" data-start="37.34" data-volume="0.250"></audio>
+      <audio id="sfx-soft16" src="assets/sfx/swell-3.mp3" data-start="40.27" data-volume="0.155"></audio>
+      <audio id="sfx-soft17" src="assets/sfx/swell-1.mp3" data-start="43.27" data-volume="0.156"></audio>
+      <audio id="sfx-soft18" src="assets/sfx/swell-3.mp3" data-start="46.27" data-volume="0.155"></audio>
+      <audio id="sfx-soft19" src="assets/sfx/swell-2.mp3" data-start="47.01" data-volume="0.294"></audio>
+      <audio id="sfx-soft20" src="assets/sfx/swell-1.mp3" data-start="48.94" data-volume="0.156"></audio>
+      <audio id="sfx-soft21" src="assets/sfx/swell-3.mp3" data-start="50.64" data-volume="0.247"></audio>
+      <audio id="sfx-soft22" src="assets/sfx/bubble-1.mp3" data-start="54.36" data-volume="0.221"></audio>
+      <audio id="sfx-soft23" src="assets/sfx/swell-2.mp3" data-start="56.01" data-volume="0.294"></audio>
+      <audio id="sfx-bgm" src="assets/materials/mx-house-02.mp3" data-start="0.00" data-duration="57.57" data-volume="0.087" data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0.0,"v":0.0869},{"t":12.05,"v":0.0869},{"t":12.4,"v":0.1564},{"t":14.53,"v":0.1564},{"t":14.65,"v":0.0869},{"t":21.3,"v":0.0869},{"t":21.65,"v":0.1564},{"t":22.83,"v":0.1564},{"t":22.95,"v":0.0869},{"t":26.2,"v":0.0869},{"t":26.55,"v":0.1564},{"t":27.23,"v":0.1564},{"t":27.35,"v":0.0869},{"t":57.267,"v":0.0869},{"t":57.567,"v":0.0}]}]}' data-media-start="0.410"></audio>
     </div>
     <script>
       const tl = gsap.timeline({ paused: true });
@@ -397,7 +317,8 @@
 
       // ---------- бегущие субтитры: karaoke, pop ----------
       const caps = document.getElementById("caps");
-      const CAP_BASE = "#FFFFFF", CAP_HL = "#FFC93C";
+      const CAP_BASE = "#FFFFFF", CAP_HL = "#FFD60A";
+      const CAP_BOX = "#FFD60A", CAP_ON_BOX = "#111111";
       window.CAPTIONS.forEach((c) => {
         const el = document.createElement("div");
         el.className = "cap" + (c.accent ? " accent" : "");
@@ -423,189 +344,58 @@
         tl.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: d, ease: "back.out(2.2)" }, c.t0);
         tl.set(el, { opacity: 0 }, c.t1);
         (c.words || []).forEach((w, k) => {
-          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
-          tl.set(spans[k], { color: CAP_HL }, Math.max(c.t0, w.t0));
+          // только цвет (или плашка стиля): увеличенное слово наезжает на пробел и склеивается с соседним
+          const on = CAP_BOX ? { color: CAP_ON_BOX, backgroundColor: CAP_BOX } : { color: CAP_HL };
+          const off = CAP_BOX ? { color: CAP_BASE, backgroundColor: "rgba(0,0,0,0)" } : { color: CAP_BASE };
+          tl.set(spans[k], on, Math.max(c.t0, w.t0));
           const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
-          if (next < c.t1) tl.set(spans[k], { color: CAP_BASE }, next);
+          if (next < c.t1) tl.set(spans[k], off, next);
         });
       });
 
-      enter("#t-title", 0.12, { fromScale: 0.6, dur: 0.36 });
-      enter("#t-sub", 0.42, { fromY: 30, fromScale: 0.8, dur: 0.3 });
-      leave(["#t-title", "#t-sub"], 2.67, { y: -50 });
-      // конфетти cfa: залп на 2.17 с
-      tl.fromTo("#cfa0", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 62, y: -252, rotation: 430, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa0", { opacity: 0, y: -56, rotation: 860, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa1", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 318, y: -170, rotation: -61, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa1", { opacity: 0, y: 130, rotation: -122, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa2", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -131, y: -460, rotation: -66, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa2", { opacity: 0, y: -242, rotation: -132, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa3", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 250, y: -339, rotation: -409, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa3", { opacity: 0, y: -149, rotation: -818, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa4", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 314, y: -346, rotation: 11, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa4", { opacity: 0, y: -67, rotation: 22, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa5", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -128, y: -442, rotation: 370, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa5", { opacity: 0, y: -169, rotation: 740, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa6", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -348, y: -122, rotation: -12, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa6", { opacity: 0, y: 169, rotation: -24, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa7", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -99, y: -459, rotation: 178, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa7", { opacity: 0, y: -175, rotation: 356, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa8", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 372, y: -205, rotation: -482, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa8", { opacity: 0, y: 16, rotation: -964, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa9", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 463, y: -166, rotation: -327, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa9", { opacity: 0, y: 68, rotation: -654, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa10", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -130, y: -201, rotation: 450, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa10", { opacity: 0, y: 67, rotation: 900, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa11", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -63, y: -258, rotation: 61, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa11", { opacity: 0, y: 28, rotation: 122, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa12", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -379, y: -142, rotation: -448, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa12", { opacity: 0, y: 122, rotation: -896, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa13", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 5, y: -520, rotation: 94, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa13", { opacity: 0, y: -321, rotation: 188, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa14", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 59, y: -222, rotation: -136, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa14", { opacity: 0, y: 32, rotation: -272, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa15", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -184, y: -142, rotation: 155, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa15", { opacity: 0, y: 130, rotation: 310, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa16", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 289, y: -167, rotation: 402, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa16", { opacity: 0, y: 111, rotation: 804, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa17", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 155, y: -478, rotation: 498, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa17", { opacity: 0, y: -188, rotation: 996, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa18", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 321, y: -143, rotation: -12, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa18", { opacity: 0, y: 114, rotation: -24, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa19", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -332, y: -93, rotation: 104, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa19", { opacity: 0, y: 183, rotation: 208, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa20", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -376, y: -159, rotation: 414, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa20", { opacity: 0, y: 111, rotation: 828, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa21", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 133, y: -184, rotation: -416, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa21", { opacity: 0, y: 1, rotation: -832, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa22", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -220, y: -281, rotation: 115, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa22", { opacity: 0, y: -8, rotation: 230, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa23", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -159, y: -290, rotation: 0, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa23", { opacity: 0, y: -14, rotation: 0, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa24", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 150, y: -172, rotation: -271, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa24", { opacity: 0, y: 136, rotation: -542, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa25", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 118, y: -277, rotation: 131, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa25", { opacity: 0, y: 14, rotation: 262, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa26", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -276, y: -155, rotation: 143, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa26", { opacity: 0, y: 82, rotation: 286, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa27", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 370, y: -348, rotation: -377, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa27", { opacity: 0, y: -113, rotation: -754, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa28", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -262, y: -373, rotation: -471, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa28", { opacity: 0, y: -145, rotation: -942, duration: 0.55, ease: "power1.in" }, 2.620);
-      tl.fromTo("#cfa29", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 341, y: -326, rotation: -165, scale: 1, duration: 0.45, ease: "power3.out" }, 2.170);
-      tl.to("#cfa29", { opacity: 0, y: -59, rotation: -330, duration: 0.55, ease: "power1.in" }, 2.620);
-      enter("#ck0", 8.39, { fromX: 60, fromScale: 0.8, dur: 0.26 });
-      draw("#ck0 path", 8.51, 0.24);
-      enter("#ck1", 9.65, { fromX: 60, fromScale: 0.8, dur: 0.26 });
-      draw("#ck1 path", 9.77, 0.24);
-      enter("#ck2", 10.59, { fromX: 60, fromScale: 0.8, dur: 0.26 });
-      draw("#ck2 path", 10.71, 0.24);
-      leave(["#ck0", "#ck1", "#ck2"], 11.13, { x: 60, y: 0 });
-      enter("#ch-go", 17.88, { fromX: -80, fromScale: 0.85, dur: 0.26 });
-      leave("#ch-go", 19.89, { x: 120, y: 0 });
-      whip(17.80);
-      whip(20.13);
-      enter("#ch-team", 20.25, { fromY: -40, fromScale: 0.8, dur: 0.3 });
-      leave("#ch-team", 22.58, { y: -40 });
-      enter("#hz0", 23.18, { fromScale: 0.3, fromY: 40, dur: 0.3 });
-      tl.to("#hz0", { y: -260, duration: 1.6, ease: "none" }, 23.48);
-      leave("#hz0", 24.73, { y: -320 });
-      enter("#hz1", 23.46, { fromScale: 0.3, fromY: 40, dur: 0.3 });
-      tl.to("#hz1", { y: -260, duration: 1.6, ease: "none" }, 23.76);
-      leave("#hz1", 25.01, { y: -320 });
-      enter("#hz2", 23.74, { fromScale: 0.3, fromY: 40, dur: 0.3 });
-      tl.to("#hz2", { y: -260, duration: 1.6, ease: "none" }, 24.04);
-      leave("#hz2", 25.29, { y: -320 });
-      enter("#ch-table", 30.53, { fromX: 80, fromScale: 0.85, dur: 0.28 });
-      leave("#ch-table", 32.17, { x: -100, y: 0 });
-      enter("#ch-taste", 32.62, { fromY: -40, fromScale: 0.85, dur: 0.28 });
-      leave("#ch-taste", 35.17, { y: -40 });
-      enter("#liq", 36.37, { fromScale: 0.5, rot: -3, dur: 0.34 });
-      leave("#liq", 38.29, { rot: -3 });
-      enter("#q", 38.69, { fromScale: 0.6, fromY: -40, dur: 0.34 });
-      leave("#q", 43.31, { y: -60 });
-      enter("#st0", 45.63, { fromScale: 0, rot: 90, dur: 0.3 });
-      leave("#st0", 46.93, { scale: 0, rot: -90, y: 0 });
-      enter("#st1", 45.71, { fromScale: 0, rot: 90, dur: 0.3 });
-      leave("#st1", 47.01, { scale: 0, rot: -90, y: 0 });
-      enter("#st2", 45.79, { fromScale: 0, rot: 90, dur: 0.3 });
-      leave("#st2", 47.09, { scale: 0, rot: -90, y: 0 });
-      enter("#hz-love", 55.21, { fromScale: 0.2, dur: 0.3, ease: "back.out(3)" });
-      tl.to("#hz-love", { scale: 1.12, duration: 0.25, yoyo: true, repeat: 1, ease: "sine.inOut" }, 55.56);
-      leave("#hz-love", 56.42, { y: -60 });
-      enter("#ch-wish", 56.75, { fromY: -50, fromScale: 0.8, dur: 0.3 });
-      leave("#ch-wish", 59.07, { y: -50 });
-      enter("#ring", 66.23, { fromScale: 0.3, blur: 0, dur: 0.25, ease: "power2.out" });
-      leave("#ring", 66.78, { scale: 1.6, y: 0, blur: 0 });
-      slam("#us0", 70.53, { fromScale: 1.6, rot: -3 });
-      slam("#us1", 70.85, { fromScale: 1.6, rot: 2 });
-      slam("#us2", 71.57, { fromScale: 1.6, rot: -2 });
-      leave(["#us0", "#us1", "#us2"], 72.21, { y: -40 });
-      // конфетти cfb: залп на 72.53 с
-      tl.fromTo("#cfb0", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 392, y: -272, rotation: 413, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb0", { opacity: 0, y: 38, rotation: 826, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb1", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -278, y: -249, rotation: -159, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb1", { opacity: 0, y: 45, rotation: -318, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb2", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -311, y: -221, rotation: -455, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb2", { opacity: 0, y: 60, rotation: -910, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb3", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 159, y: -372, rotation: -218, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb3", { opacity: 0, y: -189, rotation: -436, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb4", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -255, y: -108, rotation: -45, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb4", { opacity: 0, y: 79, rotation: -90, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb5", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -178, y: -355, rotation: -140, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb5", { opacity: 0, y: -116, rotation: -280, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb6", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -2, y: -419, rotation: 396, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb6", { opacity: 0, y: -168, rotation: 792, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb7", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 502, y: -131, rotation: -370, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb7", { opacity: 0, y: 114, rotation: -740, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb8", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 235, y: -291, rotation: -480, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb8", { opacity: 0, y: -84, rotation: -960, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb9", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -266, y: -155, rotation: -404, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb9", { opacity: 0, y: 25, rotation: -808, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb10", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -344, y: -353, rotation: 422, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb10", { opacity: 0, y: -72, rotation: 844, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb11", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -371, y: -172, rotation: 12, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb11", { opacity: 0, y: 30, rotation: 24, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb12", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -221, y: -459, rotation: -299, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb12", { opacity: 0, y: -216, rotation: -598, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb13", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -346, y: -96, rotation: 457, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb13", { opacity: 0, y: 132, rotation: 914, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb14", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 10, y: -515, rotation: -272, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb14", { opacity: 0, y: -237, rotation: -544, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb15", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -144, y: -496, rotation: -540, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb15", { opacity: 0, y: -239, rotation: -1080, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb16", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -236, y: -243, rotation: -335, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb16", { opacity: 0, y: -26, rotation: -670, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb17", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -35, y: -220, rotation: 133, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb17", { opacity: 0, y: 58, rotation: 266, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb18", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -256, y: -120, rotation: -43, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb18", { opacity: 0, y: 154, rotation: -86, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb19", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 81, y: -245, rotation: 450, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb19", { opacity: 0, y: -31, rotation: 900, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb20", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -199, y: -177, rotation: -73, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb20", { opacity: 0, y: 66, rotation: -146, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb21", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -322, y: -251, rotation: -138, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb21", { opacity: 0, y: 28, rotation: -276, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb22", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 92, y: -334, rotation: -328, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb22", { opacity: 0, y: -145, rotation: -656, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb23", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -277, y: -331, rotation: -14, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb23", { opacity: 0, y: -26, rotation: -28, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb24", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 24, y: -498, rotation: -400, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb24", { opacity: 0, y: -260, rotation: -800, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb25", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 73, y: -470, rotation: -389, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb25", { opacity: 0, y: -236, rotation: -778, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb26", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 147, y: -191, rotation: 302, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb26", { opacity: 0, y: 52, rotation: 604, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb27", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: -285, y: -109, rotation: -271, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb27", { opacity: 0, y: 163, rotation: -542, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb28", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 441, y: -264, rotation: 528, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb28", { opacity: 0, y: -49, rotation: 1056, duration: 0.55, ease: "power1.in" }, 72.983);
-      tl.fromTo("#cfb29", { opacity: 0, x: 0, y: 0, rotation: 0, scale: 0.4 }, { opacity: 1, x: 326, y: -158, rotation: 192, scale: 1, duration: 0.45, ease: "power3.out" }, 72.533);
-      tl.to("#cfb29", { opacity: 0, y: 101, rotation: 384, duration: 0.55, ease: "power1.in" }, 72.983);
-      enter("#e-brand", 72.63, { fromScale: 0.6, dur: 0.36 });
-      enter("#e-sub", 72.98, { fromY: 30, fromScale: 0.85, dur: 0.32 });
-      splice(11.433);
-      splice(54.767);
+      slam("#o-1", 0.02, { fromScale: 1.35, blur: 10 });
+      slam("#o-2", 0.488, { fromScale: 1.35, blur: 10 });
+      enter("#o-tag", 0.976, { fromX: -60, fromScale: 0.9, dur: 0.2 });
+      leave(["#o-1", "#o-2"], 1.363, { y: 120, dur: 0.09 });
+      slam("#o-3", 1.463, { fromScale: 1.25, blur: 8, dur: 0.12 });
+      slam("#o-4", 1.513, { fromScale: 1.25, blur: 8, dur: 0.12 });
+      leave(["#o-3", "#o-4"], 1.767, { y: 60, dur: 0.18 });
+      leave("#o-tag", 1.767, { y: -40, dur: 0.18 });
+      flash(1.967);
+      whip(0.963);
+      whip(1.463);
+      slam("#ck0", 7.43, { fromScale: 1.4, rot: -3 });
+      slam("#ck1", 8.69, { fromScale: 1.4, rot: 2 });
+      slam("#ck2", 9.63, { fromScale: 1.4, rot: -2 });
+      leave(["#ck0", "#ck1", "#ck2"], 10.31, { x: 80, y: 0 });
+      whip(11.996);
+      enter("#t-walk", 12.12, { fromX: -80, dur: 0.22 });
+      leave("#t-walk", 14.41, { x: 120, y: 0 });
+      whip(14.629);
+      whip(16.929);
+      whip(21.363);
+      enter("#t-table", 21.47, { fromX: -80, dur: 0.22 });
+      leave("#t-table", 22.71, { x: 120, y: 0 });
+      flash(26.19);
+      slam("#meme", 26.25, { fromScale: 1.5, rot: -2, blur: 8 });
+      leave("#meme", 27.13, { rot: -2, y: -40 });
+      enter("#q", 27.41, { fromY: -40, fromScale: 0.9, dur: 0.24 });
+      leave("#q", 31.63, { y: -40 });
+      enter("#w", 42.51, { fromY: -40, fromScale: 0.9, dur: 0.24 });
+      leave("#w", 46.63, { y: -40 });
+      slam("#us0", 54.36, { fromScale: 1.6, blur: 10 });
+      slam("#us1", 54.68, { fromScale: 1.6, blur: 10 });
+      slam("#us2", 55.40, { fromScale: 1.6, blur: 10 });
+      leave(["#us0", "#us1", "#us2"], 56.07, { y: -50, dur: 0.18 });
+      whip(56.263);
+      whip(29.763);
+      whip(30.596);
+      whip(31.563);
+      whip(35.696);
+      whip(40.529);
+      whip(43.529);
+      whip(46.529);
+      whip(49.196);
 
 
       try { REELS_EDITS(tl); } catch (e) { throw new Error(`правки студии: ${e.message}`); }

@@ -57,6 +57,7 @@ BGM_PREFIX = "yt-"
 # откуда фон может быть (music.py SOURCES): yt- — фонотека YouTube без указания автора, mx- — Mixkit Stock Music Free
 # License (20.10.2026, Валера: «найди другой ресурс для музыки» — фонотека за VPN отдаёт 503)
 BGM_PREFIXES = ("yt-", "mx-")
+MUSIC_LIFT_MAX = 3.98    # потолок множителя громкости в ленте HyperFrames (+12 дБ)
 _AUDIO_TAG = _re.compile(r'<audio id="sfx-[^"]*" src="assets/sfx/([\w.\-]+)\.mp3" data-start="([\d.]+)"')
 
 
@@ -107,12 +108,44 @@ def bgm_level(stem: str) -> float:
     return level
 
 
-def background_music(stem: str, name: str, duration: float) -> str:
-    """Фоновый лоу-фай на весь ролик — громкость проекта (bgm_level), уход в конце за 1,5 с. Трек — yt-*.mp3 из материалов."""
+def background_music(stem: str, name: str, duration: float, lane: list | None = None, media_start: float = 0.0,
+                     fade_out: float = 1.5) -> str:
+    """Фоновый трек на весь ролик — громкость проекта (bgm_level), уход в конце за fade_out с. Трек — yt-/mx-*.mp3 из материалов.
+
+    lane — громкость по времени [[t, v], …] (music.duck_lane): v множит уровень проекта, 1 — «под голосом», больше — в
+    тишине дубля музыка поднимается (HyperFrames data-automation, лента volume). Уход в конце тогда — тоже точками ленты:
+    лента и data-fade-out вместе не складываются. media_start — с какой секунды трека начать (сильная доля на 0 ролика).
+
+    Лента в HyperFrames — абсолютная громкость: с ней data-volume не действует (проверено рендером 20.10.2026: тон с
+    data-volume 0.25 и лентой v=1 звучал на 12 дБ громче, чем без ленты). Поэтому в ленту пишется уровень проекта × v, а
+    data-volume остаётся для проверок и студии. Первый рендер новоселья с лентой «как множитель» шёл с музыкой вровень с
+    голосом — verify_render тогда этого не ловил.
+    """
     if not name.startswith(BGM_PREFIXES):
         raise ValueError(f"фоновая музыка — трек фонотеки YouTube или Mixkit в материалах ({', '.join(p + '*.mp3' for p in BGM_PREFIXES)}, scripts/music.py), "
                          f"а не «{name}»")
-    return material_audio("bgm", stem, name, 0.0, bgm_level(stem), duration=round(duration, 2), fade_out=1.5)
+    if not lane:
+        tag = material_audio("bgm", stem, name, 0.0, bgm_level(stem), duration=round(duration, 2), fade_out=fade_out)
+    else:
+        tag = material_audio("bgm", stem, name, 0.0, bgm_level(stem), duration=round(duration, 2))
+        gain = material_gain(stem, name, bgm_level(stem))
+        points = [[round(float(t), 3), round(float(v), 3)] for t, v in lane if 0 <= t < duration - fade_out]
+        tail = points[-1][1] if points else 1.0
+        points += [[round(duration - fade_out, 3), tail], [round(duration, 3), 0.0]] if fade_out > 0 else []
+        if any(v < 0 or v > MUSIC_LIFT_MAX for _, v in points):
+            raise ValueError(f"лента громкости музыки: множитель от 0 до {MUSIC_LIFT_MAX:g} (+12 дБ), а не {points}")
+        auto = _json.dumps({"version": 1, "lanes": [{"target": "volume", "points": [
+            {"t": t, "v": round(min(MUSIC_LIFT_MAX, gain * v), 4)} for t, v in points]}]}, separators=(",", ":"))
+        tag = tag.replace("></audio>", f" data-automation='{auto}'></audio>")
+    if media_start > 0:
+        tag = tag.replace("></audio>", f' data-media-start="{media_start:.3f}"></audio>')
+    return tag
+
+
+def material_gain(stem: str, name: str, level: float) -> float:
+    """Громкость материала для data-volume: level от нормы по замеру файла, не громче 1."""
+    import materials
+    return min(1.0, level * 10 ** ((SFX_TARGET - materials.loudness(stem, name)) / 20))
 
 
 def material_audio(sid: str, stem: str, name: str, start: float, level: float = 1.0,
@@ -127,7 +160,7 @@ def material_audio(sid: str, stem: str, name: str, start: float, level: float = 
         raise ValueError(f"уровень звука «{name}» = {level}: бывает от 0 до 1 (1 — норма, громче нельзя)")
     if materials.kind_of(name) != "audio":
         raise ValueError(f"«{name}» — не звук: material_audio берёт mp3, wav, m4a, aac, ogg из материалов")
-    gain = min(1.0, level * 10 ** ((SFX_TARGET - materials.loudness(stem, name)) / 20))
+    gain = material_gain(stem, name, level)
     extra = (f' data-duration="{duration}"' if duration else "") + \
             (f' data-fade-out="{fade_out}"' if fade_out else "")
     return (f'      <audio id="sfx-{sid}" src="assets/materials/{name}" data-start="{start:.2f}"'
@@ -331,7 +364,8 @@ FORMAT_SCALE = {"9:16": 1.0, "4:5": 0.92, "1:1": 0.86, "16:9": 0.86}
 CTA_AT = {"9:16": (245, 1170, 70, 1480), "4:5": (90, 700, 70, 1040), "1:1": (90, 470, 70, 810),
           "16:9": (1000, 560, 880, 870)}
 EXTRA_FONTS = {"Montserrat": "Montserrat-ExtraBold.ttf", "Unbounded": "Unbounded-ExtraBold.ttf",
-               "Rubik": "Rubik-Black.ttf", "Golos": "GolosText-Black.ttf", "Alumni": "AlumniSans-Black.ttf"}
+               "Rubik": "Rubik-Black.ttf", "Golos": "GolosText-Black.ttf", "Alumni": "AlumniSans-Black.ttf",
+               "Onest": "Onest-Black.ttf"}
 
 
 def stage_style(fmt: str = "9:16") -> str:
@@ -369,6 +403,9 @@ def caption_css(caps: dict, fmt: str = "9:16") -> str:
     if float(caps.get("accent_scale", 1)) > 1:
         css.append(f'      .cap.accent {{ font-size: {round(size * float(caps["accent_scale"]))}px; }}')
     css.append('      .cap .w { display: inline-block; }')
+    if caps.get("active_box"):
+        # плашка активного слова: поля в em, чтобы плашка росла с кеглем; минус-поля держат строку на месте
+        css.append('      .cap .w { padding: 0.04em 0.16em 0.08em; margin: 0 -0.06em; border-radius: 0.22em; }')
     if caps.get("box"):
         from styles import is_dark
         bg = "#FFFFFF" if is_dark(caps["color"]) else "rgba(12,12,14,0.78)"
@@ -413,6 +450,7 @@ def caption_js(caps: dict) -> str:
     return f'''      // ---------- бегущие субтитры: {caps["mode"]}, {caps.get("animation", "blur")} ----------
       const caps = document.getElementById("caps");
       const CAP_BASE = "{caps["color"]}", CAP_HL = "{caps["highlight"]}";
+      const CAP_BOX = {_json.dumps(caps.get("active_box") or "")}, CAP_ON_BOX = {_json.dumps(caps.get("active_text") or "#111111")};
       window.CAPTIONS.forEach((c) => {{
         const el = document.createElement("div");
         el.className = "cap" + (c.accent ? " accent" : "");
@@ -438,10 +476,12 @@ def caption_js(caps: dict) -> str:
         {enter}
         tl.set(el, {{ opacity: 0 }}, c.t1);
         (c.words || []).forEach((w, k) => {{
-          // только цвет: увеличенное слово наезжает на пробел и склеивается с соседним
-          tl.set(spans[k], {{ color: CAP_HL }}, Math.max(c.t0, w.t0));
+          // только цвет (или плашка стиля): увеличенное слово наезжает на пробел и склеивается с соседним
+          const on = CAP_BOX ? {{ color: CAP_ON_BOX, backgroundColor: CAP_BOX }} : {{ color: CAP_HL }};
+          const off = CAP_BOX ? {{ color: CAP_BASE, backgroundColor: "rgba(0,0,0,0)" }} : {{ color: CAP_BASE }};
+          tl.set(spans[k], on, Math.max(c.t0, w.t0));
           const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
-          if (next < c.t1) tl.set(spans[k], {{ color: CAP_BASE }}, next);
+          if (next < c.t1) tl.set(spans[k], off, next);
         }});
       }});
 

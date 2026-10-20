@@ -27,6 +27,13 @@ pack.json:
   gain     — дБ поверх выравнивания громкости; mute — без звука (там будет музыка).
   fit      — "cover" (по умолчанию: кадр заполнен, лишнее по краям) или "blur" (клип целиком поверх своей
              размытой копии) — для клипа других пропорций; без fit такой клип — отказ, а не лицо за краем.
+  ramp     — ускорение рывком [начало, пик, конец] или [начало, конец], ×0.5–6: кусок режется на 8 частей со скоростью
+             по плавной кривой — разгон и торможение, как в лайф-влогах. Только без звука ("mute": true).
+  hold     — стоп-кадр в конце куска, с (до 3): последний кадр замирает — под мем, надпись, царапину пластинки.
+  snap     — конец куска встаёт на долю музыки ("beat" в pack.json: {"bpm": 112.35, "offset": 0} — доли на шкале
+             ролика с offset шагом 60/bpm; трек ставится с сильной доли, music.beat_grid). Только кусок без речи:
+             подгоняется стоп-кадр, скорость рывка или конец куска. Доли считаются по шкале сборки — рез пауз prep
+             (cut_pauses) их сдвинул бы: в edit.json такого ролика "cut_pauses": false.
   cut      — каким будет стык перед куском: "scene" (смена сцены: камера заново, субтитр не переходит) или "jump"
              (склейка внутри одного плана — вырезанная пауза или оговорка: её прячет смена плана со смазом). По
              умолчанию — jump, если кусок того же клипа идёт дальше по времени с той же скоростью, иначе scene.
@@ -68,6 +75,10 @@ SPEECH_SPEED_MAX = 1.25          # речь быстрее — мультяшн�
 FIT = ("cover", "blur")
 ASPECT_SLACK = 0.12              # пропорции клипа и ролика расходятся больше — нужен явный fit
 GAIN_MAX = 12.0                  # дБ: выравнивание громкости не тянет кусок сильнее
+RAMP_MAX = 6.0                   # быстрее — кадры прыгают, а не летят
+RAMP_STEPS = 8                   # частей у рывка: меньше — ступеньки видны
+HOLD_MAX = 3.0                   # с: стоп-кадр дольше — мёртвый кадр, а не пауза
+SNAP_MIN = 0.3                   # с: короче кусок после подгонки в долю не делаем
 EDGE_KEYS = ("trim", "drop", "bleep", "blooper")   # решения edit.json по шкале сборки — устаревают с пересборкой
 CUTS = ("scene", "jump")         # стык: смена сцены — или склейка внутри одного плана (вырезана пауза, оговорка)
 
@@ -77,6 +88,8 @@ def cut_kind(prev: dict, piece: dict) -> str:
     плана, смаз), иначе — смена сцены. "cut" в pack.json решает явно (тот же клип после резкого разворота — сцена)."""
     if piece.get("cut"):
         return piece["cut"]
+    if piece.get("ramp") or prev.get("ramp") or prev.get("hold"):
+        return "scene"                  # рывок и стоп-кадр меняют движение кадра — это уже другой план
     same = piece["clip"] == prev["clip"] and piece["start"] >= prev["end"] - 0.01 and piece["speed"] == prev["speed"]
     return "jump" if same else "scene"
 
@@ -262,10 +275,21 @@ def load_plan(stem: str) -> list:
     return pieces
 
 
+def load_beat(stem: str) -> dict | None:
+    """Доли музыки на шкале ролика (pack.json → beat: {"bpm", "offset"}) — для кусков со snap."""
+    data = json.loads((WORK_DIR / stem / "pack.json").read_text(encoding="utf-8"))
+    beat = data.get("beat")
+    if beat is None:
+        return None
+    if not isinstance(beat, dict) or not 40 <= float(beat.get("bpm", 0)) <= 220:
+        raise PackError(f"work/{stem}/pack.json: beat — {{\"bpm\": 60–220, \"offset\": с}} (music.py beat_grid трека)")
+    return beat
+
+
 def check_plan(stem: str, pieces: list, durations: dict) -> list:
     """Куски решения → нормальный вид. Всё, что не так, — одной ошибкой со всеми причинами."""
     problems, out = [], []
-    known = {"clip", "from", "to", "speed", "gain", "mute", "fit", "exact", "cut", "why"}
+    known = {"clip", "from", "to", "speed", "gain", "mute", "fit", "exact", "cut", "ramp", "hold", "snap", "why"}
     for n, p in enumerate(pieces, 1):
         where = f"кусок {n}"
         if not isinstance(p, dict):
@@ -295,9 +319,19 @@ def check_plan(stem: str, pieces: list, durations: dict) -> list:
             problems.append(f"{where} ({name}): fit «{fit}» — бывает {' или '.join(FIT)}")
         if p.get("cut") not in (None, *CUTS):
             problems.append(f"{where} ({name}): cut «{p['cut']}» — бывает {' или '.join(CUTS)}")
+        ramp = p.get("ramp")
+        if ramp is not None:
+            if (not isinstance(ramp, list) or len(ramp) not in (2, 3)
+                    or not all(isinstance(v, (int, float)) and 0.5 <= v <= RAMP_MAX for v in ramp)):
+                problems.append(f"{where} ({name}): ramp — [начало, пик, конец] или [начало, конец], ×0.5–{RAMP_MAX:g}")
+            elif not p.get("mute"):
+                problems.append(f"{where} ({name}): ramp — только без звука (\"mute\": true): голос на рывке плывёт")
+        hold = p.get("hold", 0)
+        if not isinstance(hold, (int, float)) or not 0 <= hold <= HOLD_MAX:
+            problems.append(f"{where} ({name}): hold {hold!r} — стоп-кадр от 0 до {HOLD_MAX:g} с")
         out.append({"clip": name, "from": a, "to": min(b, dur), "speed": speed, "gain": float(p.get("gain", 0.0)),
                     "mute": bool(p.get("mute")), "fit": fit, "exact": bool(p.get("exact")), "cut": p.get("cut"),
-                    "why": p.get("why", "")})
+                    "ramp": ramp, "hold": float(hold or 0), "snap": bool(p.get("snap")), "why": p.get("why", "")})
     if problems:
         raise PackError(f"work/{stem}/pack.json:\n  " + "\n  ".join(problems))
     return out
@@ -361,7 +395,9 @@ def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out
     w, h = size
     a, b, speed = piece["start"], piece["end"], piece["speed"]
     frames = max(1, round((b - a) / speed * FPS))
-    samples = round(frames / FPS * 48000)
+    held = round(float(piece.get("hold") or 0) * FPS)           # стоп-кадр: последний кадр держится, звук — тишина
+    samples = round((frames + held) / FPS * 48000)
+    freeze = f",tpad=stop_mode=clone:stop_duration={held / FPS:.4f},trim=end_frame={frames + held}" if held else ""
     hdr = hdr_to_sdr(info)
     hdr = f"{hdr}," if hdr else ""
     base = f"[0:v]trim=0:{b - a:.6f},setpts=(PTS-STARTPTS)/{speed:.6f},fps={FPS}"
@@ -370,10 +406,10 @@ def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out
                  f"[s0]scale={w}:{h}:force_original_aspect_ratio=increase:out_range=tv,{hdr}format=yuv420p,"
                  f"crop={w}:{h},boxblur=36:2,eq=brightness=-0.06[bg];"
                  f"[s1]scale={w}:{h}:force_original_aspect_ratio=decrease:out_range=tv,{hdr}format=yuv420p[fg];"
-                 f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,trim=end_frame={frames}[v]")
+                 f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,trim=end_frame={frames}{freeze}[v]")
     else:
         video = (f"{base},scale={w}:{h}:force_original_aspect_ratio=increase:out_range=tv,{hdr}format=yuv420p,"
-                 f"crop={w}:{h},setsar=1,trim=end_frame={frames}[v]")
+                 f"crop={w}:{h},setsar=1,trim=end_frame={frames}{freeze}[v]")
     if info["has_audio"] and not piece["mute"]:
         audio = (f"[0:a]atrim=0:{b - a:.6f},asetpts=PTS-STARTPTS,{atempo(speed)},aresample=48000,"
                  f"aformat=channel_layouts=stereo,volume={gain:.2f}dB,apad=whole_len={samples},"
@@ -392,7 +428,63 @@ def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out
     if result.returncode != 0:
         tail = "\n".join(result.stderr.strip().splitlines()[-12:])
         raise PackError(f"ffmpeg упал на куске {clip.name} {a:.2f}–{b:.2f} с:\n{tail}")
-    return frames
+    return frames + held
+
+
+def ramp_speeds(curve: list, n: int = RAMP_STEPS) -> list:
+    """Скорости частей рывка по плавной кривой (smoothstep): разгон и торможение без ступенек."""
+    ease = lambda x: x * x * (3 - 2 * x)                                         # noqa: E731
+    out = []
+    for i in range(n):
+        x = (i + 0.5) / n
+        if len(curve) == 2:
+            out.append(curve[0] + (curve[1] - curve[0]) * ease(x))
+        elif x < 0.5:
+            out.append(curve[0] + (curve[1] - curve[0]) * ease(x / 0.5))
+        else:
+            out.append(curve[1] + (curve[2] - curve[1]) * ease((x - 0.5) / 0.5))
+    return out
+
+
+def chunks(p: dict) -> list:
+    """Что резать: обычный кусок — сам; рывок — RAMP_STEPS частей подряд со скоростью по кривой. Стоп-кадр — у последней."""
+    if not p["ramp"]:
+        return [dict(p)]
+    span = (p["end"] - p["start"]) / RAMP_STEPS
+    out = [dict(p, start=p["start"] + i * span, end=p["start"] + (i + 1) * span, speed=v, hold=0.0)
+           for i, v in enumerate(ramp_speeds(p["ramp"]))]
+    out[-1]["hold"] = p["hold"]
+    return out
+
+
+def chunk_frames(c: dict) -> int:
+    return max(1, round((c["end"] - c["start"]) / c["speed"] * FPS)) + round(float(c.get("hold") or 0) * FPS)
+
+
+def snap_chunks(p: dict, cs: list, t0: float, beat: dict, clip_dur: float) -> list:
+    """Конец куска — на долю музыки: ближайшая доля к естественному концу (не короче SNAP_MIN). Подгоняется стоп-кадр,
+    иначе конец последней части (у рывка — его скорость там же). Доля вне клипа — берётся предыдущая."""
+    period = 60.0 / float(beat["bpm"])
+    offset = float(beat.get("offset", 0.0))
+    total = sum(chunk_frames(c) for c in cs)
+    k = round((t0 + total / FPS - offset) / period)
+    for step in (0, -1, 1, -2):
+        target = offset + (k + step) * period
+        if target < t0 + SNAP_MIN:
+            continue
+        need = round((target - t0) * FPS) - sum(chunk_frames(c) for c in cs[:-1])
+        last = dict(cs[-1])
+        held = round(last["hold"] * FPS)
+        main = max(1, round((last["end"] - last["start"]) / last["speed"] * FPS))
+        if held and need - main >= 0:                       # есть стоп-кадр — подгоняется он, движение не трогаем
+            last["hold"] = (need - main) / FPS
+            return cs[:-1] + [last]
+        end = last["start"] + (need - held) / FPS * last["speed"]
+        if last["start"] < end <= clip_dur:
+            last["end"] = end
+            return cs[:-1] + [last]
+    raise PackError(f"кусок {p['clip']} {p['from']:g}–{p['to']:g}: конец не встаёт на долю — клипа не хватает; "
+                    f"сдвинь from/to или убери snap")
 
 
 def remap_clip_words(pieces: list, datas: dict) -> list:
@@ -438,6 +530,7 @@ def build(stem: str) -> Path:
     datas = {name: clip_info(stem, path, language) for name, path in files.items()}
     raw = load_plan(stem)
     plan = check_plan(stem, raw, {n: d["info"]["duration"] for n, d in datas.items()})
+    beat = load_beat(stem)
     stale = stale_edit(stem, raw)
     if stale:
         raise PackError(f"Сборка меняется, а в work/{stem}/edit.json есть {', '.join(stale)} — они по шкале старой "
@@ -454,6 +547,9 @@ def build(stem: str) -> Path:
                             f"ушло бы {lost:.0%} кадра. Поставь \"fit\": \"blur\" (клип целиком поверх размытой "
                             f"копии) или \"cover\" осознанно")
         p["start"], p["end"], p["speech"] = edges(p, datas[p["clip"]])
+        if p["snap"] and (p["speech"] or beat is None):
+            problems.append(f"кусок {n} ({p['clip']}): snap — " + ("только у куска без речи: конец речи двигать нельзя"
+                                                                   if p["speech"] else "нет долей: pack.json → beat"))
         if p["speech"] and p["speed"] > SPEECH_SPEED_MAX:
             problems.append(f"кусок {n} ({p['clip']}): в нём речь, а speed {p['speed']:g} — голос станет мультяшным "
                             f"(не быстрее {SPEECH_SPEED_MAX:g}); ускоряй куски без слов или поставь mute")
@@ -482,13 +578,22 @@ def build(stem: str) -> Path:
     try:
         acc, files_out = 0, []
         for n, p in enumerate(plan):
-            piece_file = tmp / f"piece_{n:03d}.mov"
-            frames = cut_piece(files[p["clip"]], datas[p["clip"]]["info"], p, (w, h), p["auto_gain"] + p["gain"],
-                               piece_file, bitrate)
+            info = datas[p["clip"]]["info"]
+            cs = chunks(p)
+            if p["snap"]:
+                cs = snap_chunks(p, cs, acc / FPS, beat, info["duration"])
+                p["end"], p["hold"] = cs[-1]["end"], cs[-1]["hold"]
+            frames = 0
+            for k, c in enumerate(cs):
+                piece_file = tmp / f"piece_{n:03d}_{k:02d}.mov"
+                frames += cut_piece(files[p["clip"]], info, c, (w, h), p["auto_gain"] + p["gain"], piece_file, bitrate)
+                files_out.append(piece_file)
             p["t0"], p["t1"], p["frames"] = round(acc / FPS, 6), round((acc + frames) / FPS, 6), frames
             acc += frames
-            files_out.append(piece_file)
-            speed = f" ×{p['speed']:g}" if p["speed"] != 1 else ""
+            speed = f" ×{p['speed']:g}" if p["speed"] != 1 and not p["ramp"] else ""
+            speed += f" рывок {'→'.join(f'{v:g}' for v in p['ramp'])}" if p["ramp"] else ""
+            speed += f" стоп {p['hold']:.2f} с" if p["hold"] else ""
+            speed += " в долю" if p["snap"] else ""
             level = f"  {p['auto_gain']:+.1f} дБ" if p["auto_gain"] else ""
             print(f"  {n + 1:>2}. {p['clip']} {p['start']:6.2f}–{p['end']:6.2f}{speed} → {p['t0']:6.2f}–{p['t1']:6.2f}"
                   f"{'  речь' if p['speech'] else ''}{level}", flush=True)
@@ -521,8 +626,9 @@ def build(stem: str) -> Path:
     (WORK_DIR / stem / "pack.built.json").write_text(json.dumps({
         "file": str(out), "size": out.stat().st_size, "fps": FPS, "format": fmt, "width": w, "height": h,
         "duration": acc / FPS, "joins": joins, "cuts": cuts, "plan": raw,
+        "beat": beat,
         "pieces": [{k: p[k] for k in ("clip", "start", "end", "speed", "t0", "t1", "frames", "speech", "auto_gain",
-                                      "gain", "mute", "fit", "why")} for p in plan],
+                                      "gain", "mute", "fit", "ramp", "hold", "snap", "why")} for p in plan],
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     # дубль, камера и маска от прошлой сборки — уже не про этот файл: без aroll.json дальше всё скажет «сначала prep»
     for name in ("aroll.json",):
@@ -545,7 +651,8 @@ def summary(stem: str) -> None:
         durations[name] = (json.loads(marks.read_text(encoding="utf-8"))["info"]["duration"] if marks.exists()
                            else probe(path)["duration"])
     plan = check_plan(stem, load_plan(stem), durations)
-    total = sum((p["to"] - p["from"]) / p["speed"] for p in plan)
+    total = sum((p["to"] - p["from"]) / (sum(ramp_speeds(p["ramp"])) / RAMP_STEPS if p["ramp"] else p["speed"]) + p["hold"]
+                for p in plan)
     for n, p in enumerate(plan, 1):
         speed = f" ×{p['speed']:g}" if p["speed"] != 1 else ""
         print(f"  {n:>2}. {p['clip']} {p['from']:6.2f}–{p['to']:6.2f}{speed}  {p['why']}")

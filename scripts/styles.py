@@ -62,6 +62,7 @@ FONTS = {
     "unbounded": {"file": "Unbounded-ExtraBold.ttf", "css": "Unbounded", "weight": 800},
     "rubik": {"file": "Rubik-Black.ttf", "css": "Rubik", "weight": 900},
     "golos": {"file": "GolosText-Black.ttf", "css": "Golos", "weight": 900},
+    "onest": {"file": "Onest-Black.ttf", "css": "Onest", "weight": 900},
     "alumni": {"file": "AlumniSans-Black.ttf", "css": "Alumni", "weight": 900},
 }
 
@@ -104,6 +105,12 @@ def validate(style: dict, source: str = "") -> dict:
         # цвет идёт и в ASS (там байты BGR по позициям), и в CSS: «#FFF» сломал бы оба молча
         if not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(caps.get(key, ""))):
             raise StyleError(f"{where}: captions.{key} «{caps.get(key)}» — нужен цвет вида #RRGGBB")
+    for key in ("active_box", "active_text"):
+        # караоке с плашкой (20.10.2026, «Вкудесник»): активное слово — на цветной плашке, а не только цветом
+        if key in caps and not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(caps[key])):
+            raise StyleError(f"{where}: captions.{key} «{caps[key]}» — нужен цвет вида #RRGGBB")
+    if "active_text" in caps and "active_box" not in caps:
+        raise StyleError(f"{where}: captions.active_text без active_box — цвет текста на плашке, а плашки нет")
     if caps["font"] not in FONTS:
         raise StyleError(f"{where}: шрифт «{caps['font']}» не из набора: {', '.join(FONTS)}")
     if not (FONT_DIR / FONTS[caps["font"]]["file"]).exists():

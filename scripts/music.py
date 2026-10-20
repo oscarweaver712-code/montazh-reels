@@ -63,6 +63,106 @@ def measure(path: Path, seconds: float = 70.0) -> dict:
     return {"bass": share(0, 250), "voice": share(1000, 4000), "spread": float(np.std(secs[2:60]))}
 
 
+DUCK_LIFT = 1.8           # во сколько раз музыка громче в тишине дубля, чем под голосом (+5 дБ). ×2.5 (+8 дБ) на
+                          # новоселье с хаусом дал пики +0.6 dBTP после мастеринга: бас поднятой музыки и удары в тишине
+DUCK_GAP = 0.8            # с: тишина короче — музыка не дёргается вверх-вниз между фразами
+DUCK_ATTACK = 0.12        # с: уход вниз перед голосом
+DUCK_RELEASE = 0.35       # с: подъём после голоса
+DUCK_WINDOW = 0.05        # с: окно огибающей дубля
+
+
+def duck_lane(audio: Path, duration: float, lift: float = DUCK_LIFT, gap: float = DUCK_GAP) -> list:
+    """Лента громкости музыки [[t, v], …] по живому звуку дубля: под голосом, смехом, «ура» — v = 1 (уровень проекта),
+    в тишине дольше gap — v = lift. Для kit.background_music(lane=…).
+
+    20.10.2026, «Вкудесник»: «музыку… не перебивающую основной звук и разговоры», а в сценах без речи (проходка, вход в
+    офис) подложка проекта звучала на −33 LUFS — ролик проседал. Активный звук — громче пола шума дубля на 12 дБ или не
+    тише речи на 24 дБ (смех и галдёж тоже «основной звук»), а не слова whisper: тайминги слов врут (инвариант 3).
+    Звук читается потоком — память не зависит от длины дубля.
+    """
+    hop = int(SR * DUCK_WINDOW)
+    proc = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(audio), "-vn", "-ac", "1", "-ar", str(SR),
+                             "-f", "s16le", "-"], stdout=subprocess.PIPE)
+    levels = []
+    try:
+        while chunk := proc.stdout.read(hop * 2 * 200):
+            x = np.frombuffer(chunk[:len(chunk) // (hop * 2) * hop * 2], np.int16).astype(float)
+            if len(x):
+                levels += list(20 * np.log10(np.sqrt((x.reshape(-1, hop) ** 2).mean(1)) + 1))
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    if not levels:
+        return []
+    env = np.array(levels)
+    floor, loud = float(np.percentile(env, 10)), float(np.percentile(env, 90))
+    active = env > min(floor + 12, loud - 24)
+    quiet, start = [], None
+    for k, on in enumerate(list(active) + [True]):
+        if not on and start is None:
+            start = k
+        elif on and start is not None:
+            a, b = start * DUCK_WINDOW, k * DUCK_WINDOW
+            if b - a >= gap:
+                quiet.append((a, min(b, duration)))
+            start = None
+    points = [[0.0, lift if quiet and quiet[0][0] <= 0.01 else 1.0]]
+    for a, b in quiet:
+        up = min(a + DUCK_RELEASE, b)
+        down = max(up, b - DUCK_ATTACK)
+        if a > 0.01:
+            points += [[a, 1.0], [up, lift]]
+        if b < duration - 0.01:
+            points += [[down, lift], [b, 1.0]]
+    return [[round(t, 3), v] for t, v in points]
+
+
+def beat_grid(path: Path, seconds: float = 60.0) -> tuple:
+    """(темп, сек. первой сильной доли) трека: огибающая атак → автокорреляция (темп) → фаза с самыми сильными атаками.
+
+    Для монтажа в долю: трек ставится с этой секунды (kit.background_music media_start), и доли ложатся на 0, 60/темп, …
+    шкалы ролика — куски сборки с "snap" кончаются на доле (pack.py).
+    """
+    sr, hop = 11025, 64
+    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-t", str(seconds), "-i", str(path), "-ac", "1", "-ar", str(sr),
+                          "-f", "s16le", "-"], capture_output=True).stdout
+    x = np.frombuffer(raw, np.int16).astype(float)
+    n = len(x) // hop
+    if n < 800:
+        raise SystemExit(f"✗ {path.name}: слишком коротко, чтобы найти доли")
+    energy = np.sqrt((x[:n * hop].reshape(n, hop) ** 2).mean(1))
+    onset = np.maximum(0, np.diff(np.log(energy + 1)))
+    onset -= onset.mean()
+    fps = sr / hop
+    ac = np.correlate(onset, onset, "full")[len(onset) - 1:]
+    lo, hi = int(fps * 60 / 160), int(fps * 60 / 75)
+    # у настоящего темпа совпадают и кратные периоды (2, 3, 4 доли), у ложного (4/3, 3/2 темпа) — нет; мягкий приоритет
+    # около 120 BPM — как у привычных треков под монтаж
+    lags = np.arange(lo, hi)
+    harm = sum(ac[np.minimum(np.round(lags * k).astype(int), len(ac) - 1)] / k for k in (1, 2, 3, 4))
+    prior = np.exp(-0.5 * (np.log2((60 * fps / lags) / 120.0) / 0.9) ** 2)
+    lag = int(lags[int(np.argmax(harm * prior))])
+    # пик между отсчётами — параболой по соседям: на минуте ролика ошибка темпа в 2% — это уже полсекунды мимо доли
+    a, b, c = ac[lag - 1], ac[lag], ac[lag + 1]
+    lag += 0.5 * (a - c) / (a - 2 * b + c) if (a - 2 * b + c) else 0.0
+    rough = 60 * fps / lag
+    # уточнение: темп и фаза, где атаки на долях сильнее всего выделяются против междолий (сумма атак тянула бы к
+    # быстрому темпу — у него просто больше долей)
+    pos = np.maximum(onset, 0)
+    best = (-np.inf, rough, 0.0)
+    for bpm in np.arange(rough * 0.97, rough * 1.03, 0.02):
+        period = fps * 60 / bpm
+        for ph in np.arange(0, period, 1.0):
+            on = pos[np.round(np.arange(ph, len(pos) - 1, period)).astype(int)].mean()
+            off = pos[np.round(np.arange(ph + period / 2, len(pos) - 1, period)).astype(int)].mean()
+            score = on / (off + 1e-9)
+            if score > best[0]:
+                best = (score, bpm, ph)
+    _, bpm, phase = best
+    offset = float(phase / fps)
+    return round(float(bpm), 2), round(offset, 3)
+
+
 def used() -> dict:
     """{трек: [ролики]} — по страницам studio/*/index.html."""
     found = {}

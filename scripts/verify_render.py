@@ -125,6 +125,7 @@ def face_brightness(path: Path, duration: float, frames: int = 12) -> tuple:
 # должен быть» (20.10): уровень проекта снижен на 2 дБ (project.json → music_level), нижняя граница — выше v5.
 MUSIC_BED_DB = 8.0
 MUSIC_QUIETEST = -26.5
+MUSIC_LOUDEST = -12.0     # дБ от речи: громче — музыка спорит с голосом (новоселье v2, 20.10.2026: +1.3, вровень с речью)
 
 
 def _pcm(path: Path):
@@ -224,9 +225,10 @@ def main():
         bed = music_bed(video, args.stem) if wants else None
         if bed is not None:
             rise, under = bed
-            check(rise >= MUSIC_BED_DB and under >= MUSIC_QUIETEST, "фоновая музыка слышна в паузах речи",
+            check(rise >= MUSIC_BED_DB and MUSIC_QUIETEST <= under <= MUSIC_LOUDEST,
+                  "фоновая музыка слышна в паузах речи и не спорит с голосом",
                   f"паузы громче голого дубля на {rise:.1f} дБ (нужно ≥ {MUSIC_BED_DB:g}), подложка {under:.1f} дБ "
-                  f"от речи (не тише {MUSIC_QUIETEST:g})")
+                  f"от речи (от {MUSIC_QUIETEST:g} до {MUSIC_LOUDEST:g})")
 
     worst = []
     for name, values in edge_lumas(video, width, height, step=1.0):

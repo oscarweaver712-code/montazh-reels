@@ -295,12 +295,18 @@ def patch_page(html: str, edits: dict, fps: float = 30) -> str:
             elif "data-orig-start" in attrs:
                 new = _set_attr(_set_attr(new, "data-start", orig_start), "data-orig-start", None)
         if m["tag"] == "audio":
+            # лента громкости (data-automation) в HyperFrames главнее data-volume: выключить звук — снять и её
+            orig_auto = attrs.get("data-orig-automation", attrs.get("data-automation"))
             if mute:
                 new = _set_attr(_set_attr(new, "data-volume", "0"), "data-orig-volume", orig_vol or "1")
+                if orig_auto:
+                    new = _set_attr(_set_attr(new, "data-automation", None), "data-orig-automation", orig_auto)
             elif "data-orig-volume" in attrs:
                 restored = attrs["data-orig-volume"]
                 new = _set_attr(new, "data-orig-volume", None)
                 new = _set_attr(new, "data-volume", restored) if restored else new
+                if "data-orig-automation" in attrs:
+                    new = _set_attr(_set_attr(new, "data-orig-automation", None), "data-automation", attrs["data-orig-automation"])
         if new != tag:
             line, col = m["pos"]
             at = offsets[line - 1] + col

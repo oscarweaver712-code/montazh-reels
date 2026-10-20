@@ -10,6 +10,7 @@ HyperFrames сводит голос со звуковыми эффектами �
 """
 import argparse
 import json
+import math
 import re
 import subprocess
 import sys
@@ -25,6 +26,7 @@ TARGET_LUFS = -14.0
 # голос с ударами до 0.7 дБ выше потолка. −2.0 оставляет этот запас; цель −1.5 dBTP не меняется.
 CEILING = 10 ** (-2.0 / 20)
 TOLERANCE = 0.6                      # насколько итог может отойти от цели
+TP_TARGET = -1.5                     # dBTP: норма истинного пика
 
 
 def measure(path: Path) -> dict:
@@ -40,28 +42,47 @@ def measure(path: Path) -> dict:
 
 
 def master(src: Path, dst: Path) -> dict:
+    """Громкость к цели и лимитер. Истинный пик выше нормы — ещё проходы с потолком ниже; отдаётся лучший проход.
+
+    Лимитер режет отсчёты, а норма — истинный пик между ними: на плотном басе музыки, поднятой в тишине (новоселье
+    «Вкудесника», 20.10.2026), после AAC вышло +0.6 dBTP. Лимитер на 4× частоте держал пик, но ронял громкость на 1.5 LU,
+    а снижение потолка с AAC немонотонно (−3 дБ дало пик хуже, чем −2 дБ) — поэтому несколько потолков и лучший из них.
+    Ролики, проходившие с первого раза, звучат как раньше: первый проход — прежний.
+    """
     before = measure(src)
     gain = TARGET_LUFS - before["i"]
     dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(f".{dst.stem}.mastering{dst.suffix}")
+    tries, best = [], None
+    ceiling_db = 20 * math.log10(CEILING)
     try:
-        result = subprocess.run([
-            ffmpeg_bin(), "-v", "error", "-y", "-i", str(src),
-            "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
-            "-af", f"volume={gain:.2f}dB,alimiter=limit={CEILING:.4f}:attack=3:release=60:level=false",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", str(tmp),
-        ], capture_output=True, encoding="utf-8", errors="replace")
-        if result.returncode != 0:
-            raise RuntimeError(f"Мастеринг упал:\n{result.stderr[-500:]}")
-        after = measure(tmp)
-        if abs(after["i"] - TARGET_LUFS) > TOLERANCE or after["tp"] > -0.9:
+        for attempt in range(4):
+            tmp = dst.with_name(f".{dst.stem}.mastering{attempt}{dst.suffix}")
+            tries.append(tmp)
+            result = subprocess.run([
+                ffmpeg_bin(), "-v", "error", "-y", "-i", str(src),
+                "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+                "-af", f"volume={gain:.2f}dB,alimiter=limit={10 ** (ceiling_db / 20):.4f}:attack=3:release=60:level=false",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", str(tmp),
+            ], capture_output=True, encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                raise RuntimeError(f"Мастеринг упал:\n{result.stderr[-500:]}")
+            after = measure(tmp)
+            fits = abs(after["i"] - TARGET_LUFS) <= TOLERANCE
+            if fits and (best is None or after["tp"] < best[1]["tp"]):
+                best = (tmp, after, round(ceiling_db, 2))
+            if fits and after["tp"] <= TP_TARGET:
+                break
+            ceiling_db -= max(0.5, after["tp"] - TP_TARGET + 0.3)   # на столько пик вышел за норму — плюс запас
+        if best is None or best[1]["tp"] > -0.9:
+            got = best[1] if best else after
             raise RuntimeError(
-                f"После мастеринга громкость {after['i']:.1f} LUFS, пики {after['tp']:.1f} dBTP — "
+                f"После мастеринга громкость {got['i']:.1f} LUFS, пики {got['tp']:.1f} dBTP — "
                 f"не попали в {TARGET_LUFS:g} LUFS / −1.5 dBTP. Файл не отдан.")
-        tmp.replace(dst)
+        best[0].replace(dst)
     finally:
-        tmp.unlink(missing_ok=True)
-    return {"before": before, "after": after, "gain": gain}
+        for tmp in tries:
+            tmp.unlink(missing_ok=True)
+    return {"before": before, "after": best[1], "gain": gain, "ceiling": best[2]}
 
 
 def main():
