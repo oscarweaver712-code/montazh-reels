@@ -1595,6 +1595,142 @@ def check_blueprint(report: Report, tmp: Path):
     report.check(loud == 4, "кривой вызов «Чертежа» — громкая ошибка: времена, длина на экране, раскладка", f"{loud} из 4")
 
 
+class _DesignTake:
+    """Сборка для приёмов дизайн-системы без дубля: то же, что Montage даёт приёмам score.py, — слои, js, окна."""
+
+    def __init__(self, system):
+        self.design, self.notes = system, []
+        self.behind_html, self.front_html, self.beats, self.hidden, self.fgs = [], [], [], [], []
+
+    def behind(self, h): self.behind_html.append(h)        # noqa: E704
+    def front(self, h): self.front_html.append(h)          # noqa: E704
+    def js(self, j): self.beats.append(j.rstrip("\n") + "\n")   # noqa: E704
+    def fg(self, a, b): self.fgs.append((a, b))            # noqa: E704
+    def hide(self, a, b): self.hidden.append((a, b))       # noqa: E704
+    def punch(self, *a, **k): pass                          # noqa: E704
+    def sound(self, *a, **k): pass                          # noqa: E704
+    def _face(self, a, b): return (330.0, 440.0, 750.0, 1060.0)   # noqa: E704
+
+
+def check_design(report: Report, tmp: Path):
+    """Дизайн-система проекта (projects/<проект>/DESIGN.md, scripts/design.py, 20.10.2026): DESIGN.md Антишколы
+    читается, а битый — громко и с местом; приёмы системы (буквы дымом, рукой, число отливом, список-обещание, ручка,
+    маркер субтитров) складываются в страницу без ошибок и залипаний; verify_page ловит цвет и шрифт мимо системы
+    (чужой цвет текста, чужой шрифт, чужая линия SVG), а цвета и шрифты системы — нет."""
+    import design
+    import score as sc
+    from kit import build_page
+    from verify_page import run_timeline
+
+    print("\nДизайн-система")
+    try:
+        system = design.by_name("antishkola")
+        ok = system is not None and len(system.fonts) == len(design.ROLES) and len(system.stops) >= 2
+        report.check(ok, "DESIGN.md Антишколы читается: цвета, градиент, шесть ролей шрифтов с кириллицей",
+                     ", ".join(f"{r} {f['family']}" for r, f in (system.fonts if system else {}).items()))
+    except design.DesignError as e:
+        report.check(False, "DESIGN.md Антишколы читается", str(e))
+        return
+    src = system.path.read_text(encoding="utf-8")
+    broken = {"цвет словом": (src.replace('text: "#F2EBDD"', 'text: "кремовый"'), "colors.text"),
+              "нет роли": (src.replace("  hand:\n    fontFamily: Caveat", "  scrawl:\n    fontFamily: Caveat", 1), "typography.hand"),
+              "нет файла": (src.replace("src: Caveat-Bold.ttf", "src: Nope-Bold.ttf"), "Nope-Bold.ttf"),
+              "отскок": (src.replace("enter: expo.out", "enter: back.out(1.7)"), "отскоки"),
+              "без шапки": (src.split("---", 2)[2], "нет шапки")}
+    caught = []
+    for what, (text, want) in broken.items():
+        path = tmp / "ds-broken" / what / "DESIGN.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        try:
+            design.Design(path, "broken")
+        except design.DesignError as e:
+            if want in str(e):
+                caught.append(what)
+    report.check(len(caught) == len(broken), "битый DESIGN.md — громкая ошибка с местом: цвет словом, нет роли, нет файла "
+                 "шрифта, отскок, нет шапки", f"поймано {len(caught)} из {len(broken)}: {', '.join(caught)}")
+
+    # партитура: приёмы системы — с проверкой формы до сборки
+    words = [{"word": f"слово{i}", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(40)]
+    good = {"items": [{"kind": "hand", "w": [0, 2], "text": "почему соседняя", "line": True},
+                      {"kind": "number", "w": [6, 8], "at": 7, "text": "2/3", "sub": "шанс, что другая быстрее"},
+                      {"kind": "promise", "w": [10, 20], "title": "3 причины",
+                       "rows": [{"text": "вероятность", "w": 12}, {"text": "память", "w": 15}, {"text": "теория очередей", "w": 18}]},
+                      {"kind": "strike", "w": [24, 25], "at": 25, "text": "проклят"}]}
+    bad = {"items": [{"kind": "promise", "w": [10, 20], "title": "три причины, почему так бывает всегда",
+                      "rows": [{"text": "память", "w": 15}, {"text": "вероятность", "w": 12}, {"text": "лишнее", "w": 30}]},
+                     {"kind": "number", "w": [26, 27], "text": "1234567890"}]}
+    errs_good, errs_bad = sc.check(good, words), sc.check(bad, words)
+    want = {"не позже": "пункты не по порядку", "вне окна списка": "пункт вне окна", "title": "длинный заголовок",
+            "items[1] (number).text": "длинное число"}
+    missed = [what for key, what in want.items() if not any(key in e for e in errs_bad)]
+    report.check(not errs_good and not missed, "партитура системы: hand, number, promise, strike проходят, ошибки ловятся",
+                 f"годная: {'; '.join(errs_good) or 'чисто'}; не поймано: {', '.join(missed) or 'ничего'}")
+
+    # страница: все приёмы системы + маркер субтитров + три нарушения, которые проверка обязана поймать
+    project = tmp / "ds"
+    (project / "assets" / "fonts").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    for spec in system.fonts.values():
+        shutil.copy2(design.FONT_DIR / spec["src"], project / "assets" / "fonts" / spec["src"])
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    caps = [{"t0": 0.2, "t1": 1.2, "text": "соседняя", "accent": False}, {"t0": 1.2, "t1": 2.0, "text": "всегда", "accent": True}]
+    (project / "captions.js").write_text(f"window.CAPTIONS = {json.dumps(caps, ensure_ascii=False)};\n", encoding="utf-8")
+    stage_page_assets(project)
+    times = [{"start": t} for t in (5.6, 6.4, 7.2, 8.0)]
+    start = lambda i: times[i]["start"]                    # noqa: E731
+    end = lambda i: times[i]["start"] + 0.3                # noqa: E731
+    m = _DesignTake(system)
+    sc._word(m, "w", {"w": [0, 0], "text": "быстрее"}, 2.2, 3.4, 2.2)
+    sc._hand(m, "h", {"text": "почему соседняя", "line": True}, 0.2, 1.8)
+    sc._number(m, "n", {"text": "2/3", "sub": "шанс, что другая быстрее"}, 3.8, 5.0, 4.0)
+    sc._promise(m, "p", {"title": "3 причины", "rows": [{"text": "вероятность", "w": 1}, {"text": "память", "w": 2},
+                                                         {"text": "теория очередей", "w": 3}]}, 5.4, 8.6, start, end)
+    sc._strike(m, "s", {"text": "проклят"}, 9.0, 10.2, 9.6)
+    bad_html = ('        <div id="d-green" class="g" style="left: 245px; top: 1300px; font-family: \'Inter Display\'; '
+                'font-size: 60px; color: #00C853;">зелёный</div>\n'
+                '        <div id="d-font" class="g" style="left: 245px; top: 1400px; font-family: Montserrat; font-size: 60px; '
+                'color: #F2EBDD;">чужой шрифт</div>\n'
+                '        <svg id="d-blue" class="g" viewBox="0 0 400 40" style="left: 245px; top: 1500px; width: 400px; height: 40px;">'
+                '<path d="M 0 20 H 400" stroke="#3F5FFF" stroke-width="8" fill="none" /></svg>')
+    bad_js = "".join(f'      tl.set("#{i}", {{ opacity: 1 }}, 11.0);\n      tl.set("#{i}", {{ opacity: 0 }}, 11.8);\n'
+                     for i in ("d-green", "d-font", "d-blue"))
+    cap_style = system.captions({"mode": "words", "position": "chest", "color": "#F2EBDD", "highlight": "#FF4A3D",
+                                 "animation": "blur", "case": "lower"})
+    page = build_page("система", 12.5, "\n".join(m.behind_html), "\n".join([system.defs()] + m.front_html + [bad_html]),
+                      system.js() + "".join(m.beats) + bad_js, [], m.fgs, cta_at=12.0, extra_css=system.css(),
+                      captions=cap_style, cta=False)
+    (project / "index.html").write_text(page, encoding="utf-8")
+    res = run_timeline(project / "index.html", design=system.allowed(),
+                       faces=[[round(k * 0.25, 2), 330.0, 440.0, 750.0, 1060.0] for k in range(50)])
+    errors = res.get("pageErrors", []) + [w for w in res.get("warnings", []) if "not found" in w or "Invalid" in w]
+    stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", [])]
+    flagged = sorted({d["el"].split(" ")[0] for d in res.get("design", [])})
+    report.check(res.get("ok") and not errors and not stuck, "приёмы системы на странице: буквы дымом и рукой, число "
+                 "отливом, список с квадратами, ручка, маркер субтитров — без ошибок JS и залипаний",
+                 f"ошибок {len(errors)}{': ' + errors[0] if errors else ''}, залипает {stuck or 'ничего'}")
+    report.check(flagged == ["#d-blue", "#d-font", "#d-green"],
+                 "verify_page ловит цвет и шрифт мимо DESIGN.md (чужой цвет текста, шрифт, линия SVG), а систему — нет",
+                 "; ".join(f"{d['el']} {d['what']} {d['value']}" for d in res.get("design", [])[:6]) or "ничего не поймано")
+    # маркер субтитров открывается на ключевом слове: копия слова на плашке, шторка раскрыта
+    probe = probe_page(project, """() => {
+      const tl = window.__timelines.main; tl.totalTime(1.7, false);
+      const fills = [...document.querySelectorAll("#caps .ds-mk-fill")];
+      const ch = getComputedStyle(document.querySelector("#h .ds-ch"));
+      return { n: fills.length, text: fills[0] && fills[0].textContent, clip: fills[0] && getComputedStyle(fills[0]).clipPath,
+               pad: parseFloat(ch.paddingLeft) / parseFloat(ch.fontSize), shift: parseFloat(ch.marginLeft) + parseFloat(ch.paddingLeft) };
+    }""")
+    # буква рукописи движется своим слоем: без запаса по бокам Chrome срезает штрих Caveat по ячейке (Валера 20.10.2026,
+    # доска: «буквы откусаны слева справа»); поля компенсированы минус-полями — строка не сдвигается
+    report.check(probe.get("pad", 0) >= 0.1 and abs(probe.get("shift", 1)) < 0.5,
+                 "буквы, которые движутся по одной, — с запасом по бокам (штрих рукописи не срезается), строка на месте",
+                 f"запас {probe.get('pad', 0):.2f} em, сдвиг {probe.get('shift', 0):.1f} px")
+    report.check(probe.get("n") == 1 and probe.get("text") == "всегда" and "-6%" in str(probe.get("clip", "")).replace(" ", "")
+                 and not probe.get("errors"),
+                 "маркер субтитров: стальная плашка только у ключевого слова и раскрыта к его середине",
+                 f"плашек {probe.get('n')}, текст {probe.get('text')!r}, шторка {probe.get('clip')}, ошибки {probe.get('errors')}")
+
+
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
     """Скрипт не называется как модуль стандартной библиотеки.
 
@@ -3877,6 +4013,7 @@ def main():
         section(report, check_plan, tmp)
         section(report, check_events, tmp)
         section(report, check_blueprint, tmp)
+        section(report, check_design, tmp)
         section(report, check_board, tmp)
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)

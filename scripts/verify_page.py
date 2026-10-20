@@ -580,6 +580,66 @@ CHECK_JS = r"""
       for (const rec of open.values()) if (rec.count >= 2) res.spills.push(rec);
     }
 
+    // ---- дизайн-система (Валера 20.10.2026: «один раз собрать идеальную — шрифты и т. п.»): на странице проекта с
+    // DESIGN.md (meta reels-design) видимый текст набран только шрифтами системы, а цвет текста, заливок (и ::before,
+    // ::after), рамок и линий SVG — только её цветами и точками градиента, с любой прозрачностью. Элемент проверяется в
+    // первый замер, когда виден. Тени не в счёт (они чёрные по системе), вспышки переходов и видео — тоже.
+    res.design = [];
+    if (C.design) {
+      const pal = C.design.colors, fonts = new Set(C.design.fonts.map((f) => f.toLowerCase()));
+      const ok = (c) => pal.some((p) => Math.abs(p[0] - c[0]) <= 6 && Math.abs(p[1] - c[1]) <= 6 && Math.abs(p[2] - c[2]) <= 6);
+      const rgbs = (s) => [...String(s || "").matchAll(/rgba?\(([^)]*)\)/g)]
+        .map((m) => m[1].split(/[\s,\/]+/).filter(Boolean).map(Number))
+        .filter((v) => v.length >= 3 && !(v.length > 3 && v[3] <= 0.05));
+      const paint = (v) => {                       // fill и stroke: цвет или url(#градиент) — тогда его точки
+        const ref = /url\(["']?#([^"')]+)["']?\)/.exec(String(v || ""));
+        if (!ref) return rgbs(v);
+        const g = document.getElementById(ref[1]);
+        return g ? [...g.querySelectorAll("stop")].flatMap((s) => rgbs(getComputedStyle(s).stopColor)) : [];
+      };
+      const own = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+      const shownD = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.3) return false;
+        }
+        return true;
+      };
+      const rgbText = (c) => `rgb(${c.slice(0, 3).join(", ")})`;
+      const offs = (el) => {
+        const cs = getComputedStyle(el), bad = [], svg = el instanceof SVGElement;
+        if (own(el)) {
+          const fam = cs.fontFamily.split(",")[0].replace(/["']/g, "").trim();
+          if (!fonts.has(fam.toLowerCase())) bad.push(["шрифт", fam]);
+          if (!svg) for (const c of rgbs(cs.color)) if (!ok(c)) bad.push(["цвет текста", rgbText(c)]);
+        }
+        if (svg && !(el instanceof SVGSVGElement) && !(el instanceof SVGGElement)) {
+          for (const [k, v] of [["заливка", cs.fill], ["линия", cs.stroke]])
+            for (const c of paint(v)) if (!ok(c)) bad.push([k, rgbText(c)]);
+        }
+        if (!svg) for (const pseudo of [null, "::before", "::after"]) {
+          const ps = pseudo ? getComputedStyle(el, pseudo) : cs;
+          if (pseudo && (ps.content === "none" || ps.content === "normal")) continue;
+          for (const c of rgbs(ps.backgroundColor).concat(rgbs(ps.backgroundImage)))
+            if (!ok(c)) bad.push([`фон${pseudo || ""}`, rgbText(c)]);
+          if (parseFloat(ps.borderTopWidth) > 0 && ps.borderTopStyle !== "none")
+            for (const c of rgbs(ps.borderTopColor)) if (!ok(c)) bad.push([`рамка${pseudo || ""}`, rgbText(c)]);
+        }
+        return bad;
+      };
+      const skipped = "#flash, #hook-flash, defs, linearGradient, radialGradient, pattern, video, img, audio, script";
+      let todo = [...document.querySelectorAll("#front *, #behind *")].filter((el) => !el.closest(skipped));
+      for (let t = 0; t <= duration + 1e-6 && todo.length; t += 0.5) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        const rest = [];
+        for (const el of todo) {
+          if (!shownD(el)) { rest.push(el); continue; }
+          for (const [what, value] of offs(el)) res.design.push({ el: label(el), what, value, t });
+        }
+        todo = rest;
+      }
+    }
+
     // ---- пустые места (Валера 19.10.2026, демо IMG_3292 v2: «в какой-то момент нет никаких вставок, и при этом
     // субтитры идут одинаково скучно — динамика очень теряется»): 15 с без единой вставки. Вставка — любая графика
     // на экране (#front .g, #behind .g: текст, «Чертёж», клип, штамп, плашка), вспышки — нет. Сюда — участки
@@ -897,10 +957,11 @@ def face_track(project: Path, step: float = 0.25, margin: float = 12.0) -> list:
 
 
 def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: list | None = None,
-                 faces: list | None = None, splices: list | None = None) -> dict:
+                 faces: list | None = None, splices: list | None = None, design: dict | None = None) -> dict:
     """Прогоняет таймлайн страницы в headless Chrome и возвращает разбор (см. CHECK_JS).
 
     zones — серые зоны площадок [(название, (x0, y0, x1, y1))]: текст в них попадёт в res["grey"].
+    design — что разрешает DESIGN.md проекта (design.Design.allowed): цвет или шрифт мимо него — в res["design"].
     """
     page_path = Path(page_path).resolve()
     page = page_path.read_text(encoding="utf-8")
@@ -909,7 +970,8 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
     config = json.dumps({"fps": fps, "errors": [], "warnings": [], "zoneStep": 0.25, "zoneDepth": 8,
                          "holdMax": HOLD_MAX,
                          "zones": [{"name": name, "rect": list(rect)} for name, rect in (zones or [])],
-                         "faces": [list(f) for f in (faces or [])], "splices": list(splices or [])},
+                         "faces": [list(f) for f in (faces or [])], "splices": list(splices or []),
+                         "design": design},
                         ensure_ascii=False)
     head = (f'<head>\n    <base href="{page_path.parent.as_uri()}/">\n'
             f'    <script>window.__HF_CHECK = {config};{EARLY_JS}    </script>')
@@ -1111,7 +1173,21 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     import formats
     zones = formats.grey_zones(stage_format(page_text)) if stage_format(page_text) else []
     faces = face_track(project)
-    res = run_timeline(page_path, fps, zones=zones, faces=faces, splices=splices)
+    # дизайн-система: страница помечена проектом, у которого есть DESIGN.md (montage.py) — проверка цветов и шрифтов
+    palette, marked = None, re.search(r'<meta name="reels-design" content="([^"]+)"', page_text)
+    if marked:
+        import design as ds
+        name = html.unescape(marked.group(1))
+        try:
+            system = ds.by_name(name)
+        except ds.DesignError as e:
+            system = None
+            check(False, "DESIGN.md проекта читается", str(e).splitlines())
+        else:
+            if system is None:
+                check(False, f"страница собрана по дизайн-системе {name}, а projects/{name}/DESIGN.md нет")
+        palette = system.allowed() if system else None
+    res = run_timeline(page_path, fps, zones=zones, faces=faces, splices=splices, design=palette)
     if not res.get("ok"):
         check(False, "таймлайн разобран", [res.get("crash", "?")])
         return failed
@@ -1173,6 +1249,17 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         bare = [f"{a:.2f}–{b:.2f} с: {b - a:.1f} с без единой вставки — поставь приём по словам этого места "
                 f"(«Чертёж», штамп, клип, карточка)" for a, b in res.get("bare", []) if b - a > float(gap_max)]
         check(not bare, f"нет пустых мест без вставок дольше {float(gap_max):g} с (project.json → insert_gap_max)", bare)
+    if palette:
+        seen_off, off = set(), []
+        for d in res.get("design", []):
+            key = (d["el"], d["what"], d["value"])
+            if key not in seen_off:
+                seen_off.add(key)
+                off.append(f"{d['el']}: {d['what']} {d['value']} — нет в DESIGN.md ({d['t']:.1f} с)")
+        if strict:
+            check(not off, "цвета и шрифты — только из DESIGN.md проекта", off)
+        elif off:
+            print(f"  · мимо DESIGN.md: {len(off)} (при правке ролика — цвет или шрифт из системы)")
     over = res.get("fgOverCut", [])
     check(not over, "на перебивке (футаж, серия картинок) нет человека поверх — окна вырезки до и после",
           [f"вырезка видна поверх перебивки на {over[0]:.2f}–{over[-1]:.2f} с ({len(over)} замеров)"] if over else [])

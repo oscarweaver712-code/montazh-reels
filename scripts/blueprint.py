@@ -43,7 +43,9 @@ LAYOUTS = ("behind", "chest", "split", "full")
 FONT_DIR = Path(__file__).resolve().parents[1] / "presets" / "fonts"
 WEIGHTS = {"Cormorant": 700, "Cormorant-i": 600}           # жирность переменных шрифтов в CSS страницы
 FONT_FILES = {"Oswald": "Oswald-Bold.ttf", "Manrope": "Manrope-ExtraBold.ttf", "Cormorant": "CormorantGaramond.ttf",
-              "Cormorant-i": "CormorantGaramond-Italic.ttf", "JBMono": "JetBrainsMono.ttf"}
+              "Cormorant-i": "CormorantGaramond-Italic.ttf", "JBMono": "JetBrainsMono.ttf",
+              # приёмы дизайн-системы (score.py: hand, number, strike) меряют строку теми же метриками
+              "Caveat": "Caveat-Bold.ttf", "Unbounded": "Unbounded-ExtraBold.ttf", "InterDisplay-800": "InterDisplay-ExtraBold.ttf"}
 # серые зоны площадок (formats.GREY_ZONES): верх во всю ширину до TOP_LINE, кнопки справа — ниже BUTTONS_LINE
 ZONES = [z for _, z in formats.grey_zones("9:16")]
 TOP_LINE = max(z[3] for z in ZONES if z[0] <= 0 and z[2] >= W and z[1] <= 0)
@@ -202,7 +204,7 @@ def _label(lid: str, text: str, x: float, y: float, box: tuple, sub: str = "", c
 
 def _pop(sel: str, t: float) -> str:
     return (f'      tl.fromTo("{sel}", {{ opacity: 0, scale: 0, transformOrigin: "50% 50%" }}, '
-            f'{{ opacity: 1, scale: 1, duration: 0.22, ease: "back.out(2.5)" }}, {t:.2f});')
+            f'{{ opacity: 1, scale: 1, duration: 0.22, ease: window.DS_ENTER ?? "back.out(2.5)" }}, {t:.2f});')
 
 
 def _enter(sel: str, t: float) -> str:
@@ -631,8 +633,11 @@ def look(label: str = "", fig: int = 1) -> tuple:
                       for x, y in ((80, 300), (W - 80, 300), (80, 1300), (W - 80, 1300)))
             + "</svg>")
     # подпись места — сверху слева (ниже вкладок TikTok): внизу справа её закрывают кнопки площадок
-    caption = (f'          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; font-family: Manrope; '
-               f'font-weight: 800; font-size: 32px; letter-spacing: 0.18em; text-transform: uppercase; color: {CREAM}; '
+    # шрифт подписи — переменными с прежними значениями: дизайн-система проекта (design.py) ставит свои, без неё всё как было
+    caption = (f'          <div style="position: absolute; left: 120px; top: 340px; max-width: 840px; '
+               f'font-family: var(--ds-label-font, Manrope); font-weight: var(--ds-label-weight, 800); '
+               f'font-size: var(--ds-label-size, 32px); letter-spacing: var(--ds-label-track, 0.18em); '
+               f'text-transform: var(--ds-label-case, uppercase); color: {CREAM}; '
                f'text-shadow: 0 2px 8px rgba(0,0,0,0.7); background: rgba(20,18,16,0.6); padding: 6px 14px 8px; '
                f'border-radius: 4px;">{label}</div>\n') if label else ""
     # подложка подписи: на светлом небе клипа она не читалась (19.10.2026, критик IMG_3292)

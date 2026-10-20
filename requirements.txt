@@ -6,6 +6,7 @@
 numpy==2.4.6
 scipy==1.18.0                     # track.py: сглаживание камеры
 fonttools==4.63.0                 # проверка кириллицы в шрифтах
+pyyaml==6.0.3                     # шапка DESIGN.md проекта (scripts/design.py); и так приходит с EasyOCR — закреплена
 fastapi==0.140.7                  # сервер студии (server.py, studio_api.py)
 uvicorn==0.51.0
 python-multipart==0.0.32

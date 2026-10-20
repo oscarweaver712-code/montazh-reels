@@ -24,7 +24,13 @@ page.py — программу с нуля. Партитура — только 
        "stops": [{"label": "Индия", "x": 0.9, "y": 0.2, "w": 64}, …]},
       {"kind": "timeline", "layout": "split", "until": 56, "marks": [{"label": "IX век", "sub": "Багдад", "w": 43}, …]},
       {"kind": "compass" | "hexes" | "cuboid" | "plot", "w": [i, j], "layout": "…", …параметры приёма blueprint},
-      {"kind": "clip",   "w": [34, 41], "name": "a_india", "label": "Индия, V век"}      # клип Flow, уже принятый
+      {"kind": "clip",   "w": [34, 41], "name": "a_india", "label": "Индия, V век"},     # клип Flow, уже принятый
+      # приёмы дизайн-системы проекта (projects/<проект>/DESIGN.md, scripts/design.py) — только там, где она есть:
+      {"kind": "hand",    "w": [0, 2], "text": "почему соседняя", "line": true},       # пометка рукой над головой
+      {"kind": "number",  "w": [30, 34], "at": 32, "text": "2/3", "sub": "шанс, что другая быстрее"},
+      {"kind": "promise", "w": [40, 70], "title": "3 причины",                         # список-обещание на груди
+       "rows": [{"text": "вероятность", "w": 45}, {"text": "память", "w": 58}, {"text": "теория очередей", "w": 66}]},
+      {"kind": "strike",  "w": [80, 82], "at": 82, "text": "проклят"}               # красная ручка по мифу
     ]
   }
 
@@ -32,6 +38,7 @@ page.py — программу с нуля. Партитура — только 
   .venv/bin/python scripts/score.py IMG_3292 --variant auto --check      # только проверить партитуру
 """
 import argparse
+import html
 import json
 import re
 import sys
@@ -40,6 +47,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import blueprint as bp  # noqa: E402
+import design  # noqa: E402
 from common import WORK_DIR  # noqa: E402
 
 RED = bp.RED
@@ -57,10 +65,19 @@ KINDS = {
     "cuboid": ({"w"}, {"layout", "dims", "hide"}),
     "plot": ({"w", "ys"}, {"layout", "mark", "xlabel", "ylabel", "label", "hide"}),
     "clip": ({"w", "name"}, {"label"}),
+    # дизайн-система проекта (DESIGN.md): пометка рукой, число отливом, список-обещание, красная ручка по мифу
+    "hand": ({"w", "text"}, {"line", "hide"}),
+    "number": ({"w", "text"}, {"at", "sub", "hide"}),
+    "promise": ({"w", "title", "rows"}, set()),
+    "strike": ({"w", "text"}, {"at"}),
 }
+DESIGN_KINDS = {"hand", "number", "promise", "strike"}
 TOP = {"title", "hook", "cta", "accent", "text_fixes", "keep_case", "hide", "items", "_note"}
 SAME_RUN = 2           # приёмов подряд в одной раскладке — больше однообразно
-TEXT_MAX = {"word": 12, "stamp": 14, "write": 18}     # знаков в одну строку: крупное слово, штамп, запись
+TEXT_MAX = {"word": 12, "stamp": 14, "write": 18,      # знаков в одну строку: крупное слово, штамп, запись,
+            "hand": 26, "number": 7, "strike": 14, "promise": 22}   # пометка, число, миф, заголовок списка
+ROW_MAX, ROWS = 24, (2, 4)                             # строка списка-обещания; строк в нём
+LIST_TOP = 1262        # px: верх списка и мифа на груди — под линией субтитров (1150), над рукой с микрофоном
 SUB_MAX, LABEL_MAX = 30, 14                             # подпись под записью или у клипа; метка маршрута и оси
 WORD_MIN = 96          # px: меньше кегль слова над головой не читается — тогда слово на груди
 CTA_TAIL = 2.8          # с: от призыва до конца речи — субтитры спрятаны с призыва − 0,2 с (verify_page: не дольше 3 с)
@@ -157,7 +174,27 @@ def check(score: dict, words: list) -> list:
         # надпись — одна строка без переноса: предложение в подписи уходит за кадр (19.10.2026, аналитик IMG_3303:
         # «плоскости теряют даже плотно уложенные круги» вылезла на 785 px). Длиннее — короче или в субтитры
         texts = [("text", item.get("text"), TEXT_MAX.get(kind, 18)), ("sub", item.get("sub"), SUB_MAX),
-                 ("label", item.get("label"), SUB_MAX)]
+                 ("label", item.get("label"), SUB_MAX), ("title", item.get("title"), TEXT_MAX.get(kind, 18))]
+        if kind == "promise" and isinstance(item.get("rows"), list):       # у hexes «rows» — число рядов
+            texts += [(f"rows[{j}].text", r.get("text"), ROW_MAX) for j, r in enumerate(item["rows"]) if isinstance(r, dict)]
+        if kind == "promise":
+            # пункты — по порядку речи и внутри окна списка: квадрат заливается на слове пункта
+            rows, prev = item.get("rows"), None
+            if not isinstance(rows, list) or not ROWS[0] <= len(rows) <= ROWS[1]:
+                errs.append(f"{where}.rows: {ROWS[0]}–{ROWS[1]} строки [{{\"text\": \"…\", \"w\": номер слова}}, …]")
+                rows = []
+            win = item.get("w") if isinstance(item.get("w"), list) and len(item["w"]) == 2 else None
+            for j, r in enumerate(rows):
+                if not isinstance(r, dict) or not isinstance(r.get("text"), str) or "w" not in r:
+                    errs.append(f"{where}.rows[{j}]: нужны «text» и «w» (слово, на котором пункт пройден)")
+                    continue
+                if not word(r["w"], f"{where}.rows[{j}]"):
+                    continue
+                if win and all(isinstance(x, int) for x in win) and not win[0] <= r["w"] <= win[1]:
+                    errs.append(f"{where}.rows[{j}]: слово {r['w']} вне окна списка {win}")
+                if prev is not None and r["w"] <= prev:
+                    errs.append(f"{where}.rows[{j}]: пункты по порядку речи — слово {r['w']} не позже {prev}")
+                prev = r["w"]
         texts += [(f"{key}[{j}].{f}", step.get(f), LABEL_MAX if f == "label" else SUB_MAX)
                   for key in ("stops", "marks") for j, step in enumerate(item.get(key) or []) if isinstance(step, dict)
                   for f in ("label", "sub")]
@@ -192,7 +229,8 @@ def check(score: dict, words: list) -> list:
 
 def where_of(item: dict) -> str:
     """Где приём на экране: раскладка «Чертежа», а для своих видов — их место."""
-    fixed = {"word": "behind", "stamp": "chest", "clip": "full"}
+    fixed = {"word": "behind", "stamp": "chest", "clip": "full", "hand": "behind", "number": "behind",
+             "promise": "chest", "strike": "chest"}
     defaults = {"write": "split", "route": "behind", "timeline": "split", "compass": "behind", "hexes": "behind",
                 "cuboid": "split", "plot": "split"}
     return fixed.get(item.get("kind")) or item.get("layout") or defaults.get(item.get("kind"), "?")
@@ -216,10 +254,20 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
         if a is not None and b - a < MIN_SHOW:
             b = round(a + MIN_SHOW, 2)
         try:
+            if kind in DESIGN_KINDS and not m.design:
+                raise ValueError(f"приём {kind} — из дизайн-системы, а у проекта {m.project.name} нет DESIGN.md")
             if kind == "word":
                 _word(m, pid, item, a, b, start(item.get("at", item["w"][0])))
             elif kind == "stamp":
                 _stamp(m, pid, item, a, b)
+            elif kind == "hand":
+                _hand(m, pid, item, a, b)
+            elif kind == "number":
+                _number(m, pid, item, a, b, start(item.get("at", item["w"][0])))
+            elif kind == "promise":
+                _promise(m, pid, item, a, b, start, end)
+            elif kind == "strike":
+                _strike(m, pid, item, a, b, start(item.get("at", item["w"][1])))
             elif kind == "clip":
                 m.footage(pid, item["name"], a, round(b - a, 2), label=item.get("label", ""))
             else:
@@ -278,17 +326,23 @@ def _word(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
         line = 0.92 * px
         return max(0.0, bp.TOP_LINE + 2 + line - top) / line * min(1.0, head_w / (em * px))
     size = item.get("size") or next((px for px in range(wide, 59, -2) if hidden(px) <= 0.2), 0)
-    color = f" color: {RED};" if item.get("red", True) else ""
+    # в дизайн-системе красный — только ошибка: крупное слово кремом, если партитура не сказала "red": true
+    color = f" color: {RED};" if item.get("red", not m.design) else ""
+    body = design.letters(text) if m.design else text
     if size >= WORD_MIN:
-        m.behind(f'        <div id="{pid}" class="g big" style="top: {bp.TOP_LINE + 2}px; font-size: {size}px;{color}">{text}</div>')
+        m.behind(f'        <div id="{pid}" class="g big" style="top: {bp.TOP_LINE + 2}px; font-size: {size}px;{color}">{body}</div>')
         m.fg(min(a, at) - 0.3, leave + 0.25)
     else:                                       # над головой тесно — на груди, под линией субтитров, поверх человека
         size = min(wide, 150)
         m.front(f'        <div id="{pid}" class="g big" data-safe="крупное слово на груди: над головой нет места" '
-                f'data-safe-zones="низ" style="top: 1240px; font-size: {size}px;{color}">{text}</div>')
+                f'data-safe-zones="низ" style="top: 1240px; font-size: {size}px;{color}">{body}</div>')
         m.notes.append(f"слово «{text}» — на груди: над головой (верх головы y {top:.0f}) не встаёт и в {WORD_MIN} px")
-    m.js(f'      slam("#{pid}", {at:.2f}, {{ fromScale: 1.5 }});\n'
-         f'      leave("#{pid}", {leave:.2f}, {{ y: -60, dur: 0.2 }});')
+    if m.design:                                # буквы из дыма, слева направо; удар камеры и звук — на «at»
+        m.js(f'      dsSmoke("#{pid}", {min(a, at):.2f});\n'
+             f'      leave("#{pid}", {leave:.2f}, {{ y: -60, dur: 0.2 }});')
+    else:
+        m.js(f'      slam("#{pid}", {at:.2f}, {{ fromScale: 1.5 }});\n'
+             f'      leave("#{pid}", {leave:.2f}, {{ y: -60, dur: 0.2 }});')
     m.hide(min(a, at) - 0.05, leave + 0.05)
     m.sound(f"{pid}-hit", "impact-bass-1", at, 0.9)
     m.punch(at, leave)
@@ -306,6 +360,116 @@ def _stamp(m, pid: str, item: dict, a: float, b: float) -> None:
     m.js(f'      slam("#{pid}", {a:.2f}, {{ fromScale: 2.0, blur: 10, rot: {rot} }});\n'
          f'      leave("#{pid}", {leave:.2f}, {{ rot: {rot} }});')
     m.hide(a - 0.06, b + 0.05)
+
+
+def _over_head(m, text: str, family: str, a: float, b: float, top: float, line: float, biggest: int,
+               smallest: int) -> int:
+    """Самый крупный кегль строки над головой в окне [a, b]: голова (как у _word и verify_page) закрывает не больше
+    0,2 строки. 0 — строка не встаёт над головой и в smallest px: тогда приём идёт на грудь."""
+    x0, y0, x1, y1 = m._face(a, b)
+    head_top, head_w = y0 - 0.2 * (y1 - y0) - 25, (x1 - x0) * 1.3
+    em = max(bp._em(text, family), 1e-3)
+    wide = int(min(biggest, 0.9 * bp.W / em))
+
+    def hidden(px: int) -> float:
+        h = line * px
+        return max(0.0, top + h - head_top) / h * min(1.0, head_w / (em * px))
+    return next((px for px in range(wide, smallest - 1, -2) if hidden(px) <= 0.2), 0)
+
+
+def _hand(m, pid: str, item: dict, a: float, b: float) -> None:
+    """Пометка рукой над головой (Caveat, по буквам): вопрос хука, «ответ — в конце»; человек поверх, "line" — стальной
+    подчерк. Субтитры идут: пометка добавляет к речи, а не повторяет её (повторяет — "hide": true)."""
+    text = item["text"]
+    leave = max(b, a + 1.2)
+    top = bp.TOP_LINE + 2
+    size = _over_head(m, text, "Caveat", a, leave, top, 1.1, 116, 64)
+    if size:
+        layer, place = m.behind, f'style="top: {top}px; font-size: {size}px;"'
+        m.fg(a - 0.3, leave + 0.25)
+    else:                                       # над головой тесно — на груди, под субтитрами
+        size = int(min(96, 0.9 * 700 / max(bp._em(text, "Caveat"), 1e-3)))
+        layer, place = m.front, (f'data-safe="пометка на груди: над головой нет места" data-safe-zones="низ" '
+                                 f'style="top: {LIST_TOP}px; font-size: {size}px;"')
+        m.notes.append(f"пометка «{text}» — на груди: над головой не встаёт и в 64 px")
+    underline = ""
+    if item.get("line"):
+        width = bp._em(text, "Caveat") * size
+        underline = (f'<svg class="ds-uline" style="left: {(bp.W - width) / 2:.0f}px; top: {size * 1.02:.0f}px; '
+                     f'width: {width:.0f}px; height: 34px;" viewBox="0 0 {width:.0f} 34" aria-hidden="true">'
+                     f'<path d="M 6 22 C {width * 0.3:.0f} 10, {width * 0.65:.0f} 28, {width - 6:.0f} 12" pathLength="1" /></svg>')
+    layer(f'        <div id="{pid}" class="g ds-hand" {place}>{design.letters(text)}{underline}</div>')
+    written = a + 0.22 + (len(text) - 1) * m.design.hand_stagger
+    js = f'      dsHand("#{pid}", {a:.2f});\n'
+    if underline:
+        js += f'      dsPen("#{pid} .ds-uline path", {written + 0.05:.2f}, 0.35);\n'
+    m.js(js + f'      leave("#{pid}", {leave:.2f}, {{ y: -40, dur: 0.2 }});')
+    if item.get("hide"):
+        m.hide(a - 0.05, leave + 0.05)
+
+
+def _number(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
+    """Число стальным отливом за головой (Unbounded), бьёт из крупного на «at»; над ним шёпотом подпись ("sub").
+    Субтитры этих слов спрятаны — число на экране и есть речь (не повторяет — "hide": false)."""
+    text, sub = item["text"], item.get("sub", "")
+    a0, leave = min(a, at), max(b, at + 0.8)
+    top = bp.TOP_LINE + 2
+    size = _over_head(m, text, "Unbounded", a0, leave, top + (70 if sub else 0), 1.0, 270, 120)
+    cap = f'<span class="ds-numcap">{html.escape(sub)}</span>' if sub else ""
+    if size:
+        m.behind(f'        <div id="{pid}" class="g ds-num-wrap" style="top: {top}px;">{cap}'
+                 f'<span class="ds-num" style="font-size: {size}px;">{html.escape(text)}</span></div>')
+        m.fg(a0 - 0.3, leave + 0.25)
+    else:
+        size = int(min(180, 0.9 * 700 / max(bp._em(text, "Unbounded"), 1e-3)))
+        m.front(f'        <div id="{pid}" class="g ds-num-wrap" data-safe="число на груди: над головой нет места" '
+                f'data-safe-zones="низ" style="top: {LIST_TOP - 12}px;">{cap}'
+                f'<span class="ds-num" style="font-size: {size}px;">{html.escape(text)}</span></div>')
+        m.notes.append(f"число «{text}» — на груди: над головой не встаёт и в 120 px")
+    m.js(f'      slam("#{pid}", {at:.2f}, {{ fromScale: 1.4 }});\n'
+         f'      leave("#{pid}", {leave:.2f}, {{ y: -50, dur: 0.2 }});')
+    if item.get("hide", True):
+        m.hide(a0 - 0.05, leave + 0.05)
+    m.punch(at, leave)
+
+
+def _promise(m, pid: str, item: dict, a: float, b: float, start, end) -> None:
+    """Список-обещание на груди (из направления В): заголовок и 2–4 строки; квадрат строки заливается сталью на слове
+    пункта, строка разгорается из серого в крем. Субтитры идут как шли — прячется только слово пункта, его текст уже
+    на экране (двойного текста нет, п.16)."""
+    rows = item["rows"]
+    title = re.sub(r"\d+", lambda g: f'<span class="ds-n">{g.group(0)}</span>', html.escape(item["title"]))
+    body = "".join(f'<div id="{pid}-r{j}" class="ds-row"><i id="{pid}-b{j}" class="ds-box"></i>'
+                   f'<span>{html.escape(r["text"])}</span></div>' for j, r in enumerate(rows))
+    m.front(f'        <div id="{pid}" class="g ds-list" data-safe="список-обещание на груди ниже подбородка" '
+            f'data-safe-zones="низ" style="top: {LIST_TOP}px;"><div class="ds-list-h">{title}</div>{body}</div>')
+    times = [start(r["w"]) for r in rows]
+    leave = max(b, times[-1] + 0.9)
+    lit = "rgba({},{},{},1)".format(*design._rgb(m.design.colors["text"]))
+    js = [f'      enter("#{pid}", {a:.2f}, {{ fromY: 40, fromScale: 0.96, blur: 10, dur: 0.3, ease: "expo.out" }});']
+    for j, (r, t) in enumerate(zip(rows, times)):
+        js.append(f'      dsBox("#{pid}-b{j}", {t:.2f});')
+        js.append(f'      tl.to("#{pid}-r{j}", {{ color: "{lit}", duration: 0.12 }}, {t:.2f});')
+        m.hide(t - 0.05, end(r["w"]) + 0.05)
+    js.append(f'      leave("#{pid}", {leave:.2f}, {{ y: 30, dur: 0.22 }});')
+    m.js("\n".join(js))
+
+
+def _strike(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
+    """Миф на груди, красная ручка зачёркивает его на «at» — единственное место красного в системе. Субтитры этих слов
+    спрятаны: слово на экране и есть речь."""
+    text = item["text"]
+    size = int(min(110, 0.9 * 700 / max(bp._em(text, "InterDisplay-800"), 1e-3)))
+    at = max(at, a + 0.35)                      # слово успевают прочесть до черты
+    leave = max(b, at + 0.7)
+    m.front(f'        <div id="{pid}" class="g ds-strike-w" data-safe="слово на груди ниже подбородка" data-safe-zones="низ" '
+            f'style="top: {LIST_TOP}px; font-size: {size}px;"><span class="ds-in">{html.escape(text)}'
+            f'<svg class="ds-strike" viewBox="0 0 300 100" preserveAspectRatio="none" aria-hidden="true">'
+            f'<path d="M 0 62 Q 150 42 300 48" pathLength="1" /></svg></span></div>')
+    m.js(f'      enter("#{pid}", {a:.2f}, {{ fromY: 24, fromScale: 0.9, blur: 10, dur: 0.28, ease: "expo.out" }});\n'
+         f'      dsPen("#{pid} .ds-strike path", {at:.2f});\n'
+         f'      leave("#{pid}", {leave:.2f}, {{ y: -30, dur: 0.22 }});')
+    m.hide(a - 0.05, leave + 0.05)
 
 
 def _piece(kind: str, pid: str, item: dict, a, b, start, end):

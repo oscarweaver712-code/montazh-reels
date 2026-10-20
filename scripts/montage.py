@@ -51,10 +51,13 @@ SOFT_EVERY = 6.0           # тихих звуков не реже одного 
 
 # движения страницы → вид тихого звука (kit.SOFT_KINDS)
 _TIMED = re.compile(r"\b(splice|whip)\(\s*([\d.]+)\s*\)")
-_AT = re.compile(r"\b(slam|enter|card|doc|draw|bars)\(\s*(?:\"[^\"]*\"|'[^']*'|`[^`]*`|\[[^\]]*\])\s*,\s*([\d.]+)")
+_AT = re.compile(r"\b(slam|enter|card|doc|draw|bars|dsSmoke|dsHand|dsMark|dsBox|dsPen)\(\s*"
+                 r"(?:\"[^\"]*\"|'[^']*'|`[^`]*`|\[[^\]]*\])\s*,\s*([\d.]+)")
 _CUT_FLASH = re.compile(r'tl\.fromTo\("#flash", \{ opacity: 0 \}, \{ opacity: 0\.5[^;]*?, ([\d.]+)\);')
 _KIND = {"splice": "cut", "whip": "frame", "slam": "stamp", "enter": "text", "card": "text", "doc": "text",
-         "draw": "line", "bars": "line"}
+         "draw": "line", "bars": "line",
+         # движения дизайн-системы (design.py): буквы дымом и рукой — как влёт слова, маркер, квадрат, ручка — как линия
+         "dsSmoke": "text", "dsHand": "text", "dsMark": "line", "dsBox": "line", "dsPen": "line"}
 
 
 def page_events(js: str) -> list:
@@ -67,6 +70,7 @@ def page_events(js: str) -> list:
 
 class Montage:
     def __init__(self, stem: str, variant: str | None = None):
+        import design
         import projects
         self.stem, self.variant = stem, variant
         self.tk = kit.Take(stem, variant)
@@ -74,6 +78,7 @@ class Montage:
         self.duration = self.tk.duration
         self.project = projects.of_or_default(stem)
         self.cfg = self.project.config
+        self.design = design.of(self.project)        # projects/<проект>/DESIGN.md или None — тогда всё как раньше
         self.width, self.height = formats.size(self.tk.fmt)
         self._behind, self._front, self._js, self._css = [], [], [], []
         self.sounds, self.punches, self.fg_windows, self.hidden, self.wide_windows = [], [], [], [], []
@@ -314,6 +319,8 @@ class Montage:
             self.notes.append(f"смена плана: {len(switch)} крупных")
 
         beats = page_js + "".join(auto_js)
+        if self.design:                              # функции движений системы — до движений страницы
+            beats = self.design.js() + beats
         soft = sorted(set(page_events(beats)) | set(self.extra_soft))
         # щелчок плашки призыва ставит build_page позже — раскладка тихих звуков должна знать его заранее, иначе тихий
         # звук встаёт вплотную к нему и check_sounds роняет сборку (19.10.2026, партитура аналитика IMG_3292: cta на 57,1 с)
@@ -344,13 +351,21 @@ class Montage:
         captions = tk.captions
         if captions and self.cfg.get("caption_accent_scale"):         # ключевые слова крупнее (project.json)
             captions = {**captions, "accent_scale": float(self.cfg["caption_accent_scale"])}
+        if captions and self.design:                                  # шрифт, крем и маркер — из DESIGN.md
+            captions = self.design.captions(captions)
         if not accent_words:
             self.notes.append("ключевых слов в субтитрах нет (accent_words) — субтитры пойдут ровно, без ударов")
-        page = kit.build_page(title, dur, "\n".join(self._behind), "\n".join(sheets + self._front + auto_front), beats,
+        extra_css = "".join(self._css) + (self.design.css() if self.design else "")     # система — поверх kit и «Чертежа»
+        defs = [self.design.defs()] if self.design else []
+        page = kit.build_page(title, dur, "\n".join(self._behind), "\n".join(defs + sheets + self._front + auto_front), beats,
                               self.sounds, self.fg_windows, cta_at if cta_at is not None else dur - 2.5,
-                              extra_css="".join(self._css), fmt=tk.fmt, captions=captions, cutout=cutout,
+                              extra_css=extra_css, fmt=tk.fmt, captions=captions, cutout=cutout,
                               cta=cfg_cta and cta_at is not None, **page_kw)
+        if self.design:
+            self.notes.append(f"дизайн-система: projects/{self.project.name}/DESIGN.md — шрифты, цвета, маркер субтитров")
         mark = MARK + (f'\n    <meta name="reels-hook" content="без вспышки: {self.hook_why}" />' if hook is None else "")
+        if self.design:
+            mark += "\n    " + self.design.meta()
         page = page.replace('<meta name="reels-sfx-norm"', mark + '\n    <meta name="reels-sfx-norm"', 1)
         if self.splits:
             import fx

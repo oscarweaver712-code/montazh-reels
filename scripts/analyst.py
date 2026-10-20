@@ -131,6 +131,9 @@ def material(stem: str) -> str:
     ev = json.loads(events.read_text(encoding="utf-8")) if events.exists() else {}
     cfg = project.config
     rules = project.rules.read_text(encoding="utf-8") if project.rules.exists() else "(правил проекта нет)"
+    import design
+    system = design.of(project)           # DESIGN.md проекта: приёмы системы и её правила — аналитику и критику
+    ds_brief = ["", system.brief()] if system else []
     return "\n".join([
         f"РОЛИК {stem}: {tk.duration:.1f} с, формат {tk.fmt}. Проект «{project.name}».",
         f"Требования проекта: лицо в кадре ≥ {float(cfg.get('face_min', 0.6)) * 100:.0f}% (цель 70%+); без вставок не дольше "
@@ -150,6 +153,7 @@ def material(stem: str) -> str:
         "",
         f"ПРАВИЛА ПРОЕКТА (projects/{project.name}/rules.md — главнее общих; что про сборку и инфраструктуру — не твоё):",
         rules,
+        *ds_brief,
         "",
         "Ответь партитурой (JSON).",
     ])
