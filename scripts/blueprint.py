@@ -22,6 +22,7 @@
   cuboid(pid, t, until, ("a", "b", "h"))            — каркас-параллелепипед с размерными линиями (площадь, объём)
   plot(pid, [y…], t, until, mark=k)                 — оси и кривая по точкам, отмеченная точка (рост, функция)
   measure(pid, (x0, y0), (x1, y1), "3 м", t, until) — размерная линия между двумя точками экрана
+  trilat(pid, t, until, [t1, t2, t3], fix)          — засечка: три спутника, три окружности, одна точка (GPS)
   look("Хорезм, IX век")                            — рамка для ИИ-клипа или фото: приглушённый цвет, сетка, подпись места
 
 x, y у точек — доли поля раскладки (0…1). Каждый приём возвращает Piece; в страницу — Montage.blueprint(piece):
@@ -530,6 +531,75 @@ def measure(pid: str, a: tuple, b: tuple, label: str, t: float, until: float, la
     labels = [_label(f"{pid}-l", label, mx - math.sin(ang) * 36, my + math.cos(ang) * 36 - 30, box, cls="red")]
     js.append(_enter(f"#{pid}-l", t + 0.3))
     return _piece(pid, layout, box, t, until, svg, labels, js)
+
+
+def trilat(pid: str, t: float, until: float, sats: list, fix: float, label: str = "", layout: str = "split",
+           box: tuple | None = None, roam: float | None = None, sphere: float | None = None) -> Piece:
+    """Засечка по трём спутникам (IMG_3647, 20.10.2026: «первый спутник — ты в 20 тысячах км… второй сужает круг,
+    третий ещё сужает, остаётся одна точка»). Спутник встаёт на своём слове (sats — три времени), от него идёт радиус
+    к тебе и чертится окружность. После первой ты где угодно на ней (roam — точка обегает её), вторая оставляет две
+    точки пересечения, третья — одну: на fix она красная, с кругом-импульсом и подписью label. sphere — у окружностей
+    появляются экваторы, и они становятся сферами: в пространстве засечка — пересечение сфер, это и есть стереометрия.
+    Фигура — по центру поля; в сплите (960×440) влезает целиком."""
+    _times("trilat", [1, 2, 3], list(sats))
+    if not t <= sats[0] or fix < sats[2] or until < fix + 0.6:
+        raise ValueError(f"«Чертёж» trilat {pid}: нужно окно {t:.2f} ≤ спутники {sats} ≤ точка {fix:.2f} ≤ конец − 0,6 "
+                         f"({until:.2f})")
+    bx = _box(layout, box)
+    w, h = bx[2], bx[3]
+    big = min(0.42 * h, 0.26 * w)
+    # центры — вокруг точки: слева, справа вверху, справа внизу; все три окружности проходят через неё
+    rays = [(math.pi, big), (math.radians(-40), 0.82 * big), (math.radians(22), 0.74 * big)]
+    circles = [(r * math.cos(a), r * math.sin(a), r) for a, r in rays]
+    lo_x, hi_x = min(cx - r for cx, _, r in circles), max(cx + r for cx, _, r in circles)
+    lo_y, hi_y = min(cy - r for _, cy, r in circles), max(cy + r for _, cy, r in circles)
+    px, py = w / 2 - (lo_x + hi_x) / 2, h / 2 - (lo_y + hi_y) / 2
+    circles = [(px + cx, py + cy, r) for cx, cy, r in circles]
+    (ax, ay, _), (bx2, by, _) = circles[0], circles[1]
+    # вторая точка пересечения первых двух окружностей — отражение точки через линию их центров
+    ux, uy = (bx2 - ax) / math.hypot(bx2 - ax, by - ay), (by - ay) / math.hypot(bx2 - ax, by - ay)
+    k = (px - ax) * ux + (py - ay) * uy
+    qx, qy = 2 * (ax + k * ux) - px, 2 * (ay + k * uy) - py
+    s = big / 185                                       # точки — в масштабе фигуры
+    k = 1.6 * s                                         # спутник крупнее точки: в 1× на сплите он читался чёрточкой
+    svg, js = [], []
+    for i, ((cx, cy, r), ts) in enumerate(zip(circles, sats)):
+        body = (f"M {cx:.0f} {cy - 15 * k:.0f} L {cx + 15 * k:.0f} {cy:.0f} L {cx:.0f} {cy + 15 * k:.0f} L {cx - 15 * k:.0f} {cy:.0f} Z "
+                f"M {cx - 54 * k:.0f} {cy - 9 * k:.0f} H {cx - 22 * k:.0f} V {cy + 9 * k:.0f} H {cx - 54 * k:.0f} Z "
+                f"M {cx + 22 * k:.0f} {cy - 9 * k:.0f} H {cx + 54 * k:.0f} V {cy + 9 * k:.0f} H {cx + 22 * k:.0f} Z")
+        svg += [f'<path id="{pid}-s{i}" class="bp-dot" d="{body}" />',
+                f'<path id="{pid}-r{i}" class="bp-ln thin" d="M {cx:.0f} {cy:.0f} L {px:.0f} {py:.0f}" {DRAW} />',
+                f'<path id="{pid}-c{i}" class="bp-ln" d="M {cx + r:.0f} {cy:.0f} A {r:.0f} {r:.0f} 0 1 1 {cx - r:.0f} {cy:.0f} '
+                f'A {r:.0f} {r:.0f} 0 1 1 {cx + r:.0f} {cy:.0f}" {DRAW} />']
+        js += [_pop(f"#{pid}-s{i}", ts), f'      draw("#{pid}-r{i}", {ts + 0.12:.2f}, 0.25);',
+               f'      draw("#{pid}-c{i}", {ts + 0.3:.2f}, 0.8);']
+        if sphere is not None:                          # экватор: окружность становится сферой
+            svg.append(f'<path id="{pid}-e{i}" class="bp-ln thin" d="M {cx - r:.0f} {cy:.0f} A {r:.0f} {0.3 * r:.0f} 0 1 0 '
+                       f'{cx + r:.0f} {cy:.0f} A {r:.0f} {0.3 * r:.0f} 0 1 0 {cx - r:.0f} {cy:.0f}" {DRAW} />')
+            js.append(f'      draw("#{pid}-e{i}", {sphere + 0.12 * i:.2f}, 0.5);')
+    if roam is not None:                                # ты где угодно на первой окружности: точка обегает её
+        svg.append(f'<g id="{pid}-roam"><circle id="{pid}-rd" class="bp-dot" cx="{px:.0f}" cy="{py:.0f}" r="{12 * s:.0f}" /></g>')
+        js += [_pop(f"#{pid}-rd", roam),
+               f'      tl.fromTo("#{pid}-roam", {{ rotation: 0, svgOrigin: "{ax:.0f} {ay:.0f}" }}, {{ rotation: -360, '
+               f'svgOrigin: "{ax:.0f} {ay:.0f}", duration: 1.4, ease: "power1.inOut", immediateRender: false }}, {roam + 0.1:.2f});',
+               f'      tl.to("#{pid}-rd", {{ scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.2, ease: "power2.in" }}, '
+               f'{roam + 1.5:.2f});']
+    # две точки после второй окружности; лишняя гаснет после третьей
+    svg += [f'<circle id="{pid}-q" class="bp-dot" cx="{qx:.0f}" cy="{qy:.0f}" r="{12 * s:.0f}" />',
+            f'<circle id="{pid}-p" class="bp-dot" cx="{px:.0f}" cy="{py:.0f}" r="{12 * s:.0f}" />',
+            f'<circle id="{pid}-pulse" class="bp-ln red" style="opacity: 0;" cx="{px:.0f}" cy="{py:.0f}" r="{22 * s:.0f}" />',
+            f'<circle id="{pid}-fix" class="bp-dot red" cx="{px:.0f}" cy="{py:.0f}" r="{20 * s:.0f}" />']
+    js += [_pop(f"#{pid}-q", sats[1] + 1.1), _pop(f"#{pid}-p", sats[1] + 1.1),
+           f'      tl.to("#{pid}-q", {{ scale: 0, opacity: 0, transformOrigin: "50% 50%", duration: 0.25, ease: "power2.in" }}, '
+           f'{max(sats[2] + 1.1, sats[1] + 1.4):.2f});',
+           _pop(f"#{pid}-fix", fix),
+           f'      tl.fromTo("#{pid}-pulse", {{ opacity: 1, scale: 0.6, transformOrigin: "50% 50%" }}, {{ opacity: 0, scale: 3.2, '
+           f'duration: 0.7, ease: "power2.out", immediateRender: false }}, {fix:.2f});']
+    labels = []
+    if label:
+        labels.append(_label(f"{pid}-l", label, px, py + 66 * s, bx, cls="red"))
+        js.append(_enter(f"#{pid}-l", fix + 0.08))
+    return _piece(pid, layout, bx, t, until, svg, labels, js)
 
 
 # ---------------------------------------------------------------- лист, сплит, рамка клипа

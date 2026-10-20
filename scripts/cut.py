@@ -9,6 +9,7 @@ import re
 from common import snap_segments
 
 PUNCT = re.compile(r"[^\w\s\-]", re.UNICODE)
+MIN_WORD_LAP = 0.15     # с: слово, которое дубль задевает меньше, — мусор за краем, а не речь (слог короче не бывает)
 
 
 def norm(word: str) -> str:
@@ -161,6 +162,12 @@ def remap_words(words: list, segments: list) -> list:
         home = next((i for i, (s, e) in enumerate(segments) if s <= mid < e), None)
         if home is None:
             home = next((i for i, (s, e) in enumerate(segments) if s <= w["start"] < e), None)
+        if home is None:
+            # Первое слово файла whisper начинает с 0.00 (IMG_3647: «Открываешь» 0.00–1.12, голос с 0.68): середина
+            # до дубля, начало тоже — а слово звучит внутри. Кусок, где его больше всего, если там хотя бы слог
+            lap = [(min(w["end"], e) - max(w["start"], s), i) for i, (s, e) in enumerate(segments)]
+            most, i = max(lap)
+            home = i if most >= MIN_WORD_LAP else None
         for i, (s, e) in enumerate(segments):
             if i == home:
                 new_start = offsets[i] + (max(w["start"], s) - s)

@@ -168,21 +168,22 @@ class Design:
         return "\n".join([
             f"ДИЗАЙН-СИСТЕМА ПРОЕКТА (projects/{self.project}/{FILE} — главнее общих слов про цвет и шрифты выше):",
             "Сборка сама ставит шрифты, цвета, маркер ключевых слов субтитров и вылеты; ты выбираешь приёмы и слова.",
-            "Красное — только ошибка и миф, и ставит его один приём — strike. \"red\" у приёмов «Чертежа» (write, hexes, "
-            "маршрут) в системе — стальной акцент главного, а не красный; у word \"red\" не ставь.",
+            "Акцент системы — градиент из DESIGN.md (маркер, числа, квадраты, штамп); \"red\" у приёмов «Чертежа» (write, "
+            "hexes, маршрут) — этот же акцент на главном. Одно акцентное пятно за раз. У word \"red\" не ставь.",
             "Приёмы системы (кроме общих):",
-            '- {"kind": "hand", "w": [от, до], "text": "почему соседняя", "line": true} — пометка рукой над головой, '
-            'по буквам; "line" — стальной подчерк. До 26 знаков. Вопрос хука, «ответ — в конце», «тут все ошибаются».',
+            '- {"kind": "hand", "w": [от, до], "text": "тут все ошибаются", "line": true} — пометка рукой над головой, '
+            'по буквам; "line" — подчерк акцентом. До 26 знаков. В середине ролика к месту; хук рукой не пиши '
+            '(Валера 20.10: «выглядит сомнительно»).',
             '- {"kind": "number", "w": [от, до], "at": номер, "text": "2/3", "sub": "шанс, что другая быстрее"} — число '
-            'стальным отливом над головой, бьёт на «at»; "sub" — шёпотом над ним. До 7 знаков. Субтитры этих слов '
-            'спрятаны сами.',
+            'акцентом над головой, бьёт на «at»; "sub" — шёпотом над ним (над головой тесно — без "sub"). До 7 знаков. '
+            'Субтитры этих слов спрятаны сами — окно не длиннее 2,5 с.',
             '- {"kind": "promise", "w": [от, до], "title": "3 причины", "rows": [{"text": "вероятность", "w": номер}, …]} '
-            '— список-обещание на груди, 2–4 строки до 24 знаков; квадрат строки заливается на её слове (по порядку '
+            '— список-обещание на груди, 2–4 строки до 24 знаков; квадрат строки заливается акцентом на её слове (по порядку '
             'речи, внутри окна). Держит зрителя до конца: ставь в хуке, если дальше в ролике есть 2–4 пункта.',
             '- {"kind": "strike", "w": [от, до], "at": номер, "text": "проклят"} — миф на груди, красная ручка '
-            'зачёркивает его на «at». Единственный красный: «не проклят», «не поможет», неверный шаг.',
-            "Хук по системе: первые 3 с — не меньше четырёх событий (hand, word, number, promise, strike, ключевое слово "
-            "субтитров); одно крупное слово word за ролик остаётся правилом.",
+            'зачёркивает его на «at»: «не проклят», «не поможет», неверный шаг.',
+            "Хук по системе: первые 3 с — не меньше четырёх событий (word, number, promise, strike, ключевое слово "
+            "субтитров, смена плана); рукописью хук не пиши; одно крупное слово word за ролик остаётся правилом.",
             "",
             self.body,
         ])
@@ -191,7 +192,7 @@ class Design:
         return f'<meta name="{MARK}" content="{html.escape(self.project)}" />'
 
     def captions(self, caps: dict) -> dict:
-        """Субтитры стиля в системе: шрифт роли caption, крем, ключевое слово — стальным маркером, а не цветом."""
+        """Субтитры стиля в системе: шрифт роли caption, крем, ключевое слово — маркером акцента, а не цветом."""
         caps = dict(caps)
         caps.update(css_font=self.family("caption"), font_weight=self.fonts["caption"]["weight"],
                     color=self.colors["text"], highlight=self.colors["text"], marker=True,
@@ -220,6 +221,9 @@ class Design:
                 faces.append(f'      @font-face {{ font-family: "{key[0]}"; src: url("assets/fonts/{f[role]["src"]}"); '
                              f'font-weight: {key[1]}; font-style: {key[2]}; }}')
         dim, shade = _rgba(c["text"], 0.45), _rgba(c["shade"], 0.55)
+        # ореол текста на груди: под ним белый принт худи и рука с микрофоном (IMG_3647 v1, 20.10.2026: вторая строка
+        # списка тонкой гарнитурой на гербе не читалась) — плотная тень вплотную к буквам, без плашки
+        halo = f"0 0 6px {_rgba(c['shade'], 0.9)}, 0 0 18px {_rgba(c['shade'], 0.75)}, 0 3px 10px {shade}"
         grad_text = ("background-image: var(--ds-grad); -webkit-background-clip: text; background-clip: text; "
                      "-webkit-text-fill-color: transparent; color: transparent;")
         rules = [
@@ -232,14 +236,17 @@ class Design:
             f"      .lead, .pill, .label, .cta-small {{ font-family: {fam('caption')}; font-weight: {wt('caption')}; }}",
             f"      .cta {{ background: {_rgba(c['plate'], 0.86)}; border-color: {_rgba(c['text'], 0.16)}; }}",
             "      .stamp { color: var(--ds-acc); border-color: var(--ds-acc); }",
-            # «Чертёж»: подписи рукой, числа — Oswald, как было; акцент «Чертежа» (класс red) — сталь: красное в системе —
-            # только ошибка, её ставит приём strike (кривая «правило пика» и вторая касса красным читались как ошибка)
-            f"      .bp-lbl {{ font-family: {fam('hand')}; font-weight: {wt('hand')}; font-size: 56px; letter-spacing: 0; "
+            # «Чертёж»: подписи рукой, числа — Oswald, как было; акцент «Чертежа» (класс red) — градиент системы.
+            # Подписи и линии крупнее (Валера 20.10 на v2: «мелковаты подписи и визуализация»): 76/56 px рукописью
+            # вместо 40 px Manrope капсом, линии 8 px (64/50 на кадрах IMG_3647 читались мелко — у Caveat низкие строчные)
+            f"      .bp-lbl {{ font-family: {fam('hand')}; font-weight: {wt('hand')}; font-size: 76px; letter-spacing: 0; "
             f"text-transform: none; }}",
             f"      .bp-lbl.big {{ font-family: {fam('headline')}; font-weight: {wt('headline')}; text-transform: uppercase; }}",
-            f"      .bp-lbl .sub {{ font-family: {fam('hand')}; font-style: normal; font-weight: {wt('hand')}; font-size: 44px; }}",
+            f"      .bp-lbl .sub {{ font-family: {fam('hand')}; font-style: normal; font-weight: {wt('hand')}; font-size: 56px; }}",
+            "      .bp-ln { stroke-width: 8; }",
+            "      .bp-ln.thin { stroke-width: 4; }",
             "      .bp-lbl.red { color: var(--ds-acc); }",
-            "      .bp-ln.red { stroke: url(#ds-grad); }",
+            "      .bp-ln.red { stroke: url(#ds-grad); stroke-width: 10; }",
             "      .bp-dot.red, .bp-fill, .bp-mark { fill: url(#ds-grad); }",
             # приёмы системы (score.py: word дымом, hand, number, promise, strike; маркер субтитров — kit.caption_js)
             f"      .ds-ch {{ display: inline-block; padding: 0 {LETTER_PAD}em; margin: 0 -{LETTER_PAD}em; }}",
@@ -253,18 +260,18 @@ class Design:
             f"line-height: 1.15; color: var(--ds-text); text-shadow: 0 3px 12px {shade}; }}",
             f"      .ds-num {{ display: inline-block; padding: 0 0.04em; font-family: {fam('number')}; font-weight: {wt('number')}; "
             f"line-height: 1; {grad_text} }}",
-            f"      .ds-list {{ left: 190px; width: 700px; display: grid; gap: 14px; text-shadow: 0 3px 10px {shade}; }}",
-            f"      .ds-list-h {{ font-family: {fam('caption')}; font-weight: {wt('caption')}; font-size: 62px; line-height: 1.1; "
+            f"      .ds-list {{ left: 160px; width: 760px; display: grid; gap: 14px; text-shadow: {halo}; }}",
+            f"      .ds-list-h {{ font-family: {fam('caption')}; font-weight: {wt('caption')}; font-size: 70px; line-height: 1.1; "
             f"color: var(--ds-text); }}",
             f"      .ds-list-h .ds-n {{ font-family: {fam('number')}; font-weight: {wt('number')}; {grad_text} }}",
             f"      .ds-row {{ display: flex; align-items: center; gap: 24px; font-family: {fam('whisper')}; font-weight: {wt('whisper')}; "
-            f"font-size: 52px; line-height: 1.15; color: {dim}; white-space: nowrap; }}",
-            f"      .ds-box {{ position: relative; flex: none; display: block; width: 48px; height: 48px; "
+            f"font-size: 58px; line-height: 1.15; color: {dim}; white-space: nowrap; }}",
+            f"      .ds-box {{ position: relative; flex: none; display: block; width: 52px; height: 52px; "
             f"border: 4px solid {_rgba(c['text'], 0.55)}; border-radius: 11px; }}",
             "      .ds-box::after { content: \"\"; position: absolute; inset: 5px; border-radius: 6px; background: var(--ds-grad); "
             "transform: scale(var(--k, 0)); }",
             f"      .ds-strike-w {{ left: 0; width: {W}px; text-align: center; white-space: nowrap; font-family: {fam('caption')}; "
-            f"font-weight: {wt('caption')}; line-height: 1.1; color: var(--ds-text); text-shadow: 0 4px 14px {shade}; }}",
+            f"font-weight: {wt('caption')}; line-height: 1.1; color: var(--ds-text); text-shadow: {halo}; }}",
             "      .ds-in { position: relative; display: inline-block; }",
             "      .ds-strike { position: absolute; left: -6%; top: 0; width: 112%; height: 100%; overflow: visible; }",
             "      .ds-strike path { fill: none; stroke: var(--ds-pen); stroke-width: 12; stroke-linecap: round; "

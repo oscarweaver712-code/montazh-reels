@@ -668,6 +668,19 @@ def check_edges(report: Report):
     report.check(kept == ["Это", "Тимофей", "день", "И", "всё"],
                  "слова на краях дубля и выреза не пропадают из субтитров", " · ".join(kept))
 
+    # IMG_3647 (20.10.2026): первое слово файла whisper начал с 0.00 — «Открываешь» 0.00–1.12, а голос с 0.68 и дубль
+    # с 0.60. Середина слова (0.56) легла до дубля, и оно выпало из субтитров хука целиком, хотя звучит внутри.
+    # Мусор до дубля, задетый его краем на 0.05 с, в субтитры по-прежнему не попадает
+    words = [{"word": "Открываешь", "start": 0.0, "end": 1.12}, {"word": "карты", "start": 1.12, "end": 1.46}]
+    junk = [{"word": "так", "start": 0.0, "end": 0.65}, {"word": "Открываешь", "start": 0.70, "end": 1.12}]
+    mark_dropped(words, [])
+    mark_dropped(junk, [])
+    kept = [(w["word"], round(w["start"], 2)) for w in remap_words(words, [(0.6, 20.0)])]
+    clean = [w["word"] for w in remap_words(junk, [(0.6, 20.0)])]
+    report.check([k for k, _ in kept] == ["Открываешь", "карты"] and kept[0][1] == 0.0 and clean == ["Открываешь"],
+                 "первое слово, которое whisper начал раньше дубля, остаётся в субтитрах; мусор, задетый краем, — нет",
+                 " · ".join(f"{k} {s:.2f}" for k, s in kept) + f"; с мусором: {' · '.join(clean)}")
+
 
 def check_pauses(report: Report):
     """Начало по голосу и рез длинных пауз (20.10.2026, Валера: «на старте точно есть пауза», «могу затупить — хочется не
@@ -1557,7 +1570,9 @@ def check_blueprint(report: Report, tmp: Path):
               bp.cuboid("cb", 12.5, 14.0, layout="split"), bp.plot("pl", [0.1, 0.3, 0.8], 15.5, 17.0, mark=1, layout="full"),
               bp.compass("cp", 18.0, 19.5, label="r", center=(0.85, 0.4)), bp.measure("ms", (300, 1250), (300, 1500), "12 см", 20.5, 21.8),
               # подпись прямо за головой — проверка обязана её поймать
-              bp.route("hid", [("за головой", 0.5, 0.75), ("сбоку", 0.08, 0.2)], [23.0, 23.5], 25.0, layout="behind")]
+              bp.route("hid", [("за головой", 0.5, 0.75), ("сбоку", 0.08, 0.2)], [23.0, 23.5], 25.0, layout="behind"),
+              # засечка (IMG_3647): точка обегает окружность, лишнее пересечение гаснет, окружности становятся сферами
+              bp.trilat("tri", 26.0, 29.4, [26.0, 26.6, 27.2], 28.2, label="ты", roam=26.4, sphere=28.6)]
     behind, front, sheets, js, windows = [], [], [], [], []
     for p in pieces:
         if p.layout == "behind":
@@ -1568,20 +1583,20 @@ def check_blueprint(report: Report, tmp: Path):
             html, j = bp.full_sheet(p, p.t0 - 0.25, p.t1 + 0.35); behind.append(html); js.append(j)
         else:
             html, j = bp.split_parts(p, geo); sheets.append(html); front.append(p.html); js.append(j)
-    page = build_page("чертёж", 26.0, "\n".join(behind), "\n".join(sheets + front), "\n".join(js), [], windows, cta_at=25.5,
+    page = build_page("чертёж", 30.0, "\n".join(behind), "\n".join(sheets + front), "\n".join(js), [], windows, cta_at=29.9,
                       extra_css=bp.CSS + bp.SPLIT_CSS, cta=False)
     page = fx.FX(stage=True).finalize(page)
     (project / "index.html").write_text(page, encoding="utf-8")
-    faces = [[round(k * 0.25, 2), *face] for k in range(int(26 / 0.25))]
+    faces = [[round(k * 0.25, 2), *face] for k in range(int(30 / 0.25))]
     res = run_timeline(project / "index.html", faces=faces)
     errors = res.get("pageErrors", []) + [w for w in res.get("warnings", []) if "not found" in w or "Invalid" in w]
     stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", [])]
-    split_hits = [h["el"] for h in res.get("faceHits", []) if h["el"].startswith(("#tm", "#cb"))]
+    split_hits = [h["el"] for h in res.get("faceHits", []) if h["el"].startswith(("#tm", "#cb", "#tri"))]
     hidden = [o["el"] for o in res.get("occluded", [])]
     share = res.get("cutawayShare", 0)
     report.check(res.get("ok") and not errors and not stuck and not split_hits and "#hid-l0" in hidden
                  and not any(h.startswith("#r-") for h in hidden) and 0.05 < share < 0.25,
-                 "«Чертёж»: восемь приёмов в четырёх раскладках без ошибок и залипаний; в сплите лицо — в окне листа; "
+                 "«Чертёж»: девять приёмов в четырёх раскладках без ошибок и залипаний; в сплите лицо — в окне листа; "
                  "лист во весь кадр — перебивка; подпись за головой ловится по одной",
                  f"ошибок {len(errors)}, залипает {stuck or 'ничего'}, сплит «на лице» {split_hits or 'нет'}, "
                  f"за головой {hidden or 'никто'}, перебивок {share * 100:.0f}%")
@@ -1649,7 +1664,7 @@ class _DesignTake:
 
 def check_design(report: Report, tmp: Path):
     """Дизайн-система проекта (projects/<проект>/DESIGN.md, scripts/design.py, 20.10.2026): DESIGN.md Антишколы
-    читается, а битый — громко и с местом; приёмы системы (буквы дымом, рукой, число отливом, список-обещание, ручка,
+    читается, а битый — громко и с местом; приёмы системы (буквы дымом, рукой, число акцентом, список-обещание, ручка,
     маркер субтитров) складываются в страницу без ошибок и залипаний; verify_page ловит цвет и шрифт мимо системы
     (чужой цвет текста, чужой шрифт, чужая линия SVG), а цвета и шрифты системы — нет."""
     import design
@@ -1742,7 +1757,7 @@ def check_design(report: Report, tmp: Path):
     stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", [])]
     flagged = sorted({d["el"].split(" ")[0] for d in res.get("design", [])})
     report.check(res.get("ok") and not errors and not stuck, "приёмы системы на странице: буквы дымом и рукой, число "
-                 "отливом, список с квадратами, ручка, маркер субтитров — без ошибок JS и залипаний",
+                 "акцентом, список с квадратами, ручка, маркер субтитров — без ошибок JS и залипаний",
                  f"ошибок {len(errors)}{': ' + errors[0] if errors else ''}, залипает {stuck or 'ничего'}")
     report.check(flagged == ["#d-blue", "#d-font", "#d-green"],
                  "verify_page ловит цвет и шрифт мимо DESIGN.md (чужой цвет текста, шрифт, линия SVG), а систему — нет",
@@ -1762,7 +1777,7 @@ def check_design(report: Report, tmp: Path):
                  f"запас {probe.get('pad', 0):.2f} em, сдвиг {probe.get('shift', 0):.1f} px")
     report.check(probe.get("n") == 1 and probe.get("text") == "всегда" and "-6%" in str(probe.get("clip", "")).replace(" ", "")
                  and not probe.get("errors"),
-                 "маркер субтитров: стальная плашка только у ключевого слова и раскрыта к его середине",
+                 "маркер субтитров: плашка акцента только у ключевого слова и раскрыта к его середине",
                  f"плашек {probe.get('n')}, текст {probe.get('text')!r}, шторка {probe.get('clip')}, ошибки {probe.get('errors')}")
 
 

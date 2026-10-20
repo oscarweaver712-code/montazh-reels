@@ -24,6 +24,7 @@ page.py — программу с нуля. Партитура — только 
        "stops": [{"label": "Индия", "x": 0.9, "y": 0.2, "w": 64}, …]},
       {"kind": "timeline", "layout": "split", "until": 56, "marks": [{"label": "IX век", "sub": "Багдад", "w": 43}, …]},
       {"kind": "compass" | "hexes" | "cuboid" | "plot", "w": [i, j], "layout": "…", …параметры приёма blueprint},
+      {"kind": "trilat", "w": [55, 89], "sats": [56, 76, 80], "fix": 85, "roam": 71, "sphere": 89, "label": "ты"},
       {"kind": "clip",   "w": [34, 41], "name": "a_india", "label": "Индия, V век"},     # клип Flow, уже принятый
       # приёмы дизайн-системы проекта (projects/<проект>/DESIGN.md, scripts/design.py) — только там, где она есть:
       {"kind": "hand",    "w": [0, 2], "text": "почему соседняя", "line": true},       # пометка рукой над головой
@@ -64,6 +65,7 @@ KINDS = {
     "hexes": ({"w"}, {"layout", "cols", "rows", "red", "label", "hide"}),
     "cuboid": ({"w"}, {"layout", "dims", "hide"}),
     "plot": ({"w", "ys"}, {"layout", "mark", "xlabel", "ylabel", "label", "hide"}),
+    "trilat": ({"w", "sats", "fix"}, {"layout", "roam", "sphere", "label", "hide"}),
     "clip": ({"w", "name"}, {"label"}),
     # дизайн-система проекта (DESIGN.md): пометка рукой, число отливом, список-обещание, красная ручка по мифу
     "hand": ({"w", "text"}, {"line", "hide"}),
@@ -168,9 +170,18 @@ def check(score: dict, words: list) -> list:
             span(item["w"], where)
         if "layout" in item and item["layout"] not in LAYOUTS:
             errs.append(f"{where}: раскладки «{item['layout']}» нет — есть {', '.join(LAYOUTS)}")
-        for key in ("at", "over", "until"):
+        for key in ("at", "over", "until", "fix", "roam", "sphere"):
             if key in item:
                 word(item[key], f"{where}.{key}")
+        if kind == "trilat":
+            # три спутника по порядку речи внутри окна, точка — не раньше третьего
+            sats, win = item.get("sats"), item.get("w") if isinstance(item.get("w"), list) else [None, None]
+            if not (isinstance(sats, list) and len(sats) == 3 and all(isinstance(i, int) for i in sats)):
+                errs.append(f"{where}.sats: три номера слов — на каждом встаёт свой спутник")
+            elif sats != sorted(sats) or not all(isinstance(x, int) for x in win) or not win[0] <= sats[0] or \
+                    not (isinstance(item.get("fix"), int) and sats[2] <= item["fix"] <= win[1]):
+                errs.append(f"{where}: нужно w[0] ≤ sats по порядку ≤ fix ≤ w[1] — а не w {win}, sats {sats}, "
+                            f"fix {item.get('fix')}")
         # надпись — одна строка без переноса: предложение в подписи уходит за кадр (19.10.2026, аналитик IMG_3303:
         # «плоскости теряют даже плотно уложенные круги» вылезла на 785 px). Длиннее — короче или в субтитры
         texts = [("text", item.get("text"), TEXT_MAX.get(kind, 18)), ("sub", item.get("sub"), SUB_MAX),
@@ -232,7 +243,7 @@ def where_of(item: dict) -> str:
     fixed = {"word": "behind", "stamp": "chest", "clip": "full", "hand": "behind", "number": "behind",
              "promise": "chest", "strike": "chest"}
     defaults = {"write": "split", "route": "behind", "timeline": "split", "compass": "behind", "hexes": "behind",
-                "cuboid": "split", "plot": "split"}
+                "cuboid": "split", "plot": "split", "trilat": "split"}
     return fixed.get(item.get("kind")) or item.get("layout") or defaults.get(item.get("kind"), "?")
 
 
@@ -378,8 +389,8 @@ def _over_head(m, text: str, family: str, a: float, b: float, top: float, line: 
 
 
 def _hand(m, pid: str, item: dict, a: float, b: float) -> None:
-    """Пометка рукой над головой (Caveat, по буквам): вопрос хука, «ответ — в конце»; человек поверх, "line" — стальной
-    подчерк. Субтитры идут: пометка добавляет к речи, а не повторяет её (повторяет — "hide": true)."""
+    """Пометка рукой над головой (Caveat, по буквам): вопрос хука, «ответ — в конце»; человек поверх, "line" — подчерк
+    акцентом. Субтитры идут: пометка добавляет к речи, а не повторяет её (повторяет — "hide": true)."""
     text = item["text"]
     leave = max(b, a + 1.2)
     top = bp.TOP_LINE + 2
@@ -409,7 +420,7 @@ def _hand(m, pid: str, item: dict, a: float, b: float) -> None:
 
 
 def _number(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
-    """Число стальным отливом за головой (Unbounded), бьёт из крупного на «at»; над ним шёпотом подпись ("sub").
+    """Число акцентом системы за головой (Unbounded), бьёт из крупного на «at»; над ним шёпотом подпись ("sub").
     Субтитры этих слов спрятаны — число на экране и есть речь (не повторяет — "hide": false)."""
     text, sub = item["text"], item.get("sub", "")
     a0, leave = min(a, at), max(b, at + 0.8)
@@ -436,7 +447,7 @@ def _number(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
 
 
 def _promise(m, pid: str, item: dict, a: float, b: float, start, end) -> None:
-    """Список-обещание на груди (из направления В): заголовок и 2–4 строки; квадрат строки заливается сталью на слове
+    """Список-обещание на груди (из направления В): заголовок и 2–4 строки; квадрат строки заливается акцентом на слове
     пункта, строка разгорается из серого в крем. Субтитры идут как шли — прячется только слово пункта, его текст уже
     на экране (двойного текста нет, п.16)."""
     rows = item["rows"]
@@ -495,6 +506,10 @@ def _piece(kind: str, pid: str, item: dict, a, b, start, end):
         return bp.hexes(pid, a, b, **{key: item[key] for key in ("cols", "rows", "red", "label") if key in item}, **layout)
     if kind == "cuboid":
         return bp.cuboid(pid, a, b, **({"dims": tuple(item["dims"])} if "dims" in item else {}), **layout)
+    if kind == "trilat":
+        return bp.trilat(pid, a, b, [start(i) for i in item["sats"]], start(item["fix"]), label=item.get("label", ""),
+                         roam=start(item["roam"]) if "roam" in item else None,
+                         sphere=start(item["sphere"]) if "sphere" in item else None, **layout)
     if kind == "plot":
         return bp.plot(pid, item["ys"], a, b, **{key: item[key] for key in ("mark", "xlabel", "ylabel", "label") if key in item},
                        **layout)
@@ -516,7 +531,13 @@ def main():
                 sys.exit("✗ партитура с ошибками:\n  " + "\n  ".join(errs))
             print(f"✓ {path_of(args.stem, args.variant).name}: годна")
         else:
+            # как analyst.assemble: субтитры (что спрятано, ключевые слова, линия в сплите) берутся из director.json,
+            # который пишет сборка, — без compose после неё страница шла со старыми и verify_page краснел ложно (IMG_3647)
+            import compose
+            if not (compose.STUDIO / compose.project_name(args.stem, args.variant) / "camera.js").exists():
+                compose.compose(args.stem, variant=args.variant)
             build(args.stem, args.variant)
+            compose.compose(args.stem, variant=args.variant)
     except ScoreError as e:
         sys.exit(f"✗ {e}")
 
