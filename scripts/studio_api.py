@@ -831,6 +831,70 @@ def reveal(data: dict = Body(...)):
     return {"ok": True}
 
 
+TRASH_DIR = None          # куда host.trash кладёт удалённое; самопроверка подставляет свою папку вместо Корзины
+STUDIO_PAGES = ROOT / "studio"          # страницы графики роликов (studio/<имя>/); самопроверка подставляет свою
+
+
+def stem_busy(stem: str) -> str:
+    """Чем занят ролик прямо сейчас (пачка, чат ИИ, задача очереди) — или пусто."""
+    if stem in batch_active_stems():
+        return "его монтирует пачка"
+    if any(runs[t].get("stem") == stem for t in running_threads()):
+        return "с ним работает ИИ в чате"
+    q = queue_state()
+    jobs = q["pending"] + ([q["current"]["job"]] if q["current"] else [])
+    if any(re.search(rf"-{re.escape(stem)}(?:-|$)", j) for j in jobs):
+        return "его задача стоит в очереди"
+    return ""
+
+
+def video_leftovers(stem: str, path: Path) -> list:
+    """Что уходит в Корзину вместе с видео: исходник (или папка сборки и собранный дубль), work/<имя>/ с решениями
+    и кусками, work/<имя>.* (транскрипт, фильтр), studio/<имя>/ (страница графики). Выпуски в output/ — не трогаются."""
+    found = [path]
+    pack = projects.pack_of(stem)
+    if pack and pack != path:
+        found.append(pack)
+    found += [p for p in (WORK_DIR / stem, STUDIO_PAGES / stem) if p.exists()]
+    found += sorted(p for p in WORK_DIR.glob(f"{stem}.*") if p.is_file() and p.name.split(".")[0] == stem)
+    return found
+
+
+@router.get("/api/studio/video/{stem}/delete")
+def delete_preview(stem: str):
+    """Что именно удалится — окно подтверждения показывает это до нажатия."""
+    stem = safe_stem(stem)
+    path = source_of(stem)
+    if path is None:
+        raise HTTPException(404, f"Видео {stem} нет ни в одном проекте")
+    return {"stem": stem, "busy": stem_busy(stem), "outputs": len(outputs_for(stem)),
+            "files": [projects.rel(p) for p in video_leftovers(stem, path)]}
+
+
+@router.post("/api/studio/video/{stem}/delete")
+def delete_video(stem: str):
+    """Удалить видео из проекта — в Корзину системы, человек вернёт оттуда сам. Готовые ролики остаются в output/:
+    это уже работа, а не сырьё. Видео в работе (пачка, чат, очередь) не удаляется — громкий отказ."""
+    stem = safe_stem(stem)
+    path = source_of(stem)
+    if path is None:
+        raise HTTPException(404, f"Видео {stem} нет ни в одном проекте")
+    busy = stem_busy(stem)
+    if busy:
+        raise HTTPException(409, f"{stem} сейчас не удалить — {busy}. Останови или дождись")
+    moved = []
+    for item in video_leftovers(stem, path):
+        try:
+            host.trash(item, TRASH_DIR)
+        except (OSError, subprocess.CalledProcessError) as e:
+            raise HTTPException(500, f"Не удалось убрать в Корзину {projects.rel(item)}: {e}. "
+                                     f"Уже убрано: {', '.join(moved) or 'ничего'}")
+        moved.append(projects.rel(item))
+    for shot in (WORK_DIR / "frames").glob(f"{stem}_*.jpg"):
+        shot.unlink(missing_ok=True)      # кэш превью: новое видео со старым именем не покажет чужое
+    return {"ok": True, "stem": stem, "trashed": moved}
+
+
 # ---------------------------------------------------------------- мозг
 
 _engines_seen: dict = {"at": 0.0, "data": None}

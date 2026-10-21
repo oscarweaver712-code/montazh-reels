@@ -90,10 +90,18 @@ header.top { display: flex; align-items: center; gap: 14px; padding: 0 14px; bac
 .hint { color: var(--mute); font-size: 12px; }
 
 /* ---------- середина: библиотека · плеер · ИИ ---------- */
-.mid { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; min-height: 0; }
+.mid { display: grid; grid-template-columns: 300px minmax(0, 1fr) var(--rw, 380px); min-height: 0; }
 .side { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .side.left { border-right: 1px solid var(--line); }
-.side.right { border-left: 1px solid var(--line); }
+.side.right { border-left: 1px solid var(--line); position: relative; }
+.rsplit { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 5; }
+.rsplit:hover, .rsplit.drag { background: linear-gradient(90deg, transparent 3px, var(--accent) 3px, var(--accent) 5px, transparent 5px); }
+.csplit { height: 8px; margin: -10px -12px 0; cursor: row-resize; }
+.csplit:hover, .csplit.drag { background: linear-gradient(transparent 3px, var(--accent) 3px, var(--accent) 5px, transparent 5px); }
+.insp-card { flex: none; position: relative; max-height: 48%; overflow-y: auto; margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel2); }
+.insp-card[hidden] { display: none; }
+.insp-x { position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--mute); cursor: pointer; display: grid; place-items: center; }
+.insp-x:hover { color: var(--ink); background: var(--soft); }
 .tabs { display: flex; border-bottom: 1px solid var(--line); flex: none; }
 .tabs button { flex: 1; border: 0; background: none; padding: 10px 6px 9px; cursor: pointer; color: var(--mute); font-weight: 600; font-size: 12px; border-bottom: 2px solid transparent; }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--rec); }
@@ -116,6 +124,11 @@ h2:first-child { margin-top: 0; }
 .reel:hover { border-color: var(--mute); }
 .reel[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--rec); }
 .reel-head { display: flex; align-items: baseline; gap: 8px; }
+.reel .del { position: absolute; right: 6px; bottom: 6px; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--mute); cursor: pointer; opacity: 0; transition: opacity .12s; }
+.reel:hover .del, .reel:focus-within .del { opacity: 1; }
+.reel .del:hover { color: var(--rec); border-color: color-mix(in srgb, var(--rec) 45%, transparent); background: color-mix(in srgb, var(--rec) 10%, transparent); }
+.ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+#del-files { font: 11.5px var(--mono); color: var(--mute); max-height: 160px; overflow: auto; margin: 6px 0 10px; padding-left: 16px; }
 .reel-name { font-family: var(--mono); font-weight: 700; font-size: 12.5px; }
 .reel-meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--mute); }
 .reel-state { font-size: 11px; color: var(--mute); display: flex; gap: 6px; align-items: center; }
@@ -242,7 +255,7 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; backg
 .empty-chat { color: var(--mute); font-size: 12.5px; padding: 12px; border: 1px dashed var(--line); border-radius: var(--r); }
 .composer[hidden] { display: none; }
 .composer { flex: none; border-top: 1px solid var(--line); padding: 10px 12px; display: grid; gap: 8px; background: var(--panel); }
-.composer textarea { min-height: 64px; max-height: 200px; }
+.composer textarea { min-height: 64px; max-height: 70vh; height: var(--ch, 64px); resize: none; }
 .ctx { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--mute); }
 .ctx code { font-family: var(--mono); color: var(--ink); background: var(--soft); padding: 1px 5px; border-radius: 4px; }
 .batch { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel2); font-size: 12px; display: grid; gap: 4px; }
@@ -450,8 +463,8 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0 10px; }
 dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; font: 12.5px var(--mono); }
 
-@media (max-width: 1280px) { .mid { grid-template-columns: 260px minmax(0, 1fr) 330px; } }
-@media (max-width: 1000px) { .mid { grid-template-columns: 0 minmax(0, 1fr) 320px; } .side.left { display: none; } }
+@media (max-width: 1280px) { .mid { grid-template-columns: 260px minmax(0, 1fr) var(--rw, 330px); } }
+@media (max-width: 1000px) { .mid { grid-template-columns: 0 minmax(0, 1fr) var(--rw, 320px); } .side.left { display: none; } }
 </style>
 </head>
 <body>
@@ -580,7 +593,6 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
   <!-- плеер -->
   <section class="center" aria-label="Плеер">
     <div class="monbar"><div class="versions" id="versions"></div><span class="grow"></span>
-      <button type="button" class="icon" id="zones-btn" aria-pressed="false" title="Показать, где интерфейс Instagram и TikTok закрывает кадр (Z)">▦ Зоны</button>
       <button type="button" class="icon" id="full-btn" title="Плеер на весь экран (F)">⛶</button></div>
     <div class="monitor" id="monitor"><div class="screen" id="screen"><div class="empty">Выбери ролик слева</div></div></div>
     <div class="transport">
@@ -592,12 +604,16 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
   </section>
 
   <!-- ИИ-монтаж и свойства -->
-  <section class="side right" aria-label="ИИ-монтаж и свойства">
+  <section class="side right" aria-label="ИИ-монтаж">
+    <div class="rsplit" id="rsplit" role="separator" aria-orientation="vertical" aria-label="Ширина панели ИИ" title="Потяни — шире или уже, двойной клик — как было"></div>
     <div class="tabs" role="tablist" id="rtabs">
       <button role="tab" aria-selected="true" data-tab="ai">ИИ-монтаж <span id="brain-state" class="tc"></span></button>
-      <button role="tab" aria-selected="false" data-tab="props">Свойства</button>
     </div>
     <div class="pane aipane" id="tab-ai">
+      <div class="insp-card" id="insp-card" hidden>
+        <button type="button" class="insp-x" id="insp-x" title="Снять выделение (Esc)" aria-label="Снять выделение"></button>
+        <div class="insp" id="insp"></div>
+      </div>
       <div id="ai-start"></div>
       <div class="batch" id="batch" hidden></div>
       <div class="brain-head">
@@ -608,9 +624,8 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
       </div>
       <div class="log" id="log" aria-live="polite"></div>
     </div>
-    <div class="pane" id="tab-props" hidden><div class="insp" id="insp"></div></div>
-    <div class="composer" id="ask-ai" hidden><button type="button" class="btn" id="ask-ai-btn" title="Перейти в ИИ-монтаж: место и выделенное приложатся к сообщению">Спросить ИИ про это место →</button></div>
     <div class="composer" id="composer">
+      <div class="csplit" id="csplit" role="separator" aria-orientation="horizontal" aria-label="Высота поля ввода" title="Потяни вверх — поле ввода выше"></div>
       <textarea id="input" placeholder="Что поменять в монтаже? «надпись на 0:12 раньше», «убери наезд на склейке», «на 0:20 поставь фото из материалов»…"></textarea>
       <label class="ctx"><input type="checkbox" id="ctx-on" checked> приложить место: <code id="ctx-text">плейхед 0:00</code></label>
       <div class="actions" style="margin-top:0">
@@ -707,7 +722,7 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
     <li><b>Перетащи видео</b> в «Медиа» слева (или «＋ Новое видео» в меню видео сверху).</li>
     <li>Справа нажми <b>«Запустить ИИ-монтаж»</b>. ИИ сам сделает рез, камеру, субтитры, графику и звук — шаги видно там же.</li>
     <li>Смотри результат в плеере («Монтаж ●» — живой, сразу с правками). Не нравится — <b>напиши справа словами</b>: «надпись раньше», «субтитры крупнее». Место, где стоит плейхед, и выделенный клип приложатся сами.</li>
-    <li>Мелочи — <b>руками</b>: клик по кадру выделяет слой, тащи его, угол рамки — размер; справа шрифт, цвет, текст. Дорожки внизу: тащи клип — сдвиг, край — длина.</li>
+    <li>Мелочи — <b>руками</b>: клик по кадру выделяет слой, тащи его, угол рамки — размер; справа шрифт, цвет, текст. Дорожки внизу: тащи клип — сдвиг, край — длина. Выделенный клип — его свойства появятся над чатом. Белая точка на клипе — твоя правка, ИИ её не затрёт.</li>
     <li><b>⬇ Экспорт</b> — студия проверит ролик за пару секунд и соберёт его (~10 минут). Готовое появится над плеером: ⬇ — скачать, ✓ — принять как финал.</li>
   </ol>
   <h3 style="margin-top:14px">Клавиши</h3>
@@ -721,6 +736,16 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
     <span>Правый клик по клипу — его действия</span><span><kbd>?</kbd> эта подсказка</span>
   </div>
   <div class="row"><button type="button" class="btn rec" id="help-close">Понятно</button></div>
+</dialog>
+
+<dialog class="modal" id="del-dialog" aria-labelledby="del-title">
+  <h3 id="del-title">Удалить видео?</h3>
+  <p class="say" id="del-say"></p>
+  <ul id="del-files"></ul>
+  <div class="row">
+    <button type="button" class="btn" id="del-cancel">Отмена</button>
+    <button type="button" class="btn rec" id="del-go">В Корзину</button>
+  </div>
 </dialog>
 
 <dialog class="modal" id="approve" aria-labelledby="approve-title">
@@ -803,6 +828,26 @@ async function api(path, { method = "GET", json, form } = {}) {
   return data;
 }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+// свои иконки студии: линия 1.7, цвет — от текста (currentColor), сетка 24×24
+const ICONS = {
+  trash: '<path d="M4 7h16M9.5 7V4.8c0-.4.4-.8.8-.8h3.4c.4 0 .8.4.8.8V7M6.5 7l.9 12.2c.1.5.5.8 1 .8h7.2c.5 0 .9-.3 1-.8L17.5 7M10 11v5.5M14 11v5.5"/>',
+  folder: '<path d="M3.5 7.5c0-.8.7-1.5 1.5-1.5h4.3l1.9 2H19c.8 0 1.5.7 1.5 1.5v7.5c0 .8-.7 1.5-1.5 1.5H5c-.8 0-1.5-.7-1.5-1.5z"/>',
+  folderPlus: '<path d="M3.5 7.5c0-.8.7-1.5 1.5-1.5h4.3l1.9 2H19c.8 0 1.5.7 1.5 1.5v7.5c0 .8-.7 1.5-1.5 1.5H5c-.8 0-1.5-.7-1.5-1.5zM12 11.2v4.6M9.7 13.5h4.6"/>',
+  project: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17M8 5l2 4M13 5l2 4"/>',
+  head: '<circle cx="12" cy="9" r="3.2"/><path d="M5.5 19.5c.8-3.3 3.4-5 6.5-5s5.7 1.7 6.5 5"/>',
+  stack: '<rect x="4" y="9" width="12" height="11" rx="1.6"/><path d="M8 6h10.4c.9 0 1.6.7 1.6 1.6V16"/>',
+  rules: '<path d="M9 7h10M9 12h10M9 17h10"/><path d="M4.5 7l1 1 1.8-2M4.5 12l1 1 1.8-2M4.5 17l1 1 1.8-2"/>',
+  setup: '<path d="M5 6.5h9M18 6.5h1M5 12h3M12 12h7M5 17.5h7M16 17.5h3"/><circle cx="16" cy="6.5" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="14" cy="17.5" r="2"/>',
+  refs: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="m10 9.5 4.5 2.5-4.5 2.5z"/>',
+  plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+  move: '<path d="M4 12h13M13 7.5 17.5 12 13 16.5"/><path d="M20 5v14"/>',
+  clip: '<path d="m19 11.5-6.9 6.9a4.3 4.3 0 0 1-6.1-6.1l7.4-7.4a2.9 2.9 0 0 1 4.1 4.1L10.1 16.4a1.4 1.4 0 0 1-2-2L14.5 8"/>',
+  grip: '<circle cx="9" cy="7" r=".9"/><circle cx="15" cy="7" r=".9"/><circle cx="9" cy="12" r=".9"/><circle cx="15" cy="12" r=".9"/><circle cx="9" cy="17" r=".9"/><circle cx="15" cy="17" r=".9"/>',
+  queue: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4 5.5h1.8v2H4zM4 11h1.8v2H4zM4 16.5h1.8v2H4z"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  close: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+};
+function icon(name, cls = "") { return `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`; }
 function tc(sec, fps = 30) {
   if (sec == null) return "—";
   const s = Math.max(0, sec), m = Math.floor(s / 60), x = Math.floor(s % 60), f = Math.floor((s % 1) * fps + 1e-6);
@@ -811,7 +856,7 @@ function tc(sec, fps = 30) {
 function sec(t) { return `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, "0")}`; }
 function mmss(s) { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
 function say(id, text, err = false) { const el = $(id); if (!el) return; el.textContent = text; el.classList.toggle("err", err); }
-function toast(text, err = false) { say(S.rtab === "props" ? "brain-say" : "brain-say", text, err); }
+function toast(text, err = false) { say("brain-say", text, err); }
 
 /* ---------- тема ---------- */
 document.documentElement.dataset.theme = store.get("theme", "dark");
@@ -834,8 +879,6 @@ function pickTab(groupId, prefix, name) {
   });
   if (groupId === "rtabs") {
     S.rtab = name;
-    $("composer").hidden = name !== "ai";
-    $("ask-ai").hidden = name === "ai";
   }
 }
 tabs("ltabs", "tab");
@@ -980,7 +1023,8 @@ function reelLi(v) {
       <img class="thumb" loading="lazy" alt="" src="/api/studio/thumb/${encodeURIComponent(v.stem)}" onerror="this.style.visibility='hidden'">
       <div class="reel-head"><span class="reel-name">${esc(v.stem)}${v.pack ? `<span class="pk" title="сборка: один ролик из ${v.pack.clips} видео (${mmss(v.pack.seconds)} сырья)${v.pack.built ? " — собрана" : ""}">▦ ${v.pack.clips}</span>` : ""}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
       <div class="strip">${STEPS.map((k) => `<span class="${v.steps[k] ? "done" : ""}"></span>`).join("")}<span class="${v.outputs.length ? "out" : ""}"></span></div>
-      <div class="reel-state">${reelState(v)}${v.brief.error ? ` · <span style="color:var(--rec)">бриф с ошибкой</span>` : ""}</div></li>`;
+      <div class="reel-state">${reelState(v)}${v.brief.error ? ` · <span style="color:var(--rec)">бриф с ошибкой</span>` : ""}</div>
+      <button type="button" class="del" data-del="${esc(v.stem)}" title="Удалить видео из проекта (в Корзину)" aria-label="Удалить ${esc(v.stem)}">${icon("trash")}</button></li>`;
 }
 function filtered(q) { q = (q || "").trim().toLowerCase(); return shown().filter((v) => !q || v.stem.toLowerCase().includes(q)); }
 function renderReels() {
@@ -1019,7 +1063,62 @@ $("vmenu-pop").addEventListener("click", (e) => {
   const b = e.target.closest("[data-stem]"); if (b) { closeMenus(); selectVideo(b.dataset.stem); }
 });
 $("reel-q").addEventListener("input", renderReels);
-$("reels").addEventListener("click", (e) => { const li = e.target.closest(".reel"); if (li) selectVideo(li.dataset.stem); });
+$("reels").addEventListener("click", (e) => {
+  const del = e.target.closest("[data-del]"); if (del) { e.stopPropagation(); askDelete(del.dataset.del); return; }
+  const li = e.target.closest(".reel"); if (li) selectVideo(li.dataset.stem);
+});
+// удаление видео: сначала показать, что уйдёт в Корзину (сервер знает точно), потом — по кнопке
+async function askDelete(stem) {
+  try {
+    const d = await api(`/api/studio/video/${encodeURIComponent(stem)}/delete`);
+    $("del-title").textContent = `Удалить ${stem}?`;
+    $("del-say").textContent = d.busy ? `Сейчас нельзя: ${d.busy}.`
+      : `Уйдёт в Корзину — оттуда можно вернуть.${d.outputs ? ` Готовые ролики (${d.outputs}) останутся в output/.` : ""}`;
+    $("del-say").classList.toggle("err", !!d.busy);
+    $("del-files").innerHTML = d.files.map((f) => `<li>${esc(f)}</li>`).join("");
+    $("del-go").disabled = !!d.busy; $("del-go").dataset.stem = stem;
+    $("del-dialog").showModal();
+  } catch (err) { say("brain-say", err.message, true); }
+}
+$("del-cancel").addEventListener("click", () => $("del-dialog").close());
+$("insp-x").innerHTML = icon("close");
+$("insp-x").addEventListener("click", () => select(null));
+// панель ИИ шире или уже — тянуть левый край; поле ввода выше — тянуть его верх. Запоминается в браузере
+function dragSize(handle, onMove, onDone) {
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); handle.setPointerCapture(e.pointerId); handle.classList.add("drag");
+    const move = (ev) => onMove(ev);
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", () => { handle.removeEventListener("pointermove", move); handle.classList.remove("drag"); onDone(); }, { once: true });
+  });
+}
+function setRightWidth(px) {
+  const mid = document.querySelector(".mid");
+  if (!px) { mid.style.removeProperty("--rw"); return; }
+  mid.style.setProperty("--rw", `${Math.round(Math.max(300, Math.min(px, window.innerWidth * 0.62)))}px`);
+}
+function setComposerHeight(px) {
+  if (!px) { $("input").style.removeProperty("--ch"); return; }
+  $("input").style.setProperty("--ch", `${Math.round(Math.max(64, Math.min(px, window.innerHeight * 0.7)))}px`);
+}
+setRightWidth(store.get("rightWidth", 0)); setComposerHeight(store.get("composerHeight", 0));
+dragSize($("rsplit"), (e) => setRightWidth(document.querySelector(".mid").getBoundingClientRect().right - e.clientX),
+  () => store.set("rightWidth", parseInt(getComputedStyle(document.querySelector(".mid")).getPropertyValue("--rw")) || 0));
+$("rsplit").addEventListener("dblclick", () => { setRightWidth(0); store.set("rightWidth", 0); });
+dragSize($("csplit"), (e) => setComposerHeight($("input").getBoundingClientRect().bottom - e.clientY - 4),
+  () => store.set("composerHeight", $("input").getBoundingClientRect().height));
+$("csplit").addEventListener("dblclick", () => { setComposerHeight(0); store.set("composerHeight", 0); });
+$("del-go").addEventListener("click", async () => {
+  const stem = $("del-go").dataset.stem;
+  try {
+    await api(`/api/studio/video/${encodeURIComponent(stem)}/delete`, { method: "POST" });
+    $("del-dialog").close();
+    if (S.stem === stem) { S.stem = null; store.set("stem", null); }
+    await poll(); renderReels();
+    if (!S.stem) { const first = shown()[0]; if (first) selectVideo(first.stem); else { renderVersions(); showView(); renderTimeline(); renderAiStart(); } }
+    say("brain-say", `${stem} — в Корзине.`);
+  } catch (err) { $("del-say").textContent = err.message; $("del-say").classList.add("err"); }
+});
 $("reels").addEventListener("keydown", (e) => { const li = e.target.closest(".reel"); if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); selectVideo(li.dataset.stem); } });
 function styleName(id) { const s = S.styles.find((x) => x.id === id); return s ? s.name : id; }
 function current() { return S.videos.find((v) => v.stem === S.stem) || null; }
@@ -1493,7 +1592,7 @@ $("tl-inner").addEventListener("pointerdown", (e) => {
 });
 $("tl-inner").addEventListener("dblclick", (e) => {
   const b = e.target.closest(".blk"); if (!b) return;
-  select(b.dataset.type, b.dataset.key); pickTab("rtabs", "tab", "props");
+  select(b.dataset.type, b.dataset.key);
   const first = $("insp").querySelector("input"); if (first) first.focus();
 });
 async function commitDrag(type, key, r, edge) {
@@ -1538,7 +1637,6 @@ function select(type, key) {
   if (type) {
     const el = document.querySelector(`.blk[data-type="${type}"][data-key="${CSS.escape(key)}"]`);
     if (el) el.classList.add("sel");
-    pickTab("rtabs", "tab", "props");
   }
   renderInspector();
   updatePlayhead();
@@ -1551,13 +1649,9 @@ function field(label, html) { return `<div class="field"><span>${label}</span>${
 function num(id, v, step = 0.01, min = 0, max = 9999) { return `<input type="number" id="${id}" value="${v}" step="${step}" min="${min}" max="${max}">`; }
 function renderInspector() {
   const box = $("insp"), tr = S.tracks, s = S.sel;
-  if (!tr || !s) {
-    box.innerHTML = `<p class="hint">Выдели клип на таймлайне — здесь появятся его свойства.<br><br>
-      <b>Мышкой:</b> тащи клип — сдвиг, тащи край — длина; клик по пустому месту — плейхед.<br>
-      <b>Клавиши:</b> пробел — пуск, ← → — кадр (Shift — секунда), Delete — убрать, ⌘Z — отменить, ⌘ + колесо — масштаб.<br><br>
-      Белая точка на клипе — твоя ручная правка. Её не затрёт и ИИ: правки лежат в work/&lt;ролик&gt;/timeline.json.</p>`;
-    return;
-  }
+  // свойства — только у выделенного: карточка над чатом появляется сама и уходит со снятием выделения
+  $("insp-card").hidden = !tr || !s;
+  if (!tr || !s) { box.innerHTML = ""; return; }
   const head = (kind, color, title) => `<div class="kind" style="color:var(${color})">${kind}</div><h3>${esc(title)}</h3>`;
   if (s.type === "cam") {
     const [a, b] = s.key.split("|").map(Number), p = tr.camera.find((c) => Math.abs(c.a - a) < 1e-3 && Math.abs(c.b - b) < 1e-3);
@@ -2057,9 +2151,8 @@ function drawZones() {
   layer.innerHTML = (S.tracks.zones || []).map((z) => { const [x0, y0, x1, y1] = z.rect;
     return `<i style="left:${x0 / w * 100}%;top:${y0 / h * 100}%;width:${(x1 - x0) / w * 100}%;height:${(y1 - y0) / h * 100}%"><span>${esc(z.name.split(":")[0])}</span></i>`; }).join("");
 }
-function toggleZones() { store.set("zones", !store.get("zones", false)); $("zones-btn").setAttribute("aria-pressed", String(store.get("zones", false))); drawZones(); }
-$("zones-btn").addEventListener("click", toggleZones);
-$("zones-btn").setAttribute("aria-pressed", String(store.get("zones", false)));
+// зоны площадок — только клавишей Z: настроить их нельзя, а безопасные поля конвейер держит сам (verify_page)
+function toggleZones() { store.set("zones", !store.get("zones", false)); drawZones(); }
 function toggleFull() { const m = $("monitor"); if (document.fullscreenElement) document.exitFullscreen(); else m.requestFullscreen().catch(() => {}); }
 $("full-btn").addEventListener("click", toggleFull);
 document.addEventListener("fullscreenchange", () => setTimeout(fitScreen, 60));
@@ -2574,7 +2667,7 @@ $("send").addEventListener("click", async () => {
   const ctx = $("ctx-on").checked && v && v.steps.page ? `[Монтажная: ${ctxText()}. Ручные правки человека — work/${v.stem}/timeline.json, их не затирать.]\n` : "";
   try { await send(ctx + raw); $("input").value = ""; } catch (e) { brainError(e); }
 });
-$("ask-ai-btn").addEventListener("click", () => { pickTab("rtabs", "tab", "ai"); $("input").focus(); });
+
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("send").click(); } });
 $("stop").addEventListener("click", async () => { try { await api(`/api/brain/stop/${S.thread}`, { method: "POST" }); } catch (e) { say("brain-say", e.message, true); } });
 

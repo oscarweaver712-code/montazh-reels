@@ -15,6 +15,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 IS_WINDOWS = sys.platform == "win32"
@@ -88,6 +89,31 @@ def reveal(path: Path) -> None:
         subprocess.run(["explorer", f"/select,{path}"] if path.is_file() else ["explorer", str(path)])
     else:
         subprocess.run(["xdg-open", str(path.parent if path.is_file() else path)])
+
+
+def trash(path: Path, trash_dir: Path | None = None) -> Path | None:
+    """Убрать файл или папку в Корзину системы — оттуда человек вернёт сам (удаление видео из студии).
+
+    Mac и Linux — перенос в папку корзины (одноимённое не затирается: к имени дописывается время),
+    Windows — в Корзину Проводника через VisualBasic.FileIO. trash_dir — для самопроверки. Возвращает,
+    куда легло (на Windows — None: путь внутри Корзины система не отдаёт).
+    """
+    path = Path(path)
+    if IS_WINDOWS and trash_dir is None:
+        kind = "DeleteDirectory" if path.is_dir() else "DeleteFile"
+        # путь — через переменную окружения: кириллица и кавычки в имени не ломают команду
+        script = ("Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::"
+                  f"{kind}($env:REELS_TRASH, 'OnlyErrorDialogs', 'SendToRecycleBin')")
+        subprocess.run(["powershell", "-NoProfile", "-Command", script], check=True, capture_output=True,
+                       env=dict(os.environ, REELS_TRASH=str(path)))
+        return None
+    folder = trash_dir or (Path.home() / ".Trash" if IS_MAC else Path.home() / ".local" / "share" / "Trash" / "files")
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / path.name
+    if target.exists():
+        target = folder / f"{path.stem} {time.strftime('%H.%M.%S')}{path.suffix}"
+    shutil.move(str(path), str(target))
+    return target
 
 
 def open_file(path: Path) -> None:

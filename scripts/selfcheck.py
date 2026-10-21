@@ -4143,6 +4143,97 @@ def check_style_captions(report: Report, tmp: Path):
     report.check(caught, "проверка ловит вход стиля длиннее вспышки")
 
 
+def check_studio_page(report: Report, tmp: Path):
+    """Страница студии поднимается без ошибок JS — в том же Chrome, что и рендер.
+
+    Вся монтажная — один скрипт: обращение к убранной кнопке или опечатка на старте роняет его целиком, и человек
+    видит пустую студию без единого сообщения. Сервер здесь не нужен: запросы к API с file:// падают и ловятся кодом
+    студии, а синхронная ошибка скрипта — нет. Заодно — что 21.10.2026 убрано («Свойства», кнопка «Зоны») и что
+    пришло на замену (свойства над чатом, ручки ширины и высоты, корзина у видео).
+    """
+    from verify_page import find_chrome
+    print("\nСтудия: страница")
+    page = (ROOT / "web" / "studio.html").read_text(encoding="utf-8")
+    page = page.replace("<head>", '<head>\n<script>window.__errs = []; window.addEventListener("error", '
+                        '(e) => window.__errs.push(String(e.message)));</script>', 1)
+    probe = """<script>setTimeout(() => { const out = { errors: window.__errs,
+      gone: ["tab-props", "zones-btn", "ask-ai"].filter((id) => document.getElementById(id)),
+      missing: ["insp-card", "rsplit", "csplit", "del-dialog"].filter((id) => !document.getElementById(id)),
+      tabs: [...document.querySelectorAll("#rtabs [data-tab]")].map((b) => b.dataset.tab),
+      trash: typeof icon === "function" && icon("trash").includes("<path") };
+      const p = document.createElement("pre"); p.id = "probe"; p.textContent = JSON.stringify(out); document.body.appendChild(p); }, 800);</script>"""
+    cut = page.rfind("</body>")
+    wrapper = tmp / "studio_probe.html"
+    wrapper.write_text(page[:cut] + probe + page[cut:], encoding="utf-8")
+    res = subprocess.run([find_chrome(), "--headless", "--disable-gpu", "--no-first-run", "--mute-audio",
+                          f"--user-data-dir={tmp / 'studio_profile'}", "--virtual-time-budget=3000", "--dump-dom",
+                          wrapper.as_uri()], capture_output=True, encoding="utf-8", errors="replace", timeout=120)
+    shutil.rmtree(tmp / "studio_profile", ignore_errors=True)
+    m = re.search(r'<pre id="probe">(.*?)</pre>', res.stdout, re.S)
+    import html as _html
+    out = json.loads(_html.unescape(m.group(1))) if m else {"errors": ["Chrome не отдал страницу: " + res.stderr[-200:]]}
+    report.check(not out.get("errors"), "страница студии поднимается без ошибок скрипта",
+                 "; ".join(out.get("errors") or [])[:300] or "чисто")
+    report.check(not out.get("gone") and not out.get("missing") and out.get("tabs") == ["ai"] and out.get("trash"),
+                 "справа один ИИ-монтаж: свойства — над чатом у выделенного, панель и поле ввода тянутся, у видео — корзина",
+                 f"лишнее: {out.get('gone')}, нет: {out.get('missing')}, вкладки: {out.get('tabs')}")
+
+
+def check_delete_video(report: Report, tmp: Path):
+    """Удаление видео из студии (21.10.2026): исходник, work/<имя>/, work/<имя>.* и studio/<имя>/ — в Корзину,
+    готовые ролики остаются в output/, чужое с похожим именем (IMG_3662_2 рядом с IMG_3662) не трогается, а видео
+    в работе не удаляется — громкий отказ. Корзина здесь — своя папка (TRASH_DIR), настоящую тест не трогает."""
+    from fastapi.testclient import TestClient
+    import studio_api
+    from server import TOKEN, app
+
+    print("\nСтудия: удаление видео")
+    work, pages, trash = tmp / "del_work", tmp / "del_studio", tmp / "del_trash"
+    saved = (studio_api.WORK_DIR, studio_api.STUDIO_PAGES, studio_api.TRASH_DIR)
+    studio_api.WORK_DIR, studio_api.STUDIO_PAGES, studio_api.TRASH_DIR = work, pages, trash
+    studio_api.batch.update(running=False, items=[])
+    res = {}
+    try:
+        with temp_projects(tmp / "del_projects", "main") as made, TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            main = made["main"]
+            for stem in ("РОЛИК_У", "РОЛИК_У_2", "РОЛИК_Ф"):
+                (main.input / f"{stem}.MOV").write_bytes(b"v")
+            main.output.mkdir(parents=True, exist_ok=True)
+            (main.output / "РОЛИК_У_v1.mp4").write_bytes(b"done")
+            (work / "РОЛИК_У").mkdir(parents=True)
+            (work / "РОЛИК_У" / "edit.json").write_text("{}", encoding="utf-8")
+            (work / "РОЛИК_У.words.json").write_text("[]", encoding="utf-8")
+            (work / "РОЛИК_У_2.words.json").write_text("[]", encoding="utf-8")
+            (pages / "РОЛИК_У").mkdir(parents=True)
+            key = {"X-Studio-Token": TOKEN}
+            res["preview"] = live.get("/api/studio/video/РОЛИК_У/delete").json()
+            res["del"] = live.post("/api/studio/video/РОЛИК_У/delete", headers=key)
+            studio_api.batch.update(running=True, items=[{"stem": "РОЛИК_Ф", "status": "working"}])
+            res["busy"] = live.post("/api/studio/video/РОЛИК_Ф/delete", headers=key)
+            studio_api.batch.update(running=False, items=[])
+            res["left"] = sorted(p.name for p in main.input.iterdir() if not p.name.startswith("."))
+            res["out"] = (main.output / "РОЛИК_У_v1.mp4").exists()
+            res["work"] = sorted(p.name for p in work.iterdir())
+            res["trash"] = sorted(p.name for p in trash.iterdir()) if trash.exists() else []
+    finally:
+        studio_api.WORK_DIR, studio_api.STUDIO_PAGES, studio_api.TRASH_DIR = saved
+        studio_api.batch.update(running=False, items=[])
+    # work/РОЛИК_У/ и studio/РОЛИК_У/ — одноимённые папки: вторая ложится в Корзину с временем в имени
+    got = res.get("trash", [])
+    gone = len(got) == 4 and {"РОЛИК_У.MOV", "РОЛИК_У.words.json", "РОЛИК_У"} <= set(got) \
+        and any(n.startswith("РОЛИК_У ") for n in got)
+    report.check(res.get("del") is not None and res["del"].status_code == 200 and gone
+                 and res.get("left") == ["РОЛИК_У_2.MOV", "РОЛИК_Ф.MOV"] and res.get("out")
+                 and res.get("work") == ["РОЛИК_У_2.words.json"] and res["preview"].get("outputs") == 1,
+                 "удалённое видео — в Корзине со своими файлами; готовый ролик и соседнее видео на месте",
+                 f"в Корзине: {res.get('trash')}, в input: {res.get('left')}, в work: {res.get('work')}, "
+                 f"выпуск: {'на месте' if res.get('out') else 'ПРОПАЛ'}")
+    busy = res.get("busy")
+    report.check(busy is not None and busy.status_code == 409 and "пачка" in busy.text and "РОЛИК_Ф.MOV" in res.get("left", []),
+                 "видео, которое монтируется, не удаляется — громкий отказ",
+                 f"код {busy.status_code if busy is not None else '—'}")
+
+
 def check_studio(report: Report, tmp: Path):
     """Студия отвечает только этой машине и только своей странице.
 
@@ -4561,6 +4652,8 @@ def main():
         section(report, check_style_captions, tmp)
         section(report, check_formats, tmp)
         section(report, check_grades, tmp)
+        section(report, check_studio_page, tmp)
+        section(report, check_delete_video, tmp)
         section(report, check_studio, tmp)
         section(report, check_queue_control, tmp)
         section(report, check_web_import, tmp)
