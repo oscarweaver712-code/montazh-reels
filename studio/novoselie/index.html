@@ -178,6 +178,7 @@
                data-start="0" data-duration="57.567" data-track-index="0"></video>
       </div>
       <div id="behind" class="layer">
+        <div id="o-s" class="g" style="left: 0; top: 600px; width: 1080px; height: 520px; background: radial-gradient(ellipse 70% 50% at 32% 50%, rgba(0,0,0,0.42), rgba(0,0,0,0) 72%);" data-safe="пятно под заголовок открытия — у лица прозрачное"></div>
         <div id="wl-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
         <div id="mm-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
         <div id="joy-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
@@ -194,12 +195,8 @@
       <div id="cam-fg" class="cam"></div>
       <div id="front" class="layer">
         <div id="caps"></div>
-        <div id="o0a" class="g t-lead t-left" style="top: 400px; left: 110px; width: 860px; font-size: 46px;">устроила команде</div>
-        <div id="o0b" class="g t-hero t-left" style="top: 455px; left: 110px; width: 860px; font-size: 114px;">новоселье</div>
-        <div id="o1a" class="g t-lead t-left" style="top: 300px; left: 110px; width: 860px; font-size: 46px;">устроила команде</div>
-        <div id="o1b" class="g t-hero t-left" style="top: 355px; left: 110px; width: 860px; font-size: 114px;">новоселье</div>
-        <div id="o2a" class="g t-lead t-left" style="top: 760px; left: 110px; width: 746px; font-size: 46px;">устроила команде</div>
-        <div id="o2b" class="g t-hero t-left" style="top: 815px; left: 110px; width: 746px; font-size: 114px;">новоселье</div>
+        <div id="o-a" class="g t-hero t-left" style="top: 760px; left: 110px; width: 746px; font-size: 64px;"><span id="o-a1">устроила</span> <span id="o-a2">команде</span></div>
+        <div id="o-b" class="g t-hero t-left t-y" style="top: 833px; left: 110px; width: 746px; font-size: 114px;"><span id="o-b1">новоселье</span></div>
         <div id="ck0" class="g t-hero t-left" style="top: 950px; left: 110px; width: 714px; font-size: 103px;">фуршетик,</div>
         <div id="ck1" class="g t-hero t-left" style="top: 1059px; left: 110px; width: 714px; font-size: 103px;">тортик,</div>
         <div id="ck2" class="g t-hero t-left t-y" style="top: 1168px; left: 110px; width: 714px; font-size: 103px;">закусочки</div>
@@ -383,15 +380,14 @@
         });
       });
 
-      slam("#o0a", 0.020, { fromScale: 1.2, blur: 8, dur: 0.12 });
-      slam("#o0b", 0.508, { fromScale: 1.35, blur: 10, dur: 0.14 });
-      leave(["#o0a", "#o0b"], 0.876, { y: -30, dur: 0.09 });
-      slam("#o1a", 0.976, { fromScale: 1.2, blur: 8, dur: 0.12 });
-      slam("#o1b", 0.996, { fromScale: 1.35, blur: 10, dur: 0.14 });
-      leave(["#o1a", "#o1b"], 1.363, { y: -30, dur: 0.09 });
-      slam("#o2a", 1.463, { fromScale: 1.2, blur: 8, dur: 0.12 });
-      slam("#o2b", 1.483, { fromScale: 1.35, blur: 10, dur: 0.14 });
-      leave(["#o2a", "#o2b"], 1.867, { y: -30, dur: 0.09 });
+      tl.set("#o-a", { opacity: 1 }, 0.04);
+      tl.set("#o-b", { opacity: 1 }, 0.508);
+      tl.to("#o-s", { opacity: 1, duration: 0.15, ease: "power1.out" }, 0.0);
+      enter("#o-a1", 0.04, { fromY: 46, fromScale: 0.86, blur: 10, dur: 0.22 });
+      enter("#o-a2", 0.244, { fromY: 46, fromScale: 0.86, blur: 10, dur: 0.22 });
+      slam("#o-b1", 0.508, { fromScale: 1.35, blur: 10, dur: 0.16 });
+      leave(["#o-a", "#o-b"], 1.847, { y: -30, dur: 0.1 });
+      tl.to("#o-s", { opacity: 0, duration: 0.12, ease: "power1.in" }, 1.847);
       flash(1.967);
       whip(0.963);
       whip(1.463);

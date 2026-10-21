@@ -148,18 +148,32 @@ def over_head(tid: str, lead: str, big: list, a: float, b: float, lead_at: float
     scrim(f"{tid}-s", min(lead_at, big[0][0]) - 0.05, b)
 
 
-# ---------------------------------------------------------------- открытие: три вспышки в долю, заголовок прыгает по лицам
+# ---------------------------------------------------------------- открытие: три вспышки в долю, заголовок — один раз
 open_end = scene(4 * BEAT)
-# лица: тост — в левом верхнем углу (до y 366), объятие — внизу (с y 985), смех — y 313–729 по всей ширине; заголовок
-# прыгает по свободным местам одним кеглем и по левому краю: ниже y 727 справа кнопки Instagram — 134 px доски не влезают
-spots = [(400, 0.02, BEAT * 2), (300, BEAT * 2, BEAT * 3), (760, BEAT * 3, open_end)]   # тост, объятие, смех
-o_size = min(fit("новоселье", 134, column(top + 47 + LEAD_GAP, 137)[1]) for top, _, _ in spots)
-for k, (top, a, b) in enumerate(spots):
-    big, _ = hero(f"o{k}b", top + 47 + LEAD_GAP, o_size, "новоселье", "t-left")
-    m.front(text(f"o{k}a", "t-lead t-left", top, 46, "устроила команде") + "\n" + big)
-    m.js(f'''      slam("#o{k}a", {a:.3f}, {{ fromScale: 1.2, blur: 8, dur: 0.12 }});
-      slam("#o{k}b", {(BEAT if k == 0 else a) + 0.02:.3f}, {{ fromScale: 1.35, blur: 10, dur: 0.14 }});
-      leave(["#o{k}a", "#o{k}b"], {b - 0.1:.3f}, {{ y: -30, dur: 0.09 }});''')
+# 21.10.2026, заказчик про v5: «первые 2 секунды… стрёмно три вреза за две секунды, ещё и нечитаемые и одного цвета» —
+# заголовок больше не влетает заново на каждой вспышке: один раз, по слову, и стоит через все три. Место — где лица нет ни
+# в одной: тост — лицо в левом верхнем углу (до y 366), объятие — внизу (с y 985), смех — y 313–729 по всей ширине.
+# Читаемость — Unbounded и в подводке (тонкий Onest на светлом не читался), «новоселье» жёлтым, мягкое пятно под строками
+O_TOP = 760
+o_lead = fit("устроила команде", 134, column(O_TOP, 70)[1])
+o_top2 = O_TOP + round(o_lead * 1.02) + LEAD_GAP
+o_size = fit("новоселье", 134, column(o_top2, 137)[1])
+if o_top2 + round(o_size * 1.02) > 985 - 24:
+    raise ValueError("заголовок открытия доходит до лица во второй вспышке (с y 985)")
+m.front(text("o-a", "t-hero t-left", O_TOP, o_lead, '<span id="o-a1">устроила</span> <span id="o-a2">команде</span>')
+        + "\n" + text("o-b", "t-hero t-left t-y", o_top2, o_size, '<span id="o-b1">новоселье</span>'))
+m.behind('        <div id="o-s" class="g" style="left: 0; top: 600px; width: 1080px; height: 520px; '
+         'background: radial-gradient(ellipse 70% 50% at 32% 50%, rgba(0,0,0,0.42), rgba(0,0,0,0) 72%);" '
+         'data-safe="пятно под заголовок открытия — у лица прозрачное"></div>')
+fly = "{ fromY: 46, fromScale: 0.86, blur: 10, dur: 0.22 }"
+m.js(f'''      tl.set("#o-a", {{ opacity: 1 }}, 0.04);
+      tl.set("#o-b", {{ opacity: 1 }}, {BEAT + 0.02:.3f});
+      tl.to("#o-s", {{ opacity: 1, duration: 0.15, ease: "power1.out" }}, 0.0);
+      enter("#o-a1", 0.04, {fly});
+      enter("#o-a2", {BEAT / 2:.3f}, {fly});
+      slam("#o-b1", {BEAT + 0.02:.3f}, {{ fromScale: 1.35, blur: 10, dur: 0.16 }});
+      leave(["#o-a", "#o-b"], {open_end - 0.12:.3f}, {{ y: -30, dur: 0.1 }});
+      tl.to("#o-s", {{ opacity: 0, duration: 0.12, ease: "power1.in" }}, {open_end - 0.12:.3f});''')
 m.js(f'''      flash({open_end:.3f});
 {whip_at(scene(2 * BEAT))}
 {whip_at(scene(3 * BEAT))}''')
