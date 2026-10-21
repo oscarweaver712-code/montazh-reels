@@ -682,6 +682,35 @@ def check_edges(report: Report):
                  " · ".join(f"{k} {s:.2f}" for k, s in kept) + f"; с мусором: {' · '.join(clean)}")
 
 
+def check_black_frames(report: Report):
+    """Пустой край готового ролика — провал, кроме явного окна director.json → black_frames (21.10.2026, IMG_5688:
+    кадр в кадре на чёрном по замыслу). Окно не прощает пустоту за своими границами и без причины не принимается."""
+    import verify_render
+
+    print("\nЗадуманный чёрный фон")
+    flat, live = (16.0, 16.0, 17.0), (60.0, 20.0, 140.0)
+    values = [live] * 20 + [flat, flat] + [live] * 5 + [flat]        # пусто на 20–21 с (замысел) и на 27 с (камера)
+    holes, meant = verify_render.empty_edges(values, 1.0, [(20.5, 22.0)])
+    bare, _ = verify_render.empty_edges(values, 1.0, [])
+    work = Path(tempfile.mkdtemp(prefix="reels_black_"))
+    saved = verify_render.WORK_DIR
+    verify_render.WORK_DIR = work
+    try:
+        (work / "X").mkdir()
+        (work / "X" / "director.json").write_text(json.dumps({"black_frames": [[20.5, 22.0]]}), encoding="utf-8")
+        try:
+            verify_render.black_frames("X")
+            silent = "окно без причины принято"
+        except ValueError:
+            silent = ""
+    finally:
+        verify_render.WORK_DIR = saved
+        shutil.rmtree(work, ignore_errors=True)
+    report.check(holes == [27] and meant == [20, 21] and bare == [20, 21, 27] and not silent,
+                 "пустой край прощается только в окне black_frames с причиной, за окном — провал",
+                 f"вне окна {holes}, в окне {meant}, без окна {bare}" + (f"; {silent}" if silent else ""))
+
+
 def check_pauses(report: Report):
     """Начало по голосу и рез длинных пауз (20.10.2026, Валера: «на старте точно есть пауза», «могу затупить — хочется не
     терять динамику, склеить переходом, чтобы не заметно было»).
@@ -723,6 +752,21 @@ def check_pauses(report: Report):
     hidden = [j for j in tk.jumps if any(abs(x - j) < 0.02 for x in bounds) and f"whip({j:.2f})" in whips]
     report.check(hidden == tk.jumps, "склейка по паузе спрятана сменой плана со смазом",
                  f"спрятано {hidden} из {tk.jumps}; крупные {[(p[0], p[1]) for p in punches]}")
+
+    # трек автора (keep_audio, «Настюха» 21.10.2026: «Настя уже подложила музыку, нам надо визуал подбить только»):
+    # края — ровно trim (хвост трека после последнего слова цел), паузы не режутся, звук без чистки голоса
+    from prep import cuts_pauses, take_audio, take_edges
+    from render import audio_chain
+    words = [{"word": "летай", "start": 0.0, "end": 1.4}, {"word": "темноте", "start": 27.5, "end": 28.4}]
+    silences = [(28.5, 29.07)]
+    song = take_edges(words, silences, [(0.0, 28.4)], {}, 29.07, None, keep_audio=True)
+    talk = take_edges(words, silences, [(0.0, 28.4)], {}, 29.07, None, keep_audio=False)
+    chain = audio_chain(take_audio({"enabled": True, "denoise": True}, True))
+    report.check(song == (0.0, 29.07) and talk[1] < 29.0 and chain == ["anull"]
+                 and not cuts_pauses({"cut_pauses": True}, {"cut_pauses": True}, True)
+                 and cuts_pauses({}, {"cut_pauses": True}, False),
+                 "трек автора (keep_audio): дубль целиком до хвоста, паузы не режутся, звук как записан",
+                 f"края {song} (без keep_audio — {talk[0]:.2f}–{talk[1]:.2f}), звук {chain}")
 
 
 def check_captions(report: Report):
@@ -4428,6 +4472,7 @@ def main():
     section(report, check_camera)
     section(report, check_cuts)
     section(report, check_edges)
+    section(report, check_black_frames)
     section(report, check_pauses)
     section(report, check_captions)
     section(report, check_score)

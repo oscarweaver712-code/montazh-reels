@@ -65,6 +65,32 @@ def edge_lumas(path: Path, width: int, height: int, step: float) -> list:
     return result
 
 
+def black_frames(stem: str | None) -> list:
+    """Задуманный чёрный фон (director.json → black_frames: [[от, до, "причина"]], шкала дубля).
+
+    21.10.2026, IMG_5688: кадр в кадре на чёрном, как в эталоне проекта, — края пустые по замыслу, а не потому,
+    что камера уехала за исходник. Окно — только явное и с причиной: всё вне его проверяется как раньше.
+    """
+    if not stem:
+        return []
+    base, _, variant = stem.partition("--")
+    path = WORK_DIR / base / (f"director.{variant}.json" if variant else "director.json")
+    if not path.exists():
+        return []
+    windows = json.loads(path.read_text(encoding="utf-8")).get("black_frames") or []
+    bad = [w for w in windows if len(w) < 3 or not str(w[2]).strip() or float(w[1]) <= float(w[0])]
+    if bad:
+        raise ValueError(f"director.json → black_frames: {bad} — нужно [от, до, \"причина\"]")
+    return [(float(a), float(b)) for a, b, *_ in windows]
+
+
+def empty_edges(values: list, step: float, black: list) -> tuple:
+    """Секунды с пустым краем: (вне задуманного чёрного, внутри него). Замер i — кадр около i·step с."""
+    holes = [i for i, (y, lo, hi) in enumerate(values) if y < EMPTY_EDGE_Y and hi - lo < EMPTY_EDGE_SPREAD]
+    meant = [i for i in holes if any(a - step <= i * step <= b for a, b in black)]
+    return [i for i in holes if i not in meant], meant
+
+
 def contact_sheet(path: Path, out: Path, step: float = 2.5, width: int = 1080, height: int = 1920,
                   duration: float = 0.0) -> Path:
     # плитка в пропорциях ролика: вертикаль 216×384 в 8 колонок, горизонталь 384×216 в 5
@@ -230,14 +256,17 @@ def main():
                   f"паузы громче голого дубля на {rise:.1f} дБ (нужно ≥ {MUSIC_BED_DB:g}), подложка {under:.1f} дБ "
                   f"от речи (от {MUSIC_QUIETEST:g} до {MUSIC_LOUDEST:g})")
 
-    worst = []
+    worst, meant = [], []
+    black = black_frames(args.stem)
     for name, values in edge_lumas(video, width, height, step=1.0):
-        holes = [i for i, (y, lo, hi) in enumerate(values)
-                 if y < EMPTY_EDGE_Y and hi - lo < EMPTY_EDGE_SPREAD]
+        holes, inside = empty_edges(values, 1.0, black)
         worst.append(f"{name} мин {min(y for y, _, _ in values):.0f}" if values else f"{name} —")
         if holes:
             worst.append(f"пусто: {name} на {holes[:5]} с")
+        meant += inside
     check(not any(w.startswith("пусто") for w in worst), "по краям нет пустых полос", ", ".join(worst))
+    if meant:
+        print(f"  · чёрный фон по замыслу (director.json → black_frames): {sorted(set(meant))} с")
 
     face_max, whose = face_limit(args.stem)
     face, hot, seen = face_brightness(video, duration) if face_max is not None else (0, 0, 0)

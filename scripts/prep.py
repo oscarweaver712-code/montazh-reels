@@ -9,8 +9,13 @@
     "cut_pauses": true,       # резать длинные паузы внутри (по умолчанию — как в project.json проекта)
     "format": "16:9",         # формат ролика (formats.py); по умолчанию — из брифа или 9:16
     "language": "en",         # язык речи для распознавания; по умолчанию — из project.json проекта
-    "air_end": 0.6            # тишины после последнего слова, с (не дальше конца паузы); по умолчанию 0.12
+    "air_end": 0.6,           # тишины после последнего слова, с (не дальше конца паузы); по умолчанию 0.12
+    "keep_audio": true        # звук исходника как есть (по умолчанию — как в project.json проекта)
   }
+
+keep_audio — ролик под трек, который автор подложил сам («Настюха», 21.10.2026: «Настя уже подложила музыку, нам надо
+визуал подбить только»). Тишины в нём нет — край по тишине отрезал бы хвост трека, а шумодав и компрессор голоса
+портили бы песню. Поэтому дубль — ровно trim (без trim — весь файл), паузы не режутся, звук уходит как записан.
 
 Сборка (несколько видео → один ролик, scripts/pack.py): prep идёт по собранному input/<имя>.mov, края кусков
 уже в тишине, а стыки сборки (work/<имя>/pack.built.json) становятся границами кусков дубля и ложатся в
@@ -337,6 +342,29 @@ def refresh_words(video: Path, out_dir: Path, edit: dict) -> None:
     print(f"  ✓ слов на шкале дубля: {len(aroll_words)}")
 
 
+def take_edges(words: list, silences: list, voice: list, edit: dict, duration: float, pack: dict | None,
+               keep_audio: bool) -> tuple:
+    """Начало и конец дубля на шкале исходника."""
+    trim = edit.get("trim") or [0.0, duration]
+    if pack and not edit.get("trim"):
+        # края кусков сборки уже в тишине (pack.py), а первый кусок бывает без слов — find_edges он не по зубам
+        return 0.0, float(pack["duration"])
+    if keep_audio:
+        # трек автора: края — ровно trim, без подвижки в тишину (её в песне нет — ушёл бы хвост трека)
+        return max(0.0, float(trim[0])), min(float(trim[1]), duration)
+    return find_edges(words, silences, float(trim[0]), float(trim[1]), float(edit.get("air_end", AIR)), voice=voice)
+
+
+def cuts_pauses(edit: dict, project: dict, keep_audio: bool) -> bool:
+    """Резать ли длинные паузы: edit.json → project.json; под треком автора — никогда (вырез порвал бы песню)."""
+    return bool(edit.get("cut_pauses", project["cut_pauses"])) and not keep_audio
+
+
+def take_audio(audio: dict, keep_audio: bool) -> dict:
+    """Обработка звука дубля: голос чистится и выравнивается; трек автора (keep_audio) уходит как записан (render: anull)."""
+    return {**audio, "enabled": False} if keep_audio else audio
+
+
 def make_hq(video: Path, out_dir: Path, preset: dict, edit: dict, fmt: str) -> Path:
     """Дубль для страницы с запасом под зум камеры (15.10.2026, IMG_1799: «не херишь ли качество»).
 
@@ -451,19 +479,16 @@ def main():
     pack = load_pack(stem, video)
     joins = [float(j) for j in (pack or {}).get("joins") or []]
     inner = [float(j) for j in (pack or {}).get("cuts") or []]      # склейки сборки внутри одного плана
-    trim = edit.get("trim") or [0.0, info["duration"]]
-    if pack and not edit.get("trim"):
-        # края кусков сборки уже в тишине (pack.py), а первый кусок бывает без слов — find_edges он не по зубам
-        start, end = 0.0, float(pack["duration"])
-    else:
-        start, end = find_edges(words, silences, float(trim[0]), float(trim[1]),
-                                float(edit.get("air_end", AIR)), voice=voice)
+    project = project_config(stem)
+    keep_audio = bool(edit.get("keep_audio", project.get("keep_audio")))
+    start, end = take_edges(words, silences, voice, edit, info["duration"], pack, keep_audio)
+    if keep_audio:
+        print(f"  → звук исходника как есть (keep_audio): дубль {start:.2f}–{end:.2f} с, без чистки и реза пауз")
 
     try:
         drops = keep_bloopers(edit.get("drop") or [], edit.get("blooper") or [])
         cuts = []
-        project = project_config(stem)
-        if edit.get("cut_pauses", project["cut_pauses"]):
+        if cuts_pauses(edit, project, keep_audio):
             busy = [(float(a), float(b)) for a, b in drops + list(edit.get("bleep") or [])]
             # в сборке пауза не режется через стык и в кусках без речи (там картинка и звук места, а не заминка)
             busy += [(j, j) for j in joins + inner] + [(p["t0"], p["t1"]) for p in (pack or {}).get("pieces", [])
@@ -502,6 +527,7 @@ def main():
     preset["cut"]["enabled"] = False
     preset["subs"]["enabled"] = False
     preset["motion"]["punch_in"] = False
+    preset["audio"] = take_audio(preset["audio"], keep_audio)
     noise = None
     if preset["audio"].get("enabled", True) and preset["audio"].get("denoise", True):
         noise = measure_noise_floor(video, silences)

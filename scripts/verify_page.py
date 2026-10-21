@@ -732,6 +732,31 @@ CHECK_JS = r"""
       for (const [el, rec] of runs) close(el, rec);
     }
 
+    // ---- графика видна раньше своего входа (21.10.2026, IMG_5688): fromTo с { opacity: 1 } в начальных значениях
+    // GSAP по умолчанию ставит сразу при сборке таймлайна (immediateRender), и чёрная линза во весь кадр стояла с
+    // первого кадра до своих 13.9 с. Проверка «висит без изменений» её не видела: рамку во весь кадр «обновляет»
+    // любая смена текста внутри. Элемент .g скрыт стилем, пока его не покажет таймлайн, — значит, виден до первого
+    // своего твина он только по ошибке.
+    res.early = [];
+    {
+      const graphics = [...document.querySelectorAll("#front .g, #behind .g")].filter((el) => el.id !== "flash");
+      const shown = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.15) return false;
+        }
+        return true;
+      };
+      for (const el of graphics) {
+        const starts = tl.getTweensOf(el).map((tw) => tw.startTime());
+        const first = starts.length ? Math.min(...starts) : 0;
+        for (let t = 0; t < first - 0.1; t += 0.25) {
+          tl.totalTime(0, false); tl.totalTime(t, false);
+          if (shown(el)) { res.early.push({ el: label(el), t, first }); break; }
+        }
+      }
+    }
+
     // ---- склейки (Валера 15.10.2026: «склейки не спрятаны за переходами вспышками»): на каждой склейке
     // дубля (C.splices) — переход: вспышка или смаз кадра в кадрах реза (kit: splice(t)); и ни одна
     // надпись или фон не висит через рез — уходит до него, новое влетает на нём. Висящее «СЕКРЕТНО»
@@ -1287,6 +1312,9 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         check(not soft, "фон за спиной не стоит размытым, пока виден (размытие — только в наплыве)", soft)
     elif soft:
         print(f"  · размытый фон на показе: {len(soft)} (при правке ролика — убрать blur с конечного состояния)")
+    early = [f"{e['el']} виден уже на {e['t']:.2f} с, а его первое движение — на {e['first']:.2f} с: fromTo ставит начальные "
+             f"значения сразу — в начальных opacity 0 или immediateRender: false" for e in res.get("early", [])]
+    check(not early, "графика не видна раньше своего входа", early)
     spills = [f"{s['el']} «{s['text']}» вылезает за край {s['where']} на {s['depth']} px, {s['from']:.2f}–{s['last'] + 0.25:.2f} с"
               for s in res.get("spills", [])]
     if strict:
