@@ -2580,6 +2580,11 @@ $("stop").addEventListener("click", async () => { try { await api(`/api/brain/st
 
 /* пачка */
 const BATCH_STATUS = { queued: "ждёт", working: "монтирует", waiting_queue: "ждёт очередь", done: "готово", needs_human: "нужен человек", failed: "не вышло", skipped: "пропущен" };
+// догрузка в идущую пачку: кто пошёл монтироваться сразу, кому не хватило места (больше 4 разом студия не монтирует)
+function batchAdded(r) {
+  const refused = (r && r.refused) || [];
+  return refused.length ? ` Не запустил — уже монтируются 4 ролика: ${refused.join(", ")}. Нажми ещё раз, когда один закончит.` : "";
+}
 function renderBatch(b) {
   const box = $("batch");
   if (!b || !b.items || !b.items.length) { box.hidden = true; return; }
@@ -2587,7 +2592,6 @@ function renderBatch(b) {
   const done = b.items.filter((i) => ["done", "needs_human", "failed", "skipped"].includes(i.status)).length;
   box.innerHTML = `<div class="row"><b>Пачка ${done}/${b.items.length}</b>${b.running ? `<span class="grow"></span><button type="button" class="icon" id="batch-stop">Остановить пачку</button>` : ""}</div>`
     + b.items.map((i) => `<div class="row"><span class="st ${esc(i.status)}">${esc(BATCH_STATUS[i.status] || i.status)}</span><span>${esc(i.stem)}</span><span class="say" title="${esc(i.note)}">${esc((i.note || "").slice(0, 70))}</span></div>`).join("");
-  $("batch-go").disabled = !!b.running;
   S.runningStems = b.items.filter((i) => ["working", "waiting_queue"].includes(i.status)).map((i) => i.stem);
 }
 $("batch").addEventListener("click", async (e) => { if (e.target.id !== "batch-stop") return; try { renderBatch(await api("/api/brain/batch/stop", { method: "POST" })); } catch (err) { say("brain-say", err.message, true); } });
@@ -2608,8 +2612,9 @@ $("batch-start").addEventListener("click", async () => {
   if (!stems.length) return;
   const parallel = Number($("batch-par").value) || 1; store.set("batchPar", parallel);
   const how = (document.querySelector('#batch-how input:checked') || {}).value || "autopilot"; store.set("how", how);
-  try { renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel, how } })); $("batch-dialog").close();
-        say("brain-say", `Пачка: ${stems.length} роликов, ${parallel > 1 ? `по ${parallel} разом` : "по одному"}, ${how === "autopilot" ? "автопилотом" : "каждый в своей сессии ИИ"}.`); }
+  try { const r = await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel, how } }); renderBatch(r); $("batch-dialog").close();
+        say("brain-say", r.refused ? `Добавил к идущей пачке, монтируются сразу: ${r.added.join(", ")}.${batchAdded(r)}`
+                                   : `Пачка: ${stems.length} роликов, ${parallel > 1 ? `по ${parallel} разом` : "по одному"}, ${how === "autopilot" ? "автопилотом" : "каждый в своей сессии ИИ"}.`, !!(r.refused || []).length); }
   catch (e) { say("brain-say", e.message, true); }
 });
 
@@ -2769,8 +2774,9 @@ async function upload(files, auto = null, asPack = false) {
   await selectVideo(stems[0]); pickTab("rtabs", "tab", "ai");
   if (auto ?? $("auto-ai").checked) {
     if (stems.length === 1) { say("brain-say", "Загружено — запускаю ИИ-монтаж."); await startAiMontage(); }
-    else { say("brain-say", `Загружено ${stems.length} видео — монтирую, каждое в своей сессии ИИ (до ${store.get("batchPar", 3)} разом).`);
-           try { renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel: store.get("batchPar", 3), how: store.get("how", "autopilot") } })); } catch (e) { say("brain-say", e.message, true); } }
+    else try { const r = await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel: store.get("batchPar", 3), how: store.get("how", "autopilot") } });
+               renderBatch(r); say("brain-say", `Загружено ${stems.length} видео — монтирую, каждое в своей сессии ИИ: ${r.added.join(", ")}.${batchAdded(r)}`, !!(r.refused || []).length); }
+         catch (e) { say("brain-say", e.message, true); }
   } else say("brain-say", `Готово: ${stems.length > 1 ? `${stems.length} видео` : "видео"} в проекте. Жми «▶ Запустить ИИ-монтаж».`
                           + (skip.length ? ` Не видео, пропущено: ${skip.map((f) => f.name).join(", ")}.` : ""));
 }

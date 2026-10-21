@@ -2725,6 +2725,56 @@ def check_batch(report: Report, tmp: Path):
                  "пачка автопилотом: готово, нужен человек и «не вышло» — по коду выхода, ход — в логе, сессий мозга нет",
                  "; ".join(f"{i['stem']}: {i['status']} ({i['note'][:40]})" for i in auto) or "пачка не прошла")
 
+    # догрузка (21.10.2026): видео закидывали по одному «сразу в монтаж», и все, кроме первого, отбивались «пачка уже
+    # идёт». Догруженный ролик начинается сразу — в своём процессе, мимо parallel пачки; пятый — громкий отказ
+    slow = tmp / "slow_autopilot.py"
+    slow.write_text("import sys, time\nprint('▶ автопилот', sys.argv[1], flush=True)\ntime.sleep(1.5)\n"
+                    "print('✓ ' + sys.argv[1] + ': готов')\n", encoding="utf-8")
+    studio_api.AUTOPILOT_CMD = lambda stem: [sys.executable, str(slow), stem]
+    studio_api.AUTOPILOT_LOGS = tmp / "autopilot_logs"
+    studio_api.batch.update(running=False, items=[])
+    names = ("РОЛИК_А", "РОЛИК_Б", "РОЛИК_В", "РОЛИК_Г", "РОЛИК_Д")
+    codes, extra, peak, late = {}, [], 0, []
+    try:
+        with temp_projects(tmp / "more_projects", "main") as made, TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            sys.modules["projects"].save_setup(made["main"], READY_ANSWERS)
+            for stem in names:
+                (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
+
+            def start(stem):
+                r = live.post("/api/brain/batch", json={"stems": [stem], "engine": "claude", "parallel": 1},
+                              headers={"X-Studio-Token": TOKEN})
+                return r.status_code, r.json()
+
+            for stem in names:
+                codes[stem] = start(stem)
+            codes["повтор"] = start("РОЛИК_Б")
+            for _ in range(200):
+                time.sleep(0.05)
+                peak = max(peak, len(studio_api.batch["procs"]))
+                if not studio_api.batch["running"]:
+                    break
+            extra = [dict(i) for i in studio_api.batch["items"]]
+            late = start("РОЛИК_Д")          # места освободились — пятый идёт
+            for _ in range(200):
+                time.sleep(0.05)
+                if not studio_api.batch["running"]:
+                    break
+            late = (late[0], [dict(i) for i in studio_api.batch["items"]])
+    finally:
+        studio_api.AUTOPILOT_CMD, studio_api.AUTOPILOT_LOGS = saved_ap
+        studio_api.batch.update(running=False, items=[])
+        (studio_api.WORK_DIR / "_studio" / "batch.json").unlink(missing_ok=True)
+    took = [s for s in names[:4] if codes.get(s, (0,))[0] == 200]
+    full = codes.get("РОЛИК_Д", (0, {}))
+    again = codes.get("повтор", (0, {}))
+    report.check(len(took) == 4 and peak == 4 and [i["status"] for i in extra] == ["done"] * 4
+                 and full[0] == 409 and "уже 4 ролика" in str(full[1]) and again[0] == 409
+                 and late and late[0] == 200 and [i["status"] for i in late[1]] == ["done"],
+                 "догрузка: ролик, закинутый во время пачки, монтируется сразу рядом; пятый разом — отказ, не ожидание",
+                 f"пошли сразу {len(took)} из 4, разом {peak}, пятый: {full[0]}, повтор: {again[0]}, "
+                 f"после освобождения: {late[0] if late else '—'}")
+
 
 def check_ai_workflow(report: Report, tmp: Path):
     """ИИ-монтаж, 16.10.2026: тяжёлое агентом — только через очередь; дописанное по ходу доходит до агента;

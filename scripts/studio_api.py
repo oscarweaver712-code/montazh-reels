@@ -1155,8 +1155,8 @@ async def brain_send(data: dict = Body(...)):
     if thread_id in busy:
         raise HTTPException(409, "ИИ ещё работает в этом разговоре — допиши через «Добавить к монтажу»: "
                                  "он получит это по ходу")
-    if len(busy) >= MAX_BRAINS:
-        raise HTTPException(409, f"Уже работают {len(busy)} ИИ — больше {MAX_BRAINS} разом не запускаю "
+    if montage_busy() >= MAX_BRAINS:              # чаты и ролики пачки — один общий счёт
+        raise HTTPException(409, f"Монтируются уже {MAX_BRAINS} ролика — больше разом не запускаю "
                                  "(память и лимиты подписки). Дождись, пока один закончит")
     stem = data.get("stem") or None
     if stem and stem in batch_active_stems():
@@ -1312,12 +1312,17 @@ def status_of(reply: dict) -> tuple:
     return found[-1] if found else ("", "")
 
 
-async def batch_turn(thread: dict, text: str) -> dict:
+def item_opt(item: dict, key: str):
+    """Как монтировать ролик пачки (how, engine, mode): у догруженного по ходу — свои, с какими его закинули."""
+    return item.get(key) or batch.get(key)
+
+
+async def batch_turn(thread: dict, text: str, mode: str) -> dict:
     """Один ход мозга внутри пачки — тот же, что из чата, только ждём его здесь."""
     thread["messages"].append({"role": "user", "text": text, "at": time.time(), "auto": True})
     brain.save_thread(thread)
     runs[thread["id"]] = {"events": [], "done": False, "started": time.time(), "stem": thread.get("stem")}
-    await _run_turn(thread, text, batch["mode"], None)
+    await _run_turn(thread, text, mode, None)
     return thread["messages"][-1]
 
 
@@ -1380,7 +1385,7 @@ async def batch_item(item: dict) -> None:
     except projects.ProjectError:
         is_pack = False
     # сборке нужен режиссёр с глазами: отобрать куски из клипов автопилот не умеет — её ведёт сессия мозга
-    if batch.get("how") == "autopilot" and not is_pack:
+    if item_opt(item, "how") == "autopilot" and not is_pack:
         gate = setup_gate(stem)
         if gate:
             item.update(status="needs_human", note=gate[:300])
@@ -1399,13 +1404,13 @@ async def batch_item(item: dict) -> None:
         item.update(status="needs_human", note=gate[:300])
         batch_save()
         return
-    thread = brain.new_thread(batch["engine"], f"{stem}: пачка", stem)
+    thread = brain.new_thread(item_opt(item, "engine"), f"{stem}: пачка", stem)
     item.update(thread=thread["id"], status="working", note="")
     batch_save()
     text = BATCH_FIRST.format(stem=stem, project=project)
     for turn in range(BATCH_TURNS):
         before = all_jobs()
-        reply = await batch_turn(thread, text)
+        reply = await batch_turn(thread, text, item_opt(item, "mode"))
         if batch["stop"]:
             item.update(status="skipped", note="пачку остановили посреди ролика")
             return
@@ -1453,7 +1458,7 @@ async def batch_item(item: dict) -> None:
         if fresh:
             # ролик пачки тоже может разрастись — продолжаем свежей сессией с передачей дел
             old = thread
-            thread = brain.new_thread(batch["engine"], f"{stem}: пачка, продолжение", stem)
+            thread = brain.new_thread(item_opt(item, "engine"), f"{stem}: пачка, продолжение", stem)
             thread["fresh_of"] = old["id"]
             text = brain.handoff(old) + "\n\n" + BATCH_FIRST.format(stem=stem, project=project) + "\n\nСейчас: " + text
             item.update(thread=thread["id"])
@@ -1462,20 +1467,49 @@ async def batch_item(item: dict) -> None:
     item.update(status="failed", note=f"не уложился в {BATCH_TURNS} ходов")
 
 
+# будит пачку, когда в неё догрузили ролик: он начинается сразу, а не после всех
+batch_wake = asyncio.Event()
+
+
+def montage_busy() -> int:
+    """Сколько роликов монтируется прямо сейчас: ролики пачки в работе (и догруженные, которые вот-вот начнутся)
+    плюс разговоры ИИ в чате. Ждущие своей очереди в пачке не считаются — они ещё не монтируются."""
+    live = sum(i["status"] in ("working", "waiting_queue") or (i["status"] == "queued" and i.get("now"))
+               for i in batch["items"]) if batch["running"] else 0
+    return live + len(running_threads())
+
+
 async def run_batch() -> None:
-    """Пачка: каждый ролик — своя сессия; batch["parallel"] роликов разом, тяжёлое — одной очередью."""
-    slots = asyncio.Semaphore(max(1, batch.get("parallel") or 1))
+    """Пачка: каждый ролик — своя сессия; batch["parallel"] роликов разом, тяжёлое — одной очередью.
+    Список не застывает на старте: ролик, догруженный по ходу (21.10.2026: видео закидывали по одному «сразу
+    в монтаж», и все, кроме первого, отбивались «пачка уже идёт»), встаёт в эту же пачку и начинается сразу —
+    место ему уже выделили при приёме (batch_start), мимо batch["parallel"]."""
 
     async def one(item: dict) -> None:
-        async with slots:
-            if batch["stop"]:
-                item.update(status="skipped", note="пачку остановили")
-                return
-            await batch_item(item)
-            batch_save()
+        if batch["stop"]:
+            item.update(status="skipped", note="пачку остановили")
+            return
+        await batch_item(item)
+        batch_save()
 
+    started, tasks = set(), set()
     try:
-        await asyncio.gather(*(one(item) for item in batch["items"]))
+        while True:
+            for item in batch["items"]:
+                if id(item) in started or item["status"] != "queued":
+                    continue
+                if item.get("now") or len(tasks) < max(1, batch.get("parallel") or 1):
+                    started.add(id(item))
+                    tasks.add(asyncio.create_task(one(item)))
+            if not tasks:
+                break                   # без await до running=False: догрузка между ними не потеряется
+            batch_wake.clear()
+            wake = asyncio.create_task(batch_wake.wait())
+            done, _ = await asyncio.wait(tasks | {wake}, return_when=asyncio.FIRST_COMPLETED)
+            wake.cancel()
+            for task in done - {wake}:
+                tasks.discard(task)
+                task.result()           # упавший ролик — громко, как раньше у gather
     except Exception as e:
         for item in batch["items"]:
             if item["status"] in ("queued", "working", "waiting_queue"):
@@ -1500,18 +1534,21 @@ def new_videos() -> list:
 
 @router.get("/api/brain/batch")
 def batch_state():
-    return {**batch_view(), "new": new_videos()}
+    active = batch_active_stems()
+    return {**batch_view(), "new": [s for s in new_videos() if s not in active]}
 
 
 @router.post("/api/brain/batch")
 async def batch_start(data: dict = Body(...)):
-    """Пачка роликов: по одному, каждый в своей новой сессии мозга."""
-    if batch["running"]:
-        raise HTTPException(409, "Пачка уже идёт")
+    """Пачка роликов: каждый в своей новой сессии мозга. Идёт пачка — ролики встают в неё же (догрузка)."""
     engine = data.get("engine", "claude")
     if engine not in ("claude", "codex"):
         raise HTTPException(400, "мозг бывает claude или codex")
     stems = [safe_stem(s) for s in (data.get("stems") or new_videos())]
+    if batch["running"]:
+        stems = [s for s in dict.fromkeys(stems) if s not in batch_active_stems()]    # уже в пачке — второй раз не берём
+        if not stems:
+            raise HTTPException(409, "Эти ролики уже монтируются в пачке")
     if not stems:
         raise HTTPException(400, "Новых роликов нет: у всех есть выпуски")
     talking = {runs[t].get("stem") for t in running_threads()}
@@ -1525,11 +1562,33 @@ async def batch_start(data: dict = Body(...)):
     how = data.get("how", "autopilot")
     if how not in ("autopilot", "brain"):
         raise HTTPException(400, "how — autopilot (аналитик и критик короткими ходами) или brain (сессия мозга на ролик)")
-    batch.update(running=True, stop=False, engine=engine, mode=data.get("mode", "safe"), parallel=parallel, how=how,
-                 started=time.time(), items=[{"stem": s, "status": "queued", "thread": None, "note": ""} for s in stems])
+    mode = data.get("mode", "safe")
+    if batch["running"] and batch["stop"]:
+        raise HTTPException(409, "Пачку останавливают — дождись, пока она закончит, и запусти снова")
+    # больше MAX_BRAINS роликов разом не монтируется: лишний — сразу отказ, а не тихое ожидание
+    free = MAX_BRAINS - montage_busy()
+    if free <= 0:
+        raise HTTPException(409, f"Монтируются уже {MAX_BRAINS} ролика — больше разом не запускаю (память и лимиты "
+                                 "подписки). Дождись, пока один закончит, и нажми ещё раз")
+    fresh = [{"stem": s, "status": "queued", "thread": None, "note": "", "how": how, "engine": engine, "mode": mode}
+             for s in stems]
+    if batch["running"]:
+        refused = stems[free:]
+        fresh = fresh[:free]
+        for item in fresh:
+            item["now"] = True                  # догрузка: начинается сразу, место выделено здесь
+        batch["items"].extend(fresh)
+        batch_save()
+        batch_wake.set()
+        return {**batch_view(), "added": [i["stem"] for i in fresh], "refused": refused}
+    parallel = min(parallel, free)              # рядом идут чаты ИИ — пачка не выходит за общие MAX_BRAINS
+    for item in fresh[:parallel]:
+        item["now"] = True                      # первые начинаются сразу — и сразу занимают места в счёте
+    batch.update(running=True, stop=False, engine=engine, mode=mode, parallel=parallel, how=how,
+                 started=time.time(), items=fresh)
     batch_save()
     asyncio.create_task(run_batch())
-    return batch_view()
+    return {**batch_view(), "added": stems}
 
 
 @router.post("/api/brain/batch/stop")
