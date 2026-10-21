@@ -15,6 +15,13 @@
     input/<имя>/    сборка: папка с несколькими видео — сырьё ОДНОГО ролика <имя> (scripts/pack.py);
                     собранный дубль ложится рядом — input/<имя>.mp4, дальше обычный конвейер
     output/         готовые ролики проекта
+    <раздел>/       раздел проекта (21.10.2026): section.json, свои input/, output/ и rules.md
+
+Раздел — часть проекта со своими видео и своими правилами: «Антишкола → Рилс» и «Антишкола → YouTube»,
+у заказчика «Склейки» и «Говорящая голова». Дизайн-система, музыка, анкета и референсы — общие, проекта
+(home); конфиг — project.json, поверх него section.json; правил два файла, ИИ читает оба (сначала
+проекта). Имя раздела — «проект/раздел» (antishkola/reels): так он и пишется в путях projects/<имя>/.
+Тип (kind) — что делать с несколькими видео: talking — каждое свой ролик, pack — одним роликом (сборка).
 
 work/<имя>/ и studio/<имя>/ остаются общими: имя ролика (IMG_1803) — одно на все проекты.
 Одно имя в двух проектах — громкая ошибка, а не «какой-нибудь из двух».
@@ -64,8 +71,10 @@ CONFIG = {
     "music_level": 0.55,                      # громкость фоновой музыки от нормы материалов (kit.background_music)
     "music_duck": False,                      # музыка поднимается в тишине дубля и уходит под голос (music.duck_lane)
     "keep_audio": False,                      # звук исходника как есть (трек подложил автор): prep не чистит и не режет
+    "kind": "talking",                        # что такое несколько видео: talking — каждое свой ролик, pack — одним роликом
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
+                "kind": (str, "строкой: \"talking\" (говорящая голова) или \"pack\" (склейка)"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
                 "long_matte": (bool, "true или false"), "fx_theme": (str, "строкой — имя темы из fx.THEMES"),
                 "footage_style": (str, "строкой — стиль генерации перебивок"),
@@ -88,6 +97,8 @@ class ProjectError(Exception):
 
 
 class Project:
+    parent = None
+
     def __init__(self, name: str):
         self.name = name
         self.root = PROJECTS_DIR / name
@@ -96,6 +107,30 @@ class Project:
         self.references = self.root / "references"
         self.rules = self.root / "rules.md"
         self.config = load_config(self.root / "project.json", name)
+
+    @property
+    def home(self) -> "Project":
+        """Проект, которому принадлежат дизайн-система, музыка, анкета и референсы: у раздела — его проект."""
+        return self
+
+    def sections(self) -> list:
+        """Разделы проекта: подпапки с section.json, по имени."""
+        if not self.root.is_dir():
+            return []
+        return [Section(self, d.name) for d in sorted(self.root.iterdir())
+                if d.is_dir() and d.name not in RESERVED and (d / SECTION_FILE).is_file()]
+
+    def rule_files(self) -> list:
+        """Файлы правил, которые ИИ читает перед монтажом, — по порядку: общие раньше частных."""
+        return [self.rules]
+
+    def all_rules_text(self) -> str:
+        """Все правила ролика одним текстом (аналитику, автопилоту): проекта, затем раздела."""
+        parts = []
+        for path in self.rule_files():
+            if path.exists() and path.read_text(encoding="utf-8").strip():
+                parts.append(f"<!-- {rel(path)} -->\n" + path.read_text(encoding="utf-8").strip())
+        return "\n\n".join(parts)
 
     def __repr__(self):
         return f"Project({self.name})"
@@ -132,15 +167,57 @@ class Project:
                       if p.is_file() and not p.name.startswith(".") and p.name != "links.md")
 
     def rules_text(self) -> str:
+        """Свой rules.md (у раздела — только раздела): его правит редактор правил в студии."""
         return self.rules.read_text(encoding="utf-8") if self.rules.exists() else ""
 
 
-def load_config(path: Path, name: str) -> dict:
-    """project.json поверх умолчаний. Битый файл — ошибка с именем файла и поля."""
-    config = copy.deepcopy(CONFIG)
+SECTION_FILE = "section.json"
+RESERVED = {"input", "output", "references", "music"}      # папки проекта, которые разделом быть не могут
+KINDS = {"talking": "говорящая голова — каждое видео свой ролик", "pack": "склейка — несколько видео одним роликом"}
+
+
+class Section(Project):
+    """Раздел проекта: свои исходники, выпуски и правила; дизайн, музыка, анкета и референсы — проекта."""
+
+    def __init__(self, parent: Project, slug: str):
+        self.parent = parent
+        self.slug = slug
+        self.name = f"{parent.name}/{slug}"
+        self.root = parent.root / slug
+        self.input = self.root / "input"
+        self.output = self.root / "output"
+        self.references = parent.references
+        self.rules = self.root / "rules.md"
+        self.config = load_config(self.root / SECTION_FILE, self.name, base=parent.config)
+
+    @property
+    def home(self) -> Project:
+        return self.parent
+
+    @property
+    def own_title(self) -> str:
+        return self.config["title"] or self.slug
+
+    @property
+    def title(self) -> str:
+        return f"{self.parent.title} · {self.own_title}"
+
+    def sections(self) -> list:
+        return []                                         # разделы одного уровня: раздел в разделе — не нужно
+
+    def rule_files(self) -> list:
+        return [self.parent.rules, self.rules]
+
+
+def load_config(path: Path, name: str, base: dict | None = None) -> dict:
+    """project.json поверх умолчаний (section.json — поверх конфига своего проекта: бриф дополняется, остальное
+    заменяется, название — своё). Битый файл — ошибка с именем файла и поля."""
+    config = copy.deepcopy(base if base is not None else CONFIG)
+    if base is not None:
+        config["title"] = ""
     if not path.exists():
         return config
-    where = f"projects/{name}/project.json"
+    where = f"projects/{name}/{path.name}"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -155,7 +232,9 @@ def load_config(path: Path, name: str) -> dict:
         kind, what = CONFIG_TYPES[key]
         if not isinstance(value, kind) or (isinstance(value, bool) and kind is not bool):
             raise ProjectError(f"{where}: поле {key} должно быть {what}, а не {value!r}")
-        config[key] = value
+        if key == "kind" and value not in KINDS:
+            raise ProjectError(f"{where}: kind — " + " или ".join(f"«{k}» ({v})" for k, v in KINDS.items()))
+        config[key] = {**config["brief"], **value} if key == "brief" and base is not None else value
     return config
 
 
@@ -172,16 +251,39 @@ def names() -> list:
 
 
 def all_projects() -> list:
-    return [Project(n) for n in names()]
+    """Проекты и их разделы — всё, где могут лежать видео: раздел идёт сразу за своим проектом."""
+    found = []
+    for n in names():
+        project = Project(n)
+        found += [project] + project.sections()
+    return found
 
 
 def get(name: str) -> Project:
-    if not NAME_RE.match(name or ""):
-        raise ProjectError(f"Плохое имя проекта «{name}»: латиница в нижнем регистре, цифры и дефис")
-    if name not in names():
-        raise ProjectError(f"Проекта «{name}» нет. Есть: {', '.join(names()) or 'ни одного'}. "
-                           f"Новый — projects.py new {name}")
-    return Project(name)
+    """Проект по имени или раздел — «проект/раздел»."""
+    head, _, slug = (name or "").partition("/")
+    if not NAME_RE.match(head) or (slug and not NAME_RE.match(slug)):
+        raise ProjectError(f"Плохое имя проекта «{name}»: латиница в нижнем регистре, цифры и дефис "
+                           "(раздел — через косую: antishkola/reels)")
+    if head not in names():
+        raise ProjectError(f"Проекта «{head}» нет. Есть: {', '.join(names()) or 'ни одного'}. "
+                           f"Новый — projects.py new {head}")
+    project = Project(head)
+    if not slug:
+        return project
+    section = next((s for s in project.sections() if s.slug == slug), None)
+    if section is None:
+        raise ProjectError(f"В проекте {head} нет раздела «{slug}». Есть: "
+                           f"{', '.join(s.slug for s in project.sections()) or 'ни одного'}")
+    return section
+
+
+def owner(path: Path) -> Project:
+    """Проект или раздел, в чьей папке лежит путь (input/X.MOV, input/<сборка>/клип.MOV, output/…)."""
+    parts = Path(path).resolve().relative_to(PROJECTS_DIR.resolve()).parts
+    if len(parts) > 1 and parts[1] not in RESERVED and (PROJECTS_DIR / parts[0] / parts[1] / SECTION_FILE).is_file():
+        return get(f"{parts[0]}/{parts[1]}")
+    return get(parts[0])
 
 
 def default() -> Project:
@@ -359,6 +461,7 @@ def _answer(value) -> str:
 
 
 def load_setup(project: "Project") -> dict | None:
+    project = project.home                            # анкета одна на проект: раздел живёт по ней же
     path = project.root / "setup.json"
     if not path.exists():
         return None
@@ -375,6 +478,7 @@ def missing_setup(project: "Project") -> list:
     Проекты, чьи правила написаны руками до анкеты (antishkola, firuza), считаются настроенными:
     их rules.md уже не шаблон. Новый проект с нетронутым шаблоном — не настроен.
     """
+    project = project.home
     answers = load_setup(project)
     if answers is None:
         rules = project.rules_text().strip()
@@ -455,6 +559,75 @@ def create(name: str, title: str = "") -> Project:
     return Project(name)
 
 
+SECTION_RULES = """# Правила раздела «{title}»
+
+Только то, чем этот раздел отличается от проекта: правила проекта ИИ читает раньше и они действуют
+и здесь. Например: формат 16:9 вместо вертикали, длина, свой тип монтажа, что тут нельзя.
+
+-
+"""
+
+
+def slug_of(title: str) -> str:
+    """Имя папки раздела из названия: «Рилс» → rils, «YouTube 16:9» → youtube-16-9."""
+    table = str.maketrans({"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z",
+                           "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r",
+                           "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "c", "ч": "ch", "ш": "sh", "щ": "sch",
+                           "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya"})
+    return re.sub(r"[^a-z0-9]+", "-", title.lower().translate(table)).strip("-")[:32] or "section"
+
+
+def create_section(project: str, title: str, kind: str = "talking", slug: str = "", formats: list | None = None) -> "Section":
+    """Новый раздел проекта: section.json, input/, output/, rules.md. Существующий не трогается."""
+    parent = get(project)
+    if parent.parent is not None:
+        raise ProjectError("Раздел в разделе не делаю: разделы — один уровень внутри проекта")
+    if kind not in KINDS:
+        raise ProjectError(f"Тип раздела — {' или '.join(KINDS)}")
+    slug = slug or slug_of(title)
+    if not NAME_RE.match(slug) or slug in RESERVED:
+        raise ProjectError(f"Плохое имя раздела «{slug}»: латиница, цифры, дефис; не {', '.join(sorted(RESERVED))}")
+    root = parent.root / slug
+    if root.exists():
+        raise ProjectError(f"Раздел {parent.name}/{slug} уже есть — его не трогаю")
+    for sub in ("input", "output"):
+        (root / sub).mkdir(parents=True)
+        (root / sub / ".gitkeep").write_text("", encoding="utf-8")
+    config = {"title": title.strip() or slug, "kind": kind}
+    if formats:
+        config["brief"] = {"formats": formats}
+    (root / SECTION_FILE).write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    (root / "rules.md").write_text(SECTION_RULES.format(title=config["title"]), encoding="utf-8")
+    return get(f"{parent.name}/{slug}")
+
+
+def move(stem: str, target: str) -> list:
+    """Перенести видео в другой проект или раздел: исходник (или сборку) и его выпуски. work/<имя>/ общий —
+    решения, транскрипт и маска остаются при ролике. Возвращает [(откуда, куда)]."""
+    entry = index().get(stem)
+    if not entry:
+        raise ProjectError(f"Ролика {stem} нет ни в одном проекте")
+    src_project, path = entry
+    dest = get(target)
+    if dest == src_project:
+        return []
+    moves = [path]
+    pack = src_project.input / stem
+    if pack.is_dir() and pack != path:
+        moves.append(pack)                            # собранная сборка: файл и папка сырья едут вместе
+    outs = [f for f in src_project.output.glob(f"{stem}*") if belongs(f.name, stem)] if src_project.output.is_dir() else []
+    plan = [(m, dest.input / m.name) for m in moves] + [(f, dest.output / f.name) for f in outs]
+    busy = [rel(b) for _, b in plan if b.exists()]
+    if busy:
+        raise ProjectError(f"В {dest.name} уже есть: {', '.join(busy)} — ничего не переношу")
+    done = []
+    for a, b in plan:
+        b.parent.mkdir(parents=True, exist_ok=True)
+        a.rename(b)
+        done.append((rel(a), rel(b)))
+    return done
+
+
 def check() -> list:
     """Все проекты: конфиги читаются, стили брифа существуют, имена не повторяются. Список ошибок."""
     import styles
@@ -463,10 +636,10 @@ def check() -> list:
         problems.append(f"нет проекта по умолчанию projects/{DEFAULT}/")
     for name in names():
         try:
-            project = Project(name)
-            styles.check_brief(project.config["brief"], f"projects/{name}/project.json → brief")
-            if "style" in project.config["brief"]:
-                styles.load_style(project.config["brief"]["style"])
+            for project in [Project(name)] + Project(name).sections():
+                styles.check_brief(project.config["brief"], f"projects/{project.name} → brief")
+                if "style" in project.config["brief"]:
+                    styles.load_style(project.config["brief"]["style"])
         except (ProjectError, styles.StyleError) as e:
             problems.append(str(e))
     try:
@@ -486,6 +659,14 @@ def main():
     where.add_argument("stem")
     ready = sub.add_parser("ready", help="настроен ли проект: обязательные вопросы анкеты без ответа")
     ready.add_argument("name")
+    sec = sub.add_parser("section", help="создать раздел проекта")
+    sec.add_argument("project")
+    sec.add_argument("title")
+    sec.add_argument("--kind", default="talking", choices=sorted(KINDS))
+    sec.add_argument("--slug", default="")
+    mv = sub.add_parser("move", help="перенести видео в другой проект или раздел (исходник и выпуски)")
+    mv.add_argument("target", help="проект или «проект/раздел»")
+    mv.add_argument("stems", nargs="+")
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
     try:
@@ -509,6 +690,13 @@ def main():
                 sys.exit(f"✗ проект {args.name} не настроен — нет ответов: " + "; ".join(q["q"] for q in left)
                          + ". Спроси человека (студия: «Проект → Настроить проект») и не монтируй до ответа")
             print(f"  ✓ проект {args.name} настроен")
+        elif args.cmd == "section":
+            section = create_section(args.project, args.title, args.kind, args.slug)
+            print(f"  ✓ раздел {section.name} — «{section.title}» ({KINDS[section.config['kind']]})")
+        elif args.cmd == "move":
+            for stem in args.stems:
+                done = move(stem, args.target)
+                print(f"  ✓ {stem} → {args.target}" + ("" if done else " (уже там)"))
         elif args.cmd == "where":
             project = of(args.stem)
             print(f"{args.stem} → {project.name} ({project.title})")

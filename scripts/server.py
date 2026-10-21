@@ -203,8 +203,8 @@ async def upload(file: UploadFile = File(...), project: str = Form(""), pack: st
     finally:
         part.unlink(missing_ok=True)
     if pack:
-        return {"name": target.name, "project": target.parent.parent.parent.name, "pack": target.parent.name}
-    return {"name": target.name, "project": target.parent.parent.name}
+        return {"name": target.name, "project": projects.owner(target).name, "pack": target.parent.name}
+    return {"name": target.name, "project": projects.owner(target).name}
 
 
 def video_seconds(path: Path) -> float | None:
@@ -272,7 +272,7 @@ def import_local_file(raw: str, project: str = "") -> dict:
     except projects.ProjectError as e:
         return {"error": str(e)}
     if source.parent.resolve() == folder.resolve():
-        return {"name": source.name, "project": folder.parent.name}   # уже лежит где надо
+        return {"name": source.name, "project": projects.owner(folder).name}   # уже лежит где надо
 
     if video_seconds(source) is None:
         return {"error": f"это не видео: {source.name}"}
@@ -281,7 +281,7 @@ def import_local_file(raw: str, project: str = "") -> dict:
     name = source.name if source.suffix.lower() in VIDEO_EXT else source.stem + ".mp4"
     target = free_name(name, folder)
     shutil.copy2(source, target)
-    return {"name": target.name, "project": folder.parent.name}
+    return {"name": target.name, "project": projects.owner(folder).name}
 
 
 @app.post("/api/import-path")

@@ -248,8 +248,9 @@ def decisions(stem: str, fmt: str) -> list:
         return [f"- {stem} — сборка из нескольких видео, ещё не собрана: pack.py {stem} → pack.json → "
                 f"pack.py {stem} --build, потом prep и план"]
     cfg = project.config
-    lines.append(f"- проект {project.name} («{project.title}») → правила projects/{project.name}/rules.md "
-                 f"важнее стиля: прочитай до раскадровки" + ("" if project.rules.exists() else " (rules.md нет — спроси автора)"))
+    rules = [projects.rel(r) for r in project.rule_files() if r.exists()]
+    lines.append(f"- проект {project.name} («{project.title}») → правила {' и '.join(rules) or 'rules.md'} "
+                 f"важнее стиля (раздел уточняет проект): прочитай до раскадровки" + ("" if rules else " (rules.md нет — спроси автора)"))
     if cfg["language"] != "ru":
         lines.append(f"- речь на «{cfg['language']}» → субтитры и надписи на этом языке; русские привычки текста "
                      f"(ё, «ёлочки», шутки серии) не переносить")

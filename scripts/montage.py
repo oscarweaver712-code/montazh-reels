@@ -363,7 +363,7 @@ class Montage:
                              f"движения (склеек, влётов, линий) — ролик выйдет «мёртвым», добавь удары или m.soft()")
         if self.cfg.get("music"):
             import music
-            track = track or music.pick(self.stem, self.project.name)
+            track = track or music.pick(self.stem, self.project.home.name)    # запас музыки — проекта, общий для разделов
             lane = music.duck_lane(WORK_DIR / self.stem / "aroll.mp4", dur) if self.cfg.get("music_duck") else None
             self.sounds.append(kit.background_music(self.stem, track, dur, lane=lane, media_start=music_start,
                                                     fade_out=music_fade))

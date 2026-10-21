@@ -134,7 +134,7 @@ def material(stem: str) -> str:
     events = WORK_DIR / stem / "events.json"
     ev = json.loads(events.read_text(encoding="utf-8")) if events.exists() else {}
     cfg = project.config
-    rules = project.rules.read_text(encoding="utf-8") if project.rules.exists() else "(правил проекта нет)"
+    rules = project.all_rules_text() or "(правил проекта нет)"         # проекта, затем раздела
     import design
     system = design.of(project)           # DESIGN.md проекта: приёмы системы и её правила — аналитику и критику
     ds_brief = ["", system.brief()] if system else []
@@ -155,7 +155,8 @@ def material(stem: str) -> str:
         "ПРИНЯТЫЕ ИИ-КЛИПЫ (kind clip — только эти имена, клип не длиннее своей длины):",
         *(clips or ["- нет: kind clip не используй"]),
         "",
-        f"ПРАВИЛА ПРОЕКТА (projects/{project.name}/rules.md — главнее общих; что про сборку и инфраструктуру — не твоё):",
+        f"ПРАВИЛА ПРОЕКТА ({', '.join(projects.rel(r) for r in project.rule_files())} — главнее общих; раздел уточняет "
+        "проект; что про сборку и инфраструктуру — не твоё):",
         rules,
         *ds_brief,
         "",

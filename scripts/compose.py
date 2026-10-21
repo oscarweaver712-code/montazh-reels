@@ -343,7 +343,7 @@ def own_project_style(stem: str) -> bool:
         project = projects.of(stem)
     except projects.ProjectError:
         return False
-    return project.name != projects.DEFAULT and bool(project.config["brief"].get("style"))
+    return project.home.name != projects.DEFAULT and bool(project.config["brief"].get("style"))
 
 
 class SceneError(ValueError):

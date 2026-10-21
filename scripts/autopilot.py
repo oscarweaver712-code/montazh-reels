@@ -61,7 +61,7 @@ def prepare(stem: str) -> None:
     project = projects.of(stem)
     # дубль, забракованный в правилах проекта («IMG_3308 — сорван, не монтировать»), не готовится зря: маска — десятки
     # минут счёта (19.10.2026: автопилот готовил IMG_3308, а аналитик потом нашёл его в п.6 правил)
-    rules = project.rules.read_text(encoding="utf-8") if project.rules.exists() else ""
+    rules = project.all_rules_text()                  # проекта и раздела
     for sentence in re.split(r"(?<=[.!?])\s+", rules):
         if stem in sentence and re.search(r"не монтир|сорван|брак", sentence, re.I):
             raise Stop(f"в правилах проекта: «{' '.join(sentence.split())[:160]}» — монтаж только по просьбе")

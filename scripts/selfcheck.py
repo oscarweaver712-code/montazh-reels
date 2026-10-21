@@ -3320,6 +3320,77 @@ def check_long_runs(report: Report):
                  else "минута дубля ушла бы в маску на четверть часа без вопроса")
 
 
+def check_sections(report: Report, tmp: Path):
+    """Разделы проекта (21.10.2026): «Антишкола → Рилс», «Заказчик → Склейки». Свои видео, выпуски и правила; конфиг —
+    проекта и поверх свой; дизайн-система, музыка и анкета — проекта. Имя «проект/раздел» проходит адреса студии
+    (правила раздела не путаются с «открыть»), загрузка в раздел знает раздел, перенос везёт исходник и выпуски."""
+    from fastapi.testclient import TestClient
+    import design
+    import projects
+    import studio_api
+    from server import TOKEN, app
+
+    print("\nПроекты: разделы")
+    res = {}
+    with temp_projects(tmp / "sec_projects", "main", "other") as made, \
+            TestClient(app, base_url="http://127.0.0.1:8765") as live:
+        main = made["main"]
+        projects.save_setup(main, READY_ANSWERS)
+        cfg = json.loads((main.root / "project.json").read_text(encoding="utf-8"))
+        cfg["brief"] = {"style": "viral-behind", "formats": ["9:16"], "notes": "серия"}
+        cfg["music"] = True
+        (main.root / "project.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+        shutil.copy(ROOT / "projects" / "antishkola" / "DESIGN.md", main.root / "DESIGN.md")    # настоящая система
+        key = {"X-Studio-Token": TOKEN}
+        made_sec = live.post("/api/studio/sections", json={"project": "main", "title": "Ютуб", "kind": "pack",
+                                                          "formats": ["16:9"]}, headers=key)
+        res["made"] = made_sec.status_code, made_sec.json()
+        sec = projects.get("main/yutub")
+        res["cfg"] = (sec.config["brief"].get("style"), sec.config["brief"].get("formats"), sec.config["brief"].get("notes"),
+                      sec.config["music"], sec.config["kind"], main.config["kind"])
+        res["home"] = (sec.home == main, design.of(sec) is not None,
+                       projects.missing_setup(sec) == [], sec.references == main.references)
+        sec.rules.write_text("# Раздел\n- только горизонталь\n", encoding="utf-8")
+        both = sec.all_rules_text()
+        res["rules"] = (both.find("Анкета проекта") < both.find("только горизонталь") and both.find("Анкета проекта") >= 0)
+        got = live.get("/api/studio/rules/" + "main%2Fyutub").json()
+        res["rules_api"] = (got.get("section"), "только горизонталь" in got.get("text", ""), "Анкета" in got.get("text", ""))
+        opened = []
+        saved_open = studio_api.host.open_file
+        studio_api.host.open_file = opened.append
+        try:
+            live.post("/api/studio/rules/main%2Fyutub/open", headers=key)
+        finally:
+            studio_api.host.open_file = saved_open
+        res["open"] = opened == [sec.rules]
+        up = live.post("/api/upload", data={"project": "main/yutub"}, files={"file": ("РАЗДЕЛ_1.MOV", b"v")}, headers=key).json()
+        res["upload"] = (up.get("project"), (sec.input / "РАЗДЕЛ_1.MOV").exists(), projects.of("РАЗДЕЛ_1") == sec)
+        sec.output.mkdir(parents=True, exist_ok=True)
+        (sec.output / "РАЗДЕЛ_1_v1.mp4").write_bytes(b"done")
+        mv = live.post("/api/studio/video/РАЗДЕЛ_1/move", json={"target": "other"}, headers=key)
+        other = made["other"]
+        res["move"] = (mv.status_code, (other.input / "РАЗДЕЛ_1.MOV").exists(), (other.output / "РАЗДЕЛ_1_v1.mp4").exists(),
+                       not (sec.input / "РАЗДЕЛ_1.MOV").exists())
+        tree = live.get("/api/studio/state").json().get("projects", [])
+        node = next((p for p in tree if p["name"] == "main"), {})
+        res["tree"] = [(x["name"], x["kind"], x["own_title"]) for x in node.get("sections", [])]
+        bad = live.post("/api/studio/sections", json={"project": "main/yutub", "title": "Вложенный"}, headers=key)
+        res["nested"] = bad.status_code
+        res["check"] = projects.check()
+    made_ok = res["made"][0] == 200 and res["made"][1].get("name") == "main/yutub"
+    report.check(made_ok and res["cfg"] == ("viral-behind", ["16:9"], "серия", True, "pack", "talking")
+                 and all(res["home"]) and res["rules"] and res["tree"] == [("main/yutub", "pack", "Ютуб")],
+                 "раздел: свой тип и формат поверх проекта; стиль, музыка, дизайн, анкета и референсы — проекта; "
+                 "правила — оба файла, сначала проекта",
+                 f"конфиг {res['cfg']}, от проекта {res['home']}, правила по порядку: {res['rules']}, дерево {res['tree']}")
+    report.check(res["rules_api"] == (True, True, False) and res["open"] and res["upload"] == ("main/yutub", True, True)
+                 and res["move"] == (200, True, True, True) and res["nested"] == 409,
+                 "студия: правила раздела по адресу с косой (и «открыть» не путается), загрузка и перенос знают раздел",
+                 f"правила {res['rules_api']}, открыть {res['open']}, загрузка {res['upload']}, перенос {res['move']}, "
+                 f"раздел в разделе: {res['nested']}")
+    report.check(not res["check"], "projects.py --check видит разделы и не находит ошибок", "; ".join(res["check"])[:200] or "чисто")
+
+
 def check_projects(report: Report, tmp: Path):
     """Проект — граница: язык, бриф, CTA, порог лица и выпуски одного не протекают в другой (14.10.2026)."""
     import prep
@@ -4156,7 +4227,20 @@ def check_studio_page(report: Report, tmp: Path):
     page = (ROOT / "web" / "studio.html").read_text(encoding="utf-8")
     page = page.replace("<head>", '<head>\n<script>window.__errs = []; window.addEventListener("error", '
                         '(e) => window.__errs.push(String(e.message)));</script>', 1)
-    probe = """<script>setTimeout(() => { const out = { errors: window.__errs,
+    probe = """<script>setTimeout(() => { let menu = {};
+      try {   // меню проектов деревом, окна нового раздела и переноса — на подставных данных (API с file:// нет)
+        S.projects = [{ name: "p", title: "Проект — тест", kind: "talking", setup_missing: 1, sections: [
+          { name: "p/s", title: "Проект — тест · Склейки", own_title: "Склейки", parent: "p", kind: "pack", setup_missing: 1 }] }];
+        S.videos = []; S.project = "p/s"; renderProjects(); openSection("p"); $("section-dialog").close();
+        askMove("X"); $("move-dialog").close();
+        menu = { rows: document.querySelectorAll("#pmenu-pop .pitem[data-project]").length,
+                 cur: (document.querySelector('#pmenu-pop .pitem[aria-current="true"]') || {}).dataset?.project,
+                 kind: (document.querySelector('#pmenu-pop .pkind [aria-pressed="true"]') || {}).dataset?.kind,
+                 rules: [...document.querySelectorAll("#pmenu-pop [data-rules]")].map((b) => b.dataset.rules),
+                 icons: document.querySelectorAll("#pmenu-pop svg.ico").length, moves: document.querySelectorAll("#move-list [data-to]").length,
+                 packZones: placeKind() };
+      } catch (e) { window.__errs.push("меню проектов: " + e); }
+      const out = { errors: window.__errs, menu,
       gone: ["tab-props", "zones-btn", "ask-ai"].filter((id) => document.getElementById(id)),
       missing: ["insp-card", "rsplit", "csplit", "del-dialog"].filter((id) => !document.getElementById(id)),
       tabs: [...document.querySelectorAll("#rtabs [data-tab]")].map((b) => b.dataset.tab),
@@ -4174,6 +4258,12 @@ def check_studio_page(report: Report, tmp: Path):
     out = json.loads(_html.unescape(m.group(1))) if m else {"errors": ["Chrome не отдал страницу: " + res.stderr[-200:]]}
     report.check(not out.get("errors"), "страница студии поднимается без ошибок скрипта",
                  "; ".join(out.get("errors") or [])[:300] or "чисто")
+    menu = out.get("menu") or {}
+    report.check(menu.get("rows") == 2 and menu.get("cur") == "p/s" and menu.get("kind") == "pack"
+                 and menu.get("rules") == ["p/s", "p"] and menu.get("icons", 0) >= 8 and menu.get("moves") == 2
+                 and menu.get("packZones") == "pack",
+                 "меню проектов: дерево с разделом, тип раздела, правила раздела и проекта, свои иконки, перенос",
+                 json.dumps(menu, ensure_ascii=False)[:200])
     report.check(not out.get("gone") and not out.get("missing") and out.get("tabs") == ["ai"] and out.get("trash"),
                  "справа один ИИ-монтаж: свойства — над чатом у выделенного, панель и поле ввода тянутся, у видео — корзина",
                  f"лишнее: {out.get('gone')}, нет: {out.get('missing')}, вкладки: {out.get('tabs')}")
@@ -4669,6 +4759,7 @@ def main():
         section(report, check_portable, tmp)
         section(report, check_approve, tmp)
         section(report, check_projects, tmp)
+        section(report, check_sections, tmp)
         section(report, check_packs, tmp)
         section(report, check_life_edit, tmp)
         section(report, check_batch, tmp)

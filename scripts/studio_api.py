@@ -186,12 +186,16 @@ def busy() -> str | None:
 
 
 def project_view(p) -> dict:
-    """Проект для студии: название и сколько обязательных вопросов анкеты без ответа (битая анкета — тоже)."""
+    """Проект для студии: название, тип, сколько вопросов анкеты без ответа (битая анкета — тоже) и разделы."""
     try:
         missing = len(projects.missing_setup(p))
     except projects.ProjectError:
         missing = 1
-    return {"name": p.name, "title": p.title, "setup_missing": missing}
+    view = {"name": p.name, "title": p.title, "setup_missing": missing, "kind": p.config["kind"],
+            "formats": p.config["brief"].get("formats") or ["9:16"]}
+    if p.parent is None:
+        view["sections"] = [dict(project_view(s), own_title=s.own_title, parent=p.name) for s in p.sections()]
+    return view
 
 
 def projects_view() -> tuple:
@@ -203,7 +207,8 @@ def projects_view() -> tuple:
         try:
             out.append(project_view(projects.Project(name)))
         except projects.ProjectError as e:
-            out.append({"name": name, "title": name, "setup_missing": 1, "error": str(e)})
+            out.append({"name": name, "title": name, "setup_missing": 1, "error": str(e), "sections": [],
+                        "kind": "talking", "formats": ["9:16"]})
             errors.append(str(e))
     return out, ("\n".join(errors) or None)
 
@@ -565,6 +570,65 @@ def create_project(data: dict = Body(...)):
     return {"name": p.name, "title": p.title}
 
 
+@router.post("/api/studio/sections")
+def create_section(data: dict = Body(...)):
+    """Новый раздел проекта: название, тип (говорящая голова / склейка), форматы."""
+    title = str(data.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Назови раздел")
+    formats = data.get("formats") or None
+    try:
+        if formats:
+            styles.check_brief({"formats": formats}, "формат раздела")
+        s = projects.create_section(str(data.get("project") or ""), title, str(data.get("kind") or "talking"),
+                                    formats=formats)
+    except (projects.ProjectError, styles.StyleError) as e:
+        raise HTTPException(409, str(e))
+    return project_view(s)
+
+
+@router.post("/api/studio/place/{name:path}")
+def update_place(name: str, data: dict = Body(...)):
+    """Название, тип и форматы проекта или раздела — в его project.json / section.json; остальное там не трогается."""
+    p = _project(name)
+    path = p.root / (projects.SECTION_FILE if p.parent else "project.json")
+    config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if "title" in data:
+        title = str(data["title"] or "").strip()
+        if not title:
+            raise HTTPException(400, "Название пустое")
+        config["title"] = title
+    if "kind" in data:
+        config["kind"] = data["kind"]
+    if "formats" in data:
+        config.setdefault("brief", {})["formats"] = data["formats"]
+    part = path.with_name(f".{path.name}.part")
+    part.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    try:
+        projects.load_config(part, p.name, base=p.parent.config if p.parent else None)    # записанное читается
+        if "formats" in data:
+            styles.check_brief({"formats": data["formats"]}, "форматы")
+    except (projects.ProjectError, styles.StyleError) as e:
+        part.unlink(missing_ok=True)
+        raise HTTPException(400, str(e))
+    part.replace(path)
+    return project_view(projects.get(name))
+
+
+@router.post("/api/studio/video/{stem}/move")
+def move_video(stem: str, data: dict = Body(...)):
+    """Перенести видео в другой проект или раздел: исходник и выпуски; решения в work/<имя>/ едут при ролике сами."""
+    stem = safe_stem(stem)
+    busy = stem_busy(stem)
+    if busy:
+        raise HTTPException(409, f"{stem} сейчас не перенести — {busy}. Останови или дождись")
+    try:
+        done = projects.move(stem, str(data.get("target") or ""))
+    except projects.ProjectError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True, "stem": stem, "moved": done}
+
+
 def _project(name: str):
     try:
         return projects.get(name)
@@ -572,10 +636,10 @@ def _project(name: str):
         raise HTTPException(404, str(e))
 
 
-@router.get("/api/studio/setup/{name}")
+@router.get("/api/studio/setup/{name:path}")
 def get_setup(name: str):
-    """Анкета проекта: вопросы, ответы, чего не хватает, файлы референсов."""
-    p = _project(name)
+    """Анкета проекта: вопросы, ответы, чего не хватает, файлы референсов. У раздела — анкета его проекта."""
+    p = _project(name).home
     try:
         answers = projects.load_setup(p) or {}
     except projects.ProjectError as e:
@@ -586,9 +650,9 @@ def get_setup(name: str):
             "missing": [q["id"] for q in projects.missing_setup(p)], "references": refs}
 
 
-@router.post("/api/studio/setup/{name}")
+@router.post("/api/studio/setup/{name:path}")
 def save_setup(name: str, data: dict = Body(...)):
-    p = _project(name)
+    p = _project(name).home
     answers = data.get("answers")
     if not isinstance(answers, dict):
         raise HTTPException(400, "answers — объект {вопрос: ответ}")
@@ -599,7 +663,7 @@ def save_setup(name: str, data: dict = Body(...)):
     return {"ok": True, "missing": [q["id"] for q in left]}
 
 
-@router.post("/api/studio/references/{name}")
+@router.post("/api/studio/references/{name:path}")
 async def add_reference(name: str, file: UploadFile = File(...)):
     """Референс в projects/<имя>/references/ — имя занято, ложится рядом с номером."""
     p = _project(name)
@@ -664,16 +728,28 @@ def material_file(stem: str, area: str, name: str):
         raise HTTPException(404, str(e))
 
 
-@router.get("/api/studio/rules/{name}")
+@router.post("/api/studio/rules/{name:path}/open")
+def open_rules(name: str):
+    """Открыть rules.md в редакторе по умолчанию на компе."""
+    p = _project(name)
+    if not p.rules.exists():
+        template = projects.SECTION_RULES if p.parent else projects.RULES_TEMPLATE
+        p.rules.write_text(template.format(title=getattr(p, "own_title", p.title)), encoding="utf-8")
+    host.open_file(p.rules)
+    return {"ok": True}
+
+
+@router.get("/api/studio/rules/{name:path}")
 def get_rules(name: str):
-    """Правила проекта (projects/<имя>/rules.md) — их читает агент до монтажа, правит человек или ИИ."""
+    """Правила проекта (projects/<имя>/rules.md) или раздела (projects/<проект>/<раздел>/rules.md) — их читает агент
+    до монтажа, правит человек или ИИ. У раздела — только его файл: правила проекта правятся у проекта."""
     p = _project(name)
     mtime = p.rules.stat().st_mtime if p.rules.exists() else 0
-    return {"project": p.name, "title": p.title, "path": f"projects/{p.name}/rules.md",
+    return {"project": p.name, "title": p.title, "path": projects.rel(p.rules), "section": p.parent is not None,
             "text": p.rules_text(), "mtime": mtime}
 
 
-@router.post("/api/studio/rules/{name}")
+@router.post("/api/studio/rules/{name:path}")
 def save_rules(name: str, data: dict = Body(...)):
     """Сохранить правила. Файл поменяли с тех пор, как его открыли (руками на компе или ИИ), —
     отказ, а не молчаливое затирание чужой правки."""
@@ -692,16 +768,6 @@ def save_rules(name: str, data: dict = Body(...)):
     finally:
         part.unlink(missing_ok=True)
     return get_rules(name)
-
-
-@router.post("/api/studio/rules/{name}/open")
-def open_rules(name: str):
-    """Открыть rules.md в редакторе по умолчанию на компе."""
-    p = _project(name)
-    if not p.rules.exists():
-        p.rules.write_text(projects.RULES_TEMPLATE.format(title=p.title), encoding="utf-8")
-    host.open_file(p.rules)
-    return {"ok": True}
 
 
 def _busy(stem: str) -> bool:
@@ -1011,7 +1077,7 @@ def references_context(project: "projects.Project") -> list:
     has_links = bool(re.search(r"https?://", text))
     if not files and not has_links:
         return []
-    return [f"Референсы проекта (на все его ролики) — projects/{project.name}/references/: "
+    return [f"Референсы проекта (на все его ролики) — {projects.rel(project.references)}/: "
             f"{', '.join(f.name for f in files[:10]) or 'файлов нет'}{' …' if len(files) > 10 else ''}"
             f"{'; ссылки и что в них взять — links.md' if has_links else ''}. Посмотри до плана (ролик — "
             f"analyze_reference.py, картинку — глазами) и возьми оттуда то, что там сказано взять; помеченное как "
@@ -1026,10 +1092,14 @@ def studio_context(stem: str | None, project_name: str | None = None) -> str:
         except projects.ProjectError as e:
             return f"Проект {project_name}: {e}"
         left = projects.missing_setup(project)
-        return (f"Разговор о проекте {project.name} — «{project.title}», не о ролике: ролики не монтируй и не трогай. "
-                f"Правила — projects/{project.name}/rules.md, анкета — projects/{project.name}/setup.json (блок «Анкета "
+        home = project.home
+        return (f"Разговор о {'разделе' if project.parent else 'проекте'} {project.name} — «{project.title}», не о ролике: "
+                f"ролики не монтируй и не трогай. Правила — {projects.rel(project.rules)}"
+                + (f" (это правила раздела — только чем он отличается от проекта; общие — {projects.rel(home.rules)})"
+                   if project.parent else "") +
+                f", анкета — projects/{home.name}/setup.json (блок «Анкета "
                 f"проекта» в rules.md пишет студия по анкете — его не правь, дописывай правила ниже), референсы — "
-                f"projects/{project.name}/references/. "
+                f"projects/{home.name}/references/. "
                 + (f"Анкета не заполнена: {', '.join(q['q'] for q in left)}." if left else "Анкета заполнена."))
     if not stem:
         return ("Ролик не выбран: работай с тем, о чём просит человек. Проекты: " +
@@ -1044,7 +1114,8 @@ def studio_context(stem: str | None, project_name: str | None = None) -> str:
         lines = [f"Выбран ролик {stem} ({projects.rel(path) if path else 'исходника нет'}), "
                  f"проект {project.name} — «{project.title}». Эта сессия — только про него: другие ролики "
                  f"монтируются в своих сессиях, не трогай их.",
-                 f"Правила проекта — projects/{project.name}/rules.md: прочитай до плана, они важнее стиля. "
+                 f"Правила — {' и '.join(projects.rel(r) for r in project.rule_files() if r.exists()) or 'нет'}: "
+                 f"прочитай до плана, они важнее стиля (правила раздела уточняют проект). "
                  f"Язык речи {project.config['language']}, финальная плашка CTA "
                  f"{'нужна' if project.config['cta'] else 'НЕ нужна (build_page(cta=False))'}; "
                  f"выпуски — projects/{project.name}/output/."]

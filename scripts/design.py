@@ -26,7 +26,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT  # noqa: E402
 
 FONT_DIR = ROOT / "presets" / "fonts"
-PROJECTS_DIR = ROOT / "projects"
 FILE = "DESIGN.md"
 MARK = "reels-design"
 COLORS = ("text", "plate", "pen", "accent", "on-accent", "flash", "shade")
@@ -343,7 +342,8 @@ _CACHE: dict = {}
 
 def by_name(project: str) -> Design | None:
     """DESIGN.md проекта или None, если у проекта своей системы нет. Перечитывается, когда файл поменяли."""
-    path = PROJECTS_DIR / project / FILE
+    import projects                       # папка проектов — одна на все модули (самопроверка подменяет её там)
+    path = projects.PROJECTS_DIR / project / FILE
     if not path.is_file():
         return None
     key = (str(path), path.stat().st_mtime_ns)
@@ -354,8 +354,8 @@ def by_name(project: str) -> Design | None:
 
 
 def of(project) -> Design | None:
-    """Система проекта (projects.Project) или None."""
-    return by_name(project.name)
+    """Система проекта (projects.Project) или None. У раздела система его проекта — одна на все разделы."""
+    return by_name(getattr(project, "home", project).name)      # объект без разделов — сам себе проект
 
 
 def main():
