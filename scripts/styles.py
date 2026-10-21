@@ -52,6 +52,8 @@ VIZ_LEVELS = {"never": "не ставить", "rare": "только на гла�
 POSITIONS = ("chest", "lower", "center", "top", "side")
 ANIMATIONS = ("blur", "pop", "fade", "none")
 
+STROKE_MAX = 3      # обводка букв снаружи, px: «пару пикселей» (заказчик «Вкудесника», 21.10.2026), см. validate
+
 # Шрифты стилей: файл (обязан быть в presets/fonts и с кириллицей), CSS-семейство для
 # страниц HyperFrames и вес. Имя семейства для libass берётся из самого файла.
 FONTS = {
@@ -63,6 +65,8 @@ FONTS = {
     "rubik": {"file": "Rubik-Black.ttf", "css": "Rubik", "weight": 900},
     "golos": {"file": "GolosText-Black.ttf", "css": "Golos", "weight": 900},
     "onest": {"file": "Onest-Black.ttf", "css": "Onest", "weight": 900},
+    "onest-semibold": {"file": "Onest-SemiBold.ttf", "css": "Onest SemiBold", "weight": 600},
+    "inter": {"file": "InterDisplay-ExtraBold.ttf", "css": "Inter Display", "weight": 800},
     "alumni": {"file": "AlumniSans-Black.ttf", "css": "Alumni", "weight": 900},
 }
 
@@ -109,6 +113,12 @@ def validate(style: dict, source: str = "") -> dict:
         # караоке с плашкой (20.10.2026, «Вкудесник»): активное слово — на цветной плашке, а не только цветом
         if key in caps and not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(caps[key])):
             raise StyleError(f"{where}: captions.{key} «{caps[key]}» — нужен цвет вида #RRGGBB")
+    stroke = caps.get("stroke", 0)
+    # обводка — видимая толщина снаружи букв. 5 px на субтитрах «Вкудесника» вышли «очень жирнючей… просил буквально
+    # пару пикселей» (21.10.2026): буква тонет в чёрном и читается как жирный капс другого варианта доски
+    if not isinstance(stroke, (int, float)) or isinstance(stroke, bool) or not 0 <= stroke <= STROKE_MAX:
+        raise StyleError(f"{where}: captions.stroke {stroke!r} — обводка снаружи букв в пикселях, от 0 до {STROKE_MAX}: "
+                         f"толще она забивает просветы букв и текст выглядит жирным")
     if "active_text" in caps and "active_box" not in caps:
         raise StyleError(f"{where}: captions.active_text без active_box — цвет текста на плашке, а плашки нет")
     if caps["font"] not in FONTS:

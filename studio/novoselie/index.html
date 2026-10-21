@@ -151,26 +151,23 @@
       .paper-text { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 52px; line-height: 1.2; color: #2A2219; }
       .paper-sign { margin-top: 14px; text-align: right; font-family: "Cormorant"; font-weight: 700; font-size: 34px; color: #6A5A44; }
       .xs { font-family: "Cormorant"; font-style: italic; font-weight: 700; font-size: 96px; color: var(--cream); line-height: 1; }
-      @font-face { font-family: "Golos"; src: url("assets/fonts/GolosText-Black.ttf"); font-weight: 900; }
-      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Golos"; font-weight: 900; font-size: 64px; line-height: 1.15; color: #FFFFFF; text-transform: none; }
+      @font-face { font-family: "Onest SemiBold"; src: url("assets/fonts/Onest-SemiBold.ttf"); font-weight: 600; }
+      .cap { left: 245px; width: 590px; top: 1150px; text-align: center; font-family: "Onest SemiBold"; font-weight: 600; font-size: 54px; line-height: 1.15; color: #FFFFFF; text-transform: none; }
       .cap.accent { color: #FFD60A; }
       .cap .w { display: inline-block; }
-      .cap .w { padding: 0.04em 0.16em 0.08em; margin: 0 -0.06em; border-radius: 0.22em; }
 
-      @font-face { font-family: "Alumni"; src: url("assets/fonts/AlumniSans-Black.ttf"); font-weight: 900; }
-      @font-face { font-family: "Onest"; src: url("assets/fonts/Onest-Black.ttf"); font-weight: 900; }
-      @font-face { font-family: "Golos"; src: url("assets/fonts/GolosText-Black.ttf"); font-weight: 900; }
-      .cap { text-shadow: 0 2px 2px rgba(0,0,0,0.55), 0 6px 22px rgba(0,0,0,0.45); letter-spacing: -0.01em; }
-      .x-huge { font-family: "Alumni"; font-weight: 900; text-transform: uppercase; line-height: 0.84; letter-spacing: 0.005em;
-                color: #FFFFFF; text-shadow: 0 10px 34px rgba(0,0,0,0.45); }
-      .x-huge .y { color: #FFD60A; }
-      .x-tag { font-family: "Onest"; font-weight: 900; font-size: 36px; letter-spacing: 0.02em; color: #111111; background: #FFD60A;
-               border-radius: 12px; padding: 10px 22px 12px; white-space: nowrap; }
-      .x-tag.dark { color: #FFFFFF; background: rgba(17,17,17,0.86); }
-      .x-tag.big { font-size: 48px; padding: 12px 26px 14px; }
-      .x-meme { font-family: "Golos"; font-weight: 900; font-size: 64px; line-height: 1.08; color: #111111; background: #FFFFFF;
-                border-radius: 18px; padding: 16px 30px 20px; text-align: center; box-shadow: 0 16px 40px rgba(0,0,0,0.35); }
-      .x-meme small { display: block; font-size: 38px; color: #6B6B6B; margin-bottom: 4px; }
+      @font-face { font-family: "Unbounded SemiBold"; src: url("assets/fonts/Unbounded-SemiBold.ttf"); font-weight: 600; }
+      @font-face { font-family: "Onest Medium"; src: url("assets/fonts/Onest-Medium.ttf"); font-weight: 500; }
+      .cap { text-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 8px 34px rgba(0,0,0,0.38); }
+      .t-lead { text-align: center; font-family: "Onest Medium"; font-weight: 500; line-height: 1.02; color: #FFFFFF;
+                text-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 8px 34px rgba(0,0,0,0.38); white-space: nowrap; }
+      .t-hero { text-align: center; font-family: "Unbounded SemiBold"; font-weight: 600; letter-spacing: -0.05em;
+                line-height: 1.02; color: #FFFFFF; text-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 8px 34px rgba(0,0,0,0.38); white-space: nowrap; }
+      .t-hero span { display: inline-block; opacity: 0; }
+      .t-y { color: #FFD60A; }
+      .t-left { text-align: left; }
+      .scrim { left: 0; top: 0; width: 1080px; height: 900px; background: linear-gradient(rgba(0,0,0,0.34), rgba(0,0,0,0)); }
+      .low { left: 0; top: 1020px; width: 1080px; height: 900px; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.30)); }
 
     </style>
   </head>
@@ -181,28 +178,57 @@
                data-start="0" data-duration="57.567" data-track-index="0"></video>
       </div>
       <div id="behind" class="layer">
-
+        <div id="wl-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="mm-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="joy-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="new-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="sty-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="lvl-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="team-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="prod-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="time-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="wish-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="us-s" class="g scrim" data-safe="затемнение верха под текст — у лица уже прозрачное"></div>
+        <div id="low" class="g low" data-safe="затемнение низа под субтитры — у лица прозрачное" data-hold="подложка субтитров на всю историю, не графика"></div>
       </div>
       <div id="cam-fg" class="cam"></div>
       <div id="front" class="layer">
         <div id="caps"></div>
-        <div id="o-1" class="g x-huge" style="left: 120px; top: 430px; width: 730px; font-size: 250px;">ново</div>
-        <div id="o-2" class="g x-huge" style="left: 120px; top: 640px; width: 730px; font-size: 250px;"><span class="y">селье</span></div>
-        <div id="o-tag" class="g x-tag dark" style="left: 120px; top: 862px;">вкудесник · мы переехали</div>
-        <div id="o-3" class="g x-huge" style="left: 120px; top: 948px; width: 730px; font-size: 250px;">ново</div>
-        <div id="o-4" class="g x-huge" style="left: 120px; top: 1158px; width: 730px; font-size: 250px;"><span class="y">селье</span></div>
-        <div id="ck0" class="g x-tag big" style="left: 120px; top: 320px;">✓ фуршетик</div>
-        <div id="ck1" class="g x-tag big" style="left: 144px; top: 412px;">✓ тортик</div>
-        <div id="ck2" class="g x-tag big" style="left: 168px; top: 504px;">✓ закусочки</div>
-        <div id="t-walk" class="g x-tag" style="left: 120px; top: 300px;">встречаю команду →</div>
-        <div id="t-table" class="g x-tag" style="left: 120px; top: 300px;">первым делом — к столу</div>
-        <div id="meme" class="g x-meme" style="left: 150px; top: 300px; width: 670px; transform: rotate(-2deg);">
-          <small>стоп…</small>конфеты<br>С ЛИКЁРОМ?! 🥃</div>
-        <div id="q" class="g x-tag dark" style="left: 120px; top: 290px;">что говорит команда 👇</div>
-        <div id="w" class="g x-tag dark" style="left: 120px; top: 290px;">а пожелания на сезон?</div>
-        <div id="us0" class="g x-huge" style="left: 120px; top: 1046px; width: 730px; font-size: 100px;">успехов!</div>
-        <div id="us1" class="g x-huge" style="left: 120px; top: 1134px; width: 730px; font-size: 116px;">успехов!</div>
-        <div id="us2" class="g x-huge" style="left: 120px; top: 1236px; width: 730px; font-size: 136px;"><span class=y>успехов!</span></div>
+        <div id="o0a" class="g t-lead t-left" style="top: 400px; left: 110px; width: 860px; font-size: 46px;">устроила команде</div>
+        <div id="o0b" class="g t-hero t-left" style="top: 455px; left: 110px; width: 860px; font-size: 114px;">новоселье</div>
+        <div id="o1a" class="g t-lead t-left" style="top: 300px; left: 110px; width: 860px; font-size: 46px;">устроила команде</div>
+        <div id="o1b" class="g t-hero t-left" style="top: 355px; left: 110px; width: 860px; font-size: 114px;">новоселье</div>
+        <div id="o2a" class="g t-lead t-left" style="top: 760px; left: 110px; width: 746px; font-size: 46px;">устроила команде</div>
+        <div id="o2b" class="g t-hero t-left" style="top: 815px; left: 110px; width: 746px; font-size: 114px;">новоселье</div>
+        <div id="ck0" class="g t-hero t-left" style="top: 950px; left: 110px; width: 714px; font-size: 103px;">фуршетик,</div>
+        <div id="ck1" class="g t-hero t-left" style="top: 1059px; left: 110px; width: 714px; font-size: 103px;">тортик,</div>
+        <div id="ck2" class="g t-hero t-left t-y" style="top: 1168px; left: 110px; width: 714px; font-size: 103px;">закусочки</div>
+        <div id="wl-a" class="g t-lead" style="top: 280px; left: 110px; width: 860px; font-size: 46px;">добро пожаловать</div>
+        <div id="wl-b" class="g t-hero" style="top: 335px; left: 110px; width: 860px; font-size: 100px;">в новый офис</div>
+        <div id="mm-a" class="g t-lead" style="top: 330px; left: 110px; width: 860px; font-size: 50px;">конфеты оказались</div>
+        <div id="mm-b" class="g t-hero t-y" style="top: 389px; left: 110px; width: 860px; font-size: 117px;">с ликёром?!</div>
+        <div id="joy-l" class="g t-lead" style="top: 595px; left: 110px; width: 860px; font-size: 46px;">ой, ну я</div>
+        <div id="joy-0" class="g t-hero" style="top: 650px; left: 224px; width: 632px; font-size: 98px;">в восторге</div>
+        <div id="new-l" class="g t-lead" style="top: 352px; left: 110px; width: 860px; font-size: 46px;">новый офис —</div>
+        <div id="new-0" class="g t-hero" style="top: 407px; left: 110px; width: 860px; font-size: 100px;">современный</div>
+        <div id="new-1" class="g t-hero" style="top: 407px; left: 110px; width: 860px; font-size: 119px;">ухоженный</div>
+        <div id="new-2" class="g t-hero" style="top: 407px; left: 110px; width: 860px; font-size: 170px;">чистый</div>
+        <div id="sty-l" class="g t-lead" style="top: 554px; left: 110px; width: 860px; font-size: 46px;">офис просто очень</div>
+        <div id="sty-0" class="g t-hero" style="top: 609px; left: 224px; width: 632px; font-size: 124px;">стильно</div>
+        <div id="lvl-l" class="g t-lead" style="top: 484px; left: 110px; width: 860px; font-size: 46px;">поднялся</div>
+        <div id="lvl-0" class="g t-hero" style="top: 539px; left: 110px; width: 860px; font-size: 170px;">уровень</div>
+        <div id="team-l" class="g t-lead" style="top: 345px; left: 110px; width: 860px; font-size: 46px;">в любимой</div>
+        <div id="team-0" class="g t-hero" style="top: 400px; left: 110px; width: 860px; font-size: 157px;">команде</div>
+        <div id="prod-l" class="g t-lead" style="top: 648px; left: 110px; width: 860px; font-size: 46px;">много красивой</div>
+        <div id="prod-0" class="g t-hero" style="top: 703px; left: 224px; width: 632px; font-size: 91px;">продукции</div>
+        <div id="time-l" class="g t-lead" style="top: 413px; left: 110px; width: 860px; font-size: 46px;">всё было</div>
+        <div id="time-0" class="g t-hero" style="top: 468px; left: 110px; width: 860px; font-size: 162px;">вовремя</div>
+        <div id="wish-l" class="g t-lead" style="top: 542px; left: 110px; width: 860px; font-size: 46px;">этому сезону</div>
+        <div id="wish-0" class="g t-hero" style="top: 597px; left: 110px; width: 860px; font-size: 106px;">процветания</div>
+        <div id="us0" class="g t-hero" style="top: 310px; left: 110px; width: 860px; font-size: 110px;">успехов,</div>
+        <div id="us1" class="g t-hero" style="top: 428px; left: 110px; width: 860px; font-size: 110px;">успехов,</div>
+        <div id="us-l" class="g t-lead" style="top: 546px; left: 110px; width: 860px; font-size: 46px;">ещё раз</div>
+        <div id="us2" class="g t-hero t-y" style="top: 601px; left: 110px; width: 860px; font-size: 110px;">успехов!</div>
         <div id="flash"></div>
       </div>
       <audio id="sfx-open" src="assets/sfx/impact-bass-1.mp3" data-start="0.00" data-volume="0.062"></audio>
@@ -210,8 +236,10 @@
       <audio id="sfx-hello" src="assets/sfx/notification.mp3" data-start="14.93" data-volume="0.169"></audio>
       <audio id="sfx-enter" src="assets/sfx/whoosh-cinematic.mp3" data-start="21.27" data-volume="0.084"></audio>
       <audio id="sfx-scratch" src="assets/sfx/error.mp3" data-start="26.19" data-volume="0.933"></audio>
-      <audio id="sfx-q" src="assets/sfx/pop.mp3" data-start="27.41" data-volume="0.452"></audio>
-      <audio id="sfx-w" src="assets/sfx/click.mp3" data-start="42.51" data-volume="0.877"></audio>
+      <audio id="sfx-joy" src="assets/sfx/pop.mp3" data-start="27.38" data-volume="0.387"></audio>
+      <audio id="sfx-team" src="assets/sfx/sparkle.mp3" data-start="41.45" data-volume="0.058"></audio>
+      <audio id="sfx-prod" src="assets/sfx/click.mp3" data-start="43.99" data-volume="0.768"></audio>
+      <audio id="sfx-wish" src="assets/sfx/ping.mp3" data-start="52.24" data-volume="0.426"></audio>
       <audio id="sfx-us" src="assets/sfx/impact-bass-2.mp3" data-start="55.40" data-volume="0.041"></audio>
       <audio id="sfx-soft0" src="assets/sfx/swell-1.mp3" data-start="0.71" data-volume="0.250"></audio>
       <audio id="sfx-soft1" src="assets/sfx/swell-3.mp3" data-start="1.21" data-volume="0.247"></audio>
@@ -221,22 +249,23 @@
       <audio id="sfx-soft5" src="assets/sfx/swell-1.mp3" data-start="10.27" data-volume="0.250"></audio>
       <audio id="sfx-soft6" src="assets/sfx/swell-3.mp3" data-start="16.67" data-volume="0.247"></audio>
       <audio id="sfx-soft7" src="assets/sfx/swell-2.mp3" data-start="18.77" data-volume="0.294"></audio>
-      <audio id="sfx-soft8" src="assets/sfx/swell-1.mp3" data-start="22.67" data-volume="0.250"></audio>
-      <audio id="sfx-soft9" src="assets/sfx/swell-3.mp3" data-start="25.11" data-volume="0.247"></audio>
-      <audio id="sfx-soft10" src="assets/sfx/swell-1.mp3" data-start="29.50" data-volume="0.156"></audio>
-      <audio id="sfx-soft11" src="assets/sfx/swell-3.mp3" data-start="30.34" data-volume="0.155"></audio>
-      <audio id="sfx-soft12" src="assets/sfx/swell-1.mp3" data-start="31.30" data-volume="0.156"></audio>
-      <audio id="sfx-soft13" src="assets/sfx/swell-2.mp3" data-start="33.01" data-volume="0.294"></audio>
-      <audio id="sfx-soft14" src="assets/sfx/swell-3.mp3" data-start="35.44" data-volume="0.155"></audio>
-      <audio id="sfx-soft15" src="assets/sfx/swell-1.mp3" data-start="37.34" data-volume="0.250"></audio>
-      <audio id="sfx-soft16" src="assets/sfx/swell-3.mp3" data-start="40.27" data-volume="0.155"></audio>
-      <audio id="sfx-soft17" src="assets/sfx/swell-1.mp3" data-start="43.27" data-volume="0.156"></audio>
-      <audio id="sfx-soft18" src="assets/sfx/swell-3.mp3" data-start="46.27" data-volume="0.155"></audio>
+      <audio id="sfx-soft8" src="assets/sfx/bubble-1.mp3" data-start="20.05" data-volume="0.221"></audio>
+      <audio id="sfx-soft9" src="assets/sfx/swell-1.mp3" data-start="22.67" data-volume="0.250"></audio>
+      <audio id="sfx-soft10" src="assets/sfx/swell-3.mp3" data-start="25.11" data-volume="0.247"></audio>
+      <audio id="sfx-soft11" src="assets/sfx/bubble-2.mp3" data-start="30.60" data-volume="0.216"></audio>
+      <audio id="sfx-soft12" src="assets/sfx/bubble-1.mp3" data-start="31.66" data-volume="0.221"></audio>
+      <audio id="sfx-soft13" src="assets/sfx/bubble-2.mp3" data-start="32.54" data-volume="0.216"></audio>
+      <audio id="sfx-soft14" src="assets/sfx/swell-2.mp3" data-start="33.01" data-volume="0.294"></audio>
+      <audio id="sfx-soft15" src="assets/sfx/bubble-1.mp3" data-start="34.33" data-volume="0.221"></audio>
+      <audio id="sfx-soft16" src="assets/sfx/swell-1.mp3" data-start="37.34" data-volume="0.250"></audio>
+      <audio id="sfx-soft17" src="assets/sfx/swell-3.mp3" data-start="42.17" data-volume="0.247"></audio>
+      <audio id="sfx-soft18" src="assets/sfx/swell-1.mp3" data-start="43.27" data-volume="0.156"></audio>
       <audio id="sfx-soft19" src="assets/sfx/swell-2.mp3" data-start="47.01" data-volume="0.294"></audio>
-      <audio id="sfx-soft20" src="assets/sfx/swell-1.mp3" data-start="48.94" data-volume="0.156"></audio>
-      <audio id="sfx-soft21" src="assets/sfx/swell-3.mp3" data-start="50.64" data-volume="0.247"></audio>
-      <audio id="sfx-soft22" src="assets/sfx/bubble-1.mp3" data-start="54.36" data-volume="0.221"></audio>
-      <audio id="sfx-soft23" src="assets/sfx/swell-2.mp3" data-start="56.01" data-volume="0.294"></audio>
+      <audio id="sfx-soft20" src="assets/sfx/tap-1.mp3" data-start="49.26" data-volume="0.295"></audio>
+      <audio id="sfx-soft21" src="assets/sfx/bubble-2.mp3" data-start="49.94" data-volume="0.216"></audio>
+      <audio id="sfx-soft22" src="assets/sfx/swell-1.mp3" data-start="50.64" data-volume="0.250"></audio>
+      <audio id="sfx-soft23" src="assets/sfx/bubble-1.mp3" data-start="54.36" data-volume="0.221"></audio>
+      <audio id="sfx-soft24" src="assets/sfx/swell-3.mp3" data-start="56.01" data-volume="0.247"></audio>
       <audio id="sfx-bgm" src="assets/materials/mx-house-02.mp3" data-start="0.00" data-duration="57.57" data-volume="0.087" data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0.0,"v":0.0869},{"t":12.05,"v":0.0869},{"t":12.4,"v":0.1564},{"t":14.53,"v":0.1564},{"t":14.65,"v":0.0869},{"t":21.3,"v":0.0869},{"t":21.65,"v":0.1564},{"t":22.83,"v":0.1564},{"t":22.95,"v":0.0869},{"t":26.2,"v":0.0869},{"t":26.55,"v":0.1564},{"t":27.23,"v":0.1564},{"t":27.35,"v":0.0869},{"t":57.267,"v":0.0869},{"t":57.567,"v":0.0}]}]}' data-media-start="0.410"></audio>
     </div>
     <script>
@@ -318,7 +347,7 @@
       // ---------- бегущие субтитры: karaoke, pop ----------
       const caps = document.getElementById("caps");
       const CAP_BASE = "#FFFFFF", CAP_HL = "#FFD60A";
-      const CAP_BOX = "#FFD60A", CAP_ON_BOX = "#111111";
+      const CAP_BOX = "", CAP_ON_BOX = "#111111";
       window.CAPTIONS.forEach((c) => {
         const el = document.createElement("div");
         el.className = "cap" + (c.accent ? " accent" : "");
@@ -345,49 +374,108 @@
         tl.set(el, { opacity: 0 }, c.t1);
         (c.words || []).forEach((w, k) => {
           // только цвет (или плашка стиля): увеличенное слово наезжает на пробел и склеивается с соседним
-          const on = CAP_BOX ? { color: CAP_ON_BOX, backgroundColor: CAP_BOX } : { color: CAP_HL };
-          const off = CAP_BOX ? { color: CAP_BASE, backgroundColor: "rgba(0,0,0,0)" } : { color: CAP_BASE };
+          // плашка — классом .on (цвет, плашка, без тени — в CSS): класс при перемотке назад возвращается сам
+          const on = CAP_BOX ? { attr: { class: "w on" } } : { color: CAP_HL };
+          const off = CAP_BOX ? { attr: { class: "w" } } : { color: CAP_BASE };
           tl.set(spans[k], on, Math.max(c.t0, w.t0));
           const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
           if (next < c.t1) tl.set(spans[k], off, next);
         });
       });
 
-      slam("#o-1", 0.02, { fromScale: 1.35, blur: 10 });
-      slam("#o-2", 0.488, { fromScale: 1.35, blur: 10 });
-      enter("#o-tag", 0.976, { fromX: -60, fromScale: 0.9, dur: 0.2 });
-      leave(["#o-1", "#o-2"], 1.363, { y: 120, dur: 0.09 });
-      slam("#o-3", 1.463, { fromScale: 1.25, blur: 8, dur: 0.12 });
-      slam("#o-4", 1.513, { fromScale: 1.25, blur: 8, dur: 0.12 });
-      leave(["#o-3", "#o-4"], 1.767, { y: 60, dur: 0.18 });
-      leave("#o-tag", 1.767, { y: -40, dur: 0.18 });
+      slam("#o0a", 0.020, { fromScale: 1.2, blur: 8, dur: 0.12 });
+      slam("#o0b", 0.508, { fromScale: 1.35, blur: 10, dur: 0.14 });
+      leave(["#o0a", "#o0b"], 0.876, { y: -30, dur: 0.09 });
+      slam("#o1a", 0.976, { fromScale: 1.2, blur: 8, dur: 0.12 });
+      slam("#o1b", 0.996, { fromScale: 1.35, blur: 10, dur: 0.14 });
+      leave(["#o1a", "#o1b"], 1.363, { y: -30, dur: 0.09 });
+      slam("#o2a", 1.463, { fromScale: 1.2, blur: 8, dur: 0.12 });
+      slam("#o2b", 1.483, { fromScale: 1.35, blur: 10, dur: 0.14 });
+      leave(["#o2a", "#o2b"], 1.867, { y: -30, dur: 0.09 });
       flash(1.967);
       whip(0.963);
       whip(1.463);
-      slam("#ck0", 7.43, { fromScale: 1.4, rot: -3 });
-      slam("#ck1", 8.69, { fromScale: 1.4, rot: 2 });
-      slam("#ck2", 9.63, { fromScale: 1.4, rot: -2 });
-      leave(["#ck0", "#ck1", "#ck2"], 10.31, { x: 80, y: 0 });
+      slam("#ck0", 7.43, { fromScale: 1.3, blur: 10 });
+      slam("#ck1", 8.69, { fromScale: 1.3, blur: 10 });
+      slam("#ck2", 9.63, { fromScale: 1.3, blur: 10 });
+      leave(["#ck0", "#ck1", "#ck2"], 10.28, { x: -60, y: 0, dur: 0.2 });
       whip(11.996);
-      enter("#t-walk", 12.12, { fromX: -80, dur: 0.22 });
-      leave("#t-walk", 14.41, { x: 120, y: 0 });
       whip(14.629);
       whip(16.929);
+      slam("#wl-a", 19.03, { fromScale: 1.2, blur: 8, dur: 0.14 });
+      slam("#wl-b", 20.05, { fromScale: 1.35, blur: 10 });
+      leave(["#wl-a", "#wl-b"], 21.15, { y: -40, dur: 0.18 });
+      tl.to("#wl-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 18.98);
+      tl.to("#wl-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 21.15);
       whip(21.363);
-      enter("#t-table", 21.47, { fromX: -80, dur: 0.22 });
-      leave("#t-table", 22.71, { x: 120, y: 0 });
       flash(26.19);
-      slam("#meme", 26.25, { fromScale: 1.5, rot: -2, blur: 8 });
-      leave("#meme", 27.13, { rot: -2, y: -40 });
-      enter("#q", 27.41, { fromY: -40, fromScale: 0.9, dur: 0.24 });
-      leave("#q", 31.63, { y: -40 });
-      enter("#w", 42.51, { fromY: -40, fromScale: 0.9, dur: 0.24 });
-      leave("#w", 46.63, { y: -40 });
-      slam("#us0", 54.36, { fromScale: 1.6, blur: 10 });
-      slam("#us1", 54.68, { fromScale: 1.6, blur: 10 });
-      slam("#us2", 55.40, { fromScale: 1.6, blur: 10 });
-      leave(["#us0", "#us1", "#us2"], 56.07, { y: -50, dur: 0.18 });
+      slam("#mm-a", 26.23, { fromScale: 1.2, blur: 8, dur: 0.14 });
+      slam("#mm-b", 26.41, { fromScale: 1.5, blur: 12 });
+      leave(["#mm-a", "#mm-b"], 27.13, { y: -40, dur: 0.16 });
+      tl.to("#mm-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 26.19);
+      tl.to("#mm-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 27.13);
+      enter("#joy-l", 27.38, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#joy-l", 28.09, { y: -30, dur: 0.2 });
+      slam("#joy-0", 27.77, { fromScale: 1.3, blur: 10 });
+      leave("#joy-0", 28.09, { y: -40, dur: 0.16 });
+      tl.to("#joy-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 27.33);
+      tl.to("#joy-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 28.09);
+      enter("#new-l", 30.60, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#new-l", 33.15, { y: -30, dur: 0.2 });
+      slam("#new-0", 30.60, { fromScale: 1.3, blur: 10 });
+      leave("#new-0", 31.54, { y: -40, dur: 0.1 });
+      slam("#new-1", 31.66, { fromScale: 1.3, blur: 10 });
+      leave("#new-1", 32.42, { y: -40, dur: 0.1 });
+      slam("#new-2", 32.54, { fromScale: 1.3, blur: 10 });
+      leave("#new-2", 33.15, { y: -40, dur: 0.16 });
+      tl.to("#new-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 30.55);
+      tl.to("#new-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 33.15);
+      enter("#sty-l", 34.33, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#sty-l", 34.86, { y: -30, dur: 0.2 });
+      slam("#sty-0", 34.33, { fromScale: 1.3, blur: 10 });
+      leave("#sty-0", 34.86, { y: -40, dur: 0.16 });
+      tl.to("#sty-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 34.28);
+      tl.to("#sty-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 34.86);
+      enter("#lvl-l", 36.11, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#lvl-l", 37.48, { y: -30, dur: 0.2 });
+      slam("#lvl-0", 35.76, { fromScale: 1.3, blur: 10 });
+      leave("#lvl-0", 37.48, { y: -40, dur: 0.16 });
+      tl.to("#lvl-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 35.71);
+      tl.to("#lvl-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 37.48);
+      enter("#team-l", 40.97, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#team-l", 42.31, { y: -30, dur: 0.2 });
+      slam("#team-0", 41.45, { fromScale: 1.3, blur: 10 });
+      leave("#team-0", 42.31, { y: -40, dur: 0.16 });
+      tl.to("#team-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 40.92);
+      tl.to("#team-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 42.31);
+      enter("#prod-l", 43.53, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#prod-l", 45.42, { y: -30, dur: 0.2 });
+      slam("#prod-0", 43.99, { fromScale: 1.3, blur: 10 });
+      leave("#prod-0", 45.42, { y: -40, dur: 0.16 });
+      tl.to("#prod-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 43.48);
+      tl.to("#prod-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 45.42);
+      enter("#time-l", 49.26, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#time-l", 50.78, { y: -30, dur: 0.2 });
+      slam("#time-0", 49.94, { fromScale: 1.3, blur: 10 });
+      leave("#time-0", 50.78, { y: -40, dur: 0.16 });
+      tl.to("#time-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 49.21);
+      tl.to("#time-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 50.78);
+      enter("#wish-l", 51.34, { fromY: 24, fromScale: 0.92, dur: 0.22 });
+      leave("#wish-l", 53.47, { y: -30, dur: 0.2 });
+      slam("#wish-0", 52.24, { fromScale: 1.3, blur: 10 });
+      leave("#wish-0", 53.47, { y: -40, dur: 0.16 });
+      tl.to("#wish-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 51.29);
+      tl.to("#wish-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 53.47);
+      slam("#us0", 54.36, { fromScale: 1.5, blur: 10 });
+      slam("#us1", 54.68, { fromScale: 1.5, blur: 10 });
+      enter("#us-l", 55.08, { fromY: 24, fromScale: 0.92, dur: 0.18 });
+      slam("#us2", 55.40, { fromScale: 1.5, blur: 10 });
+      leave(["#us0", "#us1", "#us-l", "#us2"], 56.07, { y: -40, dur: 0.16 });
+      tl.to("#us-s", { opacity: 1, duration: 0.2, ease: "power1.out" }, 54.31);
+      tl.to("#us-s", { opacity: 0, duration: 0.2, ease: "power1.in" }, 56.07);
       whip(56.263);
+      tl.to("#low", { opacity: 1, duration: 0.3, ease: "power1.out" }, 1.967);
+      tl.to("#low", { opacity: 0, duration: 0.2, ease: "power1.in" }, 56.067);
       whip(29.763);
       whip(30.596);
       whip(31.563);

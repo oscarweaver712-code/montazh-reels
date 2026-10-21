@@ -365,7 +365,8 @@ CTA_AT = {"9:16": (245, 1170, 70, 1480), "4:5": (90, 700, 70, 1040), "1:1": (90,
           "16:9": (1000, 560, 880, 870)}
 EXTRA_FONTS = {"Montserrat": "Montserrat-ExtraBold.ttf", "Unbounded": "Unbounded-ExtraBold.ttf",
                "Rubik": "Rubik-Black.ttf", "Golos": "GolosText-Black.ttf", "Alumni": "AlumniSans-Black.ttf",
-               "Onest": "Onest-Black.ttf"}
+               "Onest": "Onest-Black.ttf", "Inter Display": "InterDisplay-ExtraBold.ttf",
+               "Onest SemiBold": "Onest-SemiBold.ttf"}
 
 
 def stage_style(fmt: str = "9:16") -> str:
@@ -403,9 +404,18 @@ def caption_css(caps: dict, fmt: str = "9:16") -> str:
     if float(caps.get("accent_scale", 1)) > 1:
         css.append(f'      .cap.accent {{ font-size: {round(size * float(caps["accent_scale"]))}px; }}')
     css.append('      .cap .w { display: inline-block; }')
+    if float(caps.get("stroke") or 0) > 0:
+        # обводка снаружи букв (заказчик «Вкудесника»: «обводку чёрную на весь текст», 21.10.2026 — «буквально пару
+        # пикселей»; потолок — styles.STROKE_MAX): штрих по центру контура вдвое толще, а paint-order кладёт заливку
+        # поверх — внутрь буква не худеет
+        css.append(f'      .cap {{ -webkit-text-stroke: {2 * float(caps["stroke"]):g}px #000; paint-order: stroke fill; }}')
     if caps.get("active_box"):
-        # плашка активного слова: поля в em, чтобы плашка росла с кеглем; минус-поля держат строку на месте
+        # плашка активного слова: поля в em, чтобы плашка росла с кеглем; минус-поля держат строку на месте. Тень
+        # субтитров у слова на плашке снимается — тёмный ореол под буквами «затягивал» (заказчик «Вкудесника», 20.10.2026:
+        # «чёрный на жёлтом… темнота затягивает»), у самой плашки — своя мягкая тень. Включает её класс .on (caption_js)
         css.append('      .cap .w { padding: 0.04em 0.16em 0.08em; margin: 0 -0.06em; border-radius: 0.22em; }')
+        css.append(f'      .cap .w.on {{ background-color: {caps["active_box"]}; color: {caps.get("active_text") or "#111111"}; '
+                   f'text-shadow: none; box-shadow: 0 6px 18px rgba(0,0,0,0.28); }}')
     if caps.get("box"):
         from styles import is_dark
         bg = "#FFFFFF" if is_dark(caps["color"]) else "rgba(12,12,14,0.78)"
@@ -477,8 +487,9 @@ def caption_js(caps: dict) -> str:
         tl.set(el, {{ opacity: 0 }}, c.t1);
         (c.words || []).forEach((w, k) => {{
           // только цвет (или плашка стиля): увеличенное слово наезжает на пробел и склеивается с соседним
-          const on = CAP_BOX ? {{ color: CAP_ON_BOX, backgroundColor: CAP_BOX }} : {{ color: CAP_HL }};
-          const off = CAP_BOX ? {{ color: CAP_BASE, backgroundColor: "rgba(0,0,0,0)" }} : {{ color: CAP_BASE }};
+          // плашка — классом .on (цвет, плашка, без тени — в CSS): класс при перемотке назад возвращается сам
+          const on = CAP_BOX ? {{ attr: {{ class: "w on" }} }} : {{ color: CAP_HL }};
+          const off = CAP_BOX ? {{ attr: {{ class: "w" }} }} : {{ color: CAP_BASE }};
           tl.set(spans[k], on, Math.max(c.t0, w.t0));
           const next = k + 1 < c.words.length ? c.words[k + 1].t0 : c.t1;
           if (next < c.t1) tl.set(spans[k], off, next);

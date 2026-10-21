@@ -3650,8 +3650,20 @@ def check_life_edit(report: Report, tmp: Path):
     st = styles.effective(styles.load_style("hormozi"), {"captions.active_box": "#FFD60A", "captions.active_text": "#111111"})
     js = kit.caption_js(styles.kit_captions(st))
     plain = kit.caption_js(styles.kit_captions(styles.load_style("hormozi")))
-    report.check('CAP_BOX = "#FFD60A"' in js and "backgroundColor: CAP_BOX" in js and 'CAP_BOX = ""' in plain,
-                 "караоке с плашкой: активное слово на цветной плашке, без опции — как было", "")
+    css = kit.caption_css(styles.kit_captions(st))
+    report.check('CAP_BOX = "#FFD60A"' in js and 'class: "w on"' in js and 'CAP_BOX = ""' in plain
+                 and re.search(r"\.cap \.w\.on \{[^}]*background-color: #FFD60A[^}]*text-shadow: none", css) is not None,
+                 "караоке с плашкой: активное слово на цветной плашке без тёмного ореола, без опции — как было", "")
+    # обводка «пару пикселей» (21.10.2026): 2 px снаружи — штрих 4 px; 5 px снаружи — громкий отказ, а не жирный текст
+    thin = kit.caption_css(styles.kit_captions(styles.effective(styles.load_style("hormozi"), {"captions.stroke": 2})))
+    try:
+        styles.effective(styles.load_style("hormozi"), {"captions.stroke": 5})
+        fat = "принята"
+    except styles.StyleError:
+        fat = "отказ"
+    report.check("-webkit-text-stroke: 4px #000" in thin and fat == "отказ",
+                 "обводка субтитров тонкая: 2 px снаружи, 5 px — отказ («просил буквально пару пикселей»)",
+                 f"обводка 5 px {fat}")
     splices, whips = montage.cover_cuts([4.0], [7.5, 9.2], "      whip(9.20);\n", framing=False, jump_whip=True)
     flash, _ = montage.cover_cuts([4.0], [7.5], "", framing=False, jump_whip=False)
     report.check(splices == [4.0] and whips == [7.5] and flash == [4.0, 7.5],
