@@ -1609,7 +1609,8 @@ batch_wake = asyncio.Event()
 def montage_busy() -> int:
     """Сколько роликов монтируется прямо сейчас: ролики пачки в работе (и догруженные, которые вот-вот начнутся)
     плюс разговоры ИИ в чате. Ждущие своей очереди в пачке не считаются — они ещё не монтируются."""
-    live = sum(i["status"] in ("working", "waiting_queue") or (i["status"] == "queued" and i.get("now"))
+    # bool(): «queued» без «now» давал None, и сумма падала — повторный запуск пачки получал 500 вместо отказа
+    live = sum(bool(i["status"] in ("working", "waiting_queue") or (i["status"] == "queued" and i.get("now")))
                for i in batch["items"]) if batch["running"] else 0
     return live + len(running_threads())
 

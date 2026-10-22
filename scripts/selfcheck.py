@@ -2784,6 +2784,18 @@ def check_batch(report: Report, tmp: Path):
                  "догрузка: ролик, закинутый во время пачки, монтируется сразу рядом; пятый разом — отказ, не ожидание",
                  f"пошли сразу {len(took)} из 4, разом {peak}, пятый: {full[0]}, повтор: {again[0]}, "
                  f"после освобождения: {late[0] if late else '—'}")
+    # ролик пачки, ждущий своей очереди (queued без now), — не в счёт и не ошибка: 22.10.2026 повторный
+    # batch.py во время пачки из двух роликов получал 500 (сумма bool и None), а не отказ
+    saved_batch = dict(studio_api.batch)
+    try:
+        studio_api.batch.update(running=True, items=[{"stem": "А", "status": "working"}, {"stem": "Б", "status": "queued"}])
+        busy = studio_api.montage_busy() - len(studio_api.running_threads())
+    except TypeError as e:
+        busy = f"падает: {e}"
+    finally:
+        studio_api.batch.clear()
+        studio_api.batch.update(saved_batch)
+    report.check(busy == 1, "ждущий очереди ролик пачки не считается монтирующимся и не роняет подсчёт", f"занято {busy}")
 
 
 def check_ai_workflow(report: Report, tmp: Path):
