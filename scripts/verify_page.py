@@ -458,7 +458,10 @@ CHECK_JS = r"""
     {
       const caps = [...document.querySelectorAll("#caps .cap")];
       const texts = [...document.querySelectorAll("#front .g, #behind .g")]
-        .filter((el) => !el.classList.contains("cap") && !el.closest(".card") && el.textContent.trim());
+        // шапка автора на весь ролик (data-header, «СлаваМонтаж» 22.10.2026: «Маркетолог на рынке США» в шапке) — подпись
+        // бренда, а не повтор речи: её слова совпадают с субтитрами «маркетолог…» весь ролик
+        .filter((el) => !el.classList.contains("cap") && !el.closest(".card") && !el.closest("[data-header]")
+          && el.textContent.trim());
       const shown = (el) => {
         for (let n = el; n && n !== document.body; n = n.parentElement) {
           const cs = getComputedStyle(n);

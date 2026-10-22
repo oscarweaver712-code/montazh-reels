@@ -442,7 +442,8 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
     copy_if_newer(VENDOR / "gsap.min.js", assets / "gsap.min.js")
     # все шрифты presets/fonts — жёсткими ссылками, места не занимают: в монтажной шрифт слоя
     # или субтитров меняется на любой из них, и страница должна найти его без пересборки
-    for src in sorted(FONT_DIR.glob("*.ttf")):
+    # .otf тоже: шрифты заказчика бывают только в нём (SF Pro, «СлаваМонтаж» 22.10.2026), а DESIGN.md их пускает
+    for src in sorted([*FONT_DIR.glob("*.ttf"), *FONT_DIR.glob("*.otf")]):
         copy_if_newer(src, assets / "fonts" / src.name)
     for src in (work / "downloads").glob("*"):
         if src.suffix.lower() in (".jpg", ".jpeg", ".png", ".svg", ".webp"):
