@@ -10,6 +10,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      long:
+        description: "Ещё и длинная самопроверка (200 сегментов рендера, +10–15 мин)"
+        type: boolean
+        default: false
 
 jobs:
   windows:
@@ -48,6 +53,13 @@ jobs:
         # имя с пробелами — через переменную: cmd снимет внешние кавычки, а внутренние оставит
         run: |
           cmd /c 'call "%INSTALLER%" < NUL'
+          exit $LASTEXITCODE
+
+      - name: Длинная самопроверка (по кнопке)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.long }}
+        working-directory: Монтаж Reels
+        run: |
+          .venv\Scripts\python.exe scripts\selfcheck.py --long
           exit $LASTEXITCODE
 
       - name: После установки и самопроверки в git ничего не изменилось

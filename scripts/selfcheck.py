@@ -3188,6 +3188,17 @@ def check_ai_workflow(report: Report, tmp: Path):
     report.check(all(w == g for w, g in got) and lyric_off is None and pack_off is None and by_ref["id"] == "bold-captions",
                  "подбор шаблона: жанр по анкете, речи и референсам; чужой тип и «без музыки» не голосуют; без жанра — по тону",
                  ", ".join(f"{w or 'своё'}→{g or 'своё'}" for w, g in got if w != g) or f"{len(got)} ловушек, референс → {by_ref['id']}")
+    # тип проекта по входу: папка с одним видео — «лучшее из дубля кусками» (живой отзыв IMG_9665), не сборка; с двумя — сборка
+    with temp_projects(tmp / "kind_projects", "one", "two") as made:
+        for name, n in (("one", 1), ("two", 2)):
+            folder = made[name].input / "RIL"
+            folder.mkdir()
+            for k in range(n):
+                (folder / f"IMG_{k}.MOV").write_bytes(b"v")
+            (made[name].input / "RIL.mov").write_bytes(b"v")
+        kinds = (templates.project_facts(projects.get("one"))["kind"], templates.project_facts(projects.get("two"))["kind"])
+    report.check(kinds == ("talking", "pack"), "тип проекта по входу: одно видео в папке — говорящая голова, два и больше — сборка",
+                 f"одно: {kinds[0]}, два: {kinds[1]}")
     with temp_projects(tmp / "tpl_projects", "tpl") as made:
         p = made["tpl"]
         projects.save_setup(p, dict(READY_ANSWERS, about="Отзывы клиенток психолога, благодарность", tone=["тёплый"]))
@@ -3710,6 +3721,27 @@ def check_projects(report: Report, tmp: Path):
              for f in (ROOT / d).iterdir() if f.suffix.lower() in projects.VIDEO_EXT]
     report.check(not problems and not stray, "проекты в projects/ читаются, имена роликов не повторяются, "
                  "в старых input/ и output/ видео нет", "; ".join(problems + stray)[:160] or ", ".join(projects.names()))
+    # репозиторий клиентов хранит решения и правила, но не видео и не промежуточное (scripts/clients.gitignore)
+    import clients
+    saved_c = (clients.ROOT, clients.GIT_DIR)
+    croot = tmp / "c_root"
+    clients.ROOT, clients.GIT_DIR = croot, croot / ".clients"
+    try:
+        keep = ["projects/x/rules.md", "projects/x/fonts/Brand.otf", "work/IMG_1.txt", "work/IMG_1/page.py",
+                "work/IMG_1/edit.json", "work/IMG_1/materials/photo.jpg"]
+        drop = ["projects/x/input/IMG_1.MOV", "projects/x/output/IMG_1_v1.mp4", "work/IMG_1/aroll.mp4",
+                "work/IMG_1/materials/clip.mp4", "work/_queue/a.json", "projects/x/music/mx-a.mp3"]
+        for f in keep + drop:
+            (croot / f).parent.mkdir(parents=True, exist_ok=True)
+            (croot / f).write_bytes(b"x")
+        clients.init()
+        stored = set(clients.git("ls-files").splitlines())
+    except Exception as e:                                   # noqa: BLE001 — красный с причиной, а не падение проверки
+        stored = {f"ошибка: {e}"}
+    finally:
+        clients.ROOT, clients.GIT_DIR = saved_c
+    report.check(stored == set(keep), "данные клиентов: решения, правила и шрифты бренда — в .clients/, видео и промежуточное — нет",
+                 ", ".join(sorted(stored ^ set(keep))[:4]) or f"{len(stored)} файлов, лишних нет")
     with temp_projects(tmp / "p_projects", "main", "client") as made:
         main, client = made["main"], made["client"]
         (main.root / "project.json").write_text(json.dumps(

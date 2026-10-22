@@ -148,15 +148,18 @@ def _hits(words: list, text: str) -> list:
 def project_facts(project) -> dict:
     """Что известно о проекте помимо анкеты: тип (pack, если хоть один раздел — сборка), свой трек автора, речь первых
     видео (транскрипты work/<имя>.txt — «что подаём на вход») и разборы референсов (analyze_reference → work/_refs)."""
+    import projects
     from common import WORK_DIR
     project = project.home
     kinds = {s.config.get("kind") for s in project.sections()} | {project.config.get("kind")}
     stems = []
     for part in [project, *project.sections()]:
         stems += [p.stem for p in part.sources()] + [p.name for p in part.packs()]
-        packs = {p.name for p in part.packs()}
+        # сборка из клипов — папка с двумя и больше видео; одно видео в папке — «лучшее из дубля кусками» (живой отзыв
+        # IMG_9665), это говорящая голова. Только сборки в input/ (папка и её собранный <имя>.mov, pack.py --build)
+        packs = {p.name for p in part.packs() if len(projects.pack_clips(p)) >= 2}
         if packs and all(p.stem in packs for p in part.sources()):
-            kinds.add("pack")              # в input/ только сборки (папка клипов и её собранный <имя>.mov, pack.py --build)
+            kinds.add("pack")
     speech = " ".join((WORK_DIR / f"{s}.txt").read_text(encoding="utf-8")[:4000]
                       for s in stems[:3] if (WORK_DIR / f"{s}.txt").is_file())
     refs = []

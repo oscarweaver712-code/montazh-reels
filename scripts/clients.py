@@ -98,12 +98,14 @@ def save(message: str, push: bool = True) -> str:
     for i in range(0, len(files), 200):
         git("add", "-f", "--", *files[i:i + 200])
     git("add", "-u", "--", *TRACKED)                          # удалённые и изменённые из хранимого
-    if not git("diff", "--cached", "--name-only"):
-        return "· изменений нет"
-    git("commit", "-q", "-m", message)
-    note = f"✓ сохранено: {message}"
+    note = "· изменений нет"
+    if git("diff", "--cached", "--name-only"):
+        # на чистой Windows у git нет имени автора — коммит клиентов не должен падать из-за этого
+        who = [] if git("config", "user.email", check=False) else ["-c", "user.name=Монтаж Reels", "-c", "user.email=reels@localhost"]
+        git(*who, "commit", "-q", "-m", message)
+        note = f"✓ сохранено: {message}"
     if push and git("remote", check=False):
-        git("push", "-q", "-u", "origin", "main")
+        git("push", "-q", "-u", "origin", "main")             # и то, что не ушло в прошлый раз (не было сети)
         note += " → отправлено"
     return note
 
