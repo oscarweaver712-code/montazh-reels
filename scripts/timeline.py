@@ -53,9 +53,16 @@ TEXT_ANIMS = {"pop": "Влёт с размытием", "fade": "Проявлен
 TEXT_DEFAULT = {"size": 120, "font": "Oswald-Bold", "color": "#F2EBDD", "anim": "pop", "box": ""}
 
 
-def fonts() -> list:
-    """Шрифты, которые можно поставить слою или субтитрам: всё из presets/fonts (OFL, с кириллицей)."""
-    return sorted(p.stem for p in FONT_DIR.glob("*.ttf"))
+def fonts(stem: str | None = None) -> list:
+    """Шрифты, которые можно поставить слою или субтитрам: движка (presets/fonts), догруженные на машине и проекта ролика
+    (scripts/fonts.py). .ttf — именем без расширения (так записаны старые правки), .otf — с расширением."""
+    import fonts as font_files
+    import projects
+    try:
+        owner = projects.of(stem) if stem else None
+    except projects.ProjectError:
+        owner = None
+    return sorted(p.stem if p.suffix.lower() == ".ttf" else p.name for p in font_files.files(owner).values())
 
 
 class EditError(ValueError):
@@ -398,7 +405,7 @@ def tracks(stem: str) -> dict:
             "base_zoom": (sc["style"] or {}).get("params", {}).get("camera", {}).get("base_zoom"),
             "captions": [{k: c[k] for k in ("t0", "t1", "text", "accent")} for c in sc["chunks"]],
             "hide": hide, "words": words, "items": items, "sounds": sounds,
-            "beats": page_beats(html), "fonts": fonts(), "caption_style": edits["captions"]["style"],
+            "beats": page_beats(html), "fonts": fonts(stem), "caption_style": edits["captions"]["style"],
             "texts": edits["texts"], "text_anims": TEXT_ANIMS,
             "zones": [{"name": n, "rect": list(r)} for n, r in __import__("formats").grey_zones(sc["fmt"])],
             "can_undo": bool(_load(history_path(stem), [])), "can_redo": bool(_load(future_path(stem), [])),
@@ -462,7 +469,7 @@ def _span(a, b, duration: float, what: str, shortest: float = 0.1) -> list:
     return [a, b]
 
 
-def merge_item_style(cur: dict, changes: dict) -> dict:
+def merge_item_style(cur: dict, changes: dict, fonts_ok: list | None = None) -> dict:
     """Правка вида слоя: dx, dy, scale, font, color, texts. Пустое значение снимает свойство."""
     cur = dict(cur)
     for key, value in changes.items():
@@ -479,8 +486,8 @@ def merge_item_style(cur: dict, changes: dict) -> dict:
                 raise EditError("масштаб слоя — от 0.2 до 4")
             cur[key] = v
         elif key == "font":
-            if value not in fonts():
-                raise EditError(f"шрифта «{value}» нет в presets/fonts")
+            if value not in (fonts_ok if fonts_ok is not None else fonts()):
+                raise EditError(f"шрифта «{value}» нет ни в presets/fonts, ни в шрифтах проекта")
             cur[key] = value
         elif key == "color":
             if not COLOR_RE.match(str(value)):
@@ -496,7 +503,7 @@ def merge_item_style(cur: dict, changes: dict) -> dict:
     return {k: v for k, v in cur.items() if v not in (None, "", 0, False) and not (k == "scale" and v == 1)}
 
 
-def merge_caption_style(style: dict, changes: dict) -> dict:
+def merge_caption_style(style: dict, changes: dict, fonts_ok: list | None = None) -> dict:
     """Правка вида субтитров: font, color, accent, scale, dy. Пустое значение снимает свойство."""
     style = dict(style)
     for key, value in changes.items():
@@ -505,8 +512,8 @@ def merge_caption_style(style: dict, changes: dict) -> dict:
         if value is None or value == "":
             style.pop(key, None)
         elif key == "font":
-            if value not in fonts():
-                raise EditError(f"шрифта «{value}» нет в presets/fonts")
+            if value not in (fonts_ok if fonts_ok is not None else fonts()):
+                raise EditError(f"шрифта «{value}» нет ни в presets/fonts, ни в шрифтах проекта")
             style[key] = value
         elif key in ("color", "accent"):
             if not COLOR_RE.match(str(value)):
@@ -525,7 +532,7 @@ def merge_caption_style(style: dict, changes: dict) -> dict:
     return {k: v for k, v in style.items() if not (k == "scale" and v == 1) and not (k == "dy" and v == 0)}
 
 
-def merge_text(cur: dict, changes: dict, duration: float, width: int, height: int) -> dict:
+def merge_text(cur: dict, changes: dict, duration: float, width: int, height: int, fonts_ok: list | None = None) -> dict:
     """Свой текст на кадре (кнопка «Текст» в монтажной): что, когда, где, каким шрифтом и как влетает."""
     cur = dict(cur)
     for key, value in changes.items():
@@ -549,8 +556,8 @@ def merge_text(cur: dict, changes: dict, duration: float, width: int, height: in
                 raise EditError("размер текста — от 24 до 400 px")
             cur[key] = v
         elif key == "font":
-            if value not in fonts():
-                raise EditError(f"шрифта «{value}» нет в presets/fonts")
+            if value not in (fonts_ok if fonts_ok is not None else fonts()):
+                raise EditError(f"шрифта «{value}» нет ни в presets/fonts, ни в шрифтах проекта")
             cur[key] = value
         elif key in ("color", "box"):
             if value in (None, "") and key == "box":
@@ -677,13 +684,13 @@ def apply_op(stem: str, op: dict) -> dict:
         parsed = parse_page(html_path.read_text(encoding="utf-8")) if html_path.exists() else {"items": []}
         if iid not in {it["id"] for it in parsed["items"]}:
             raise EditError(f"слоя #{iid} на странице нет")
-        cur = merge_item_style(edits["items"].get(iid, {}), op.get("set") or {})
+        cur = merge_item_style(edits["items"].get(iid, {}), op.get("set") or {}, fonts(stem))
         if cur:
             edits["items"][iid] = cur
         else:
             edits["items"].pop(iid, None)
     elif kind == "captions.style":
-        caps["style"] = merge_caption_style(caps.get("style") or {}, op.get("set") or {})
+        caps["style"] = merge_caption_style(caps.get("style") or {}, op.get("set") or {}, fonts(stem))
     elif kind == "text.add":
         n = max([int(str(t.get("id", "t0"))[1:] or 0) for t in edits["texts"]] + [0]) + 1
         t0 = _time(op.get("t0", 0), duration, "время текста")
@@ -692,7 +699,7 @@ def apply_op(stem: str, op: dict) -> dict:
         if sc["width"] > sc["height"]:
             base["size"] = 96
         base = merge_text(base, {k: v for k, v in op.items() if k not in ("op", "id")}, duration,
-                          sc["width"], sc["height"])
+                          sc["width"], sc["height"], fonts(stem))
         edits["texts"].append(base)
     elif kind in ("text.set", "text.delete"):
         tid = op.get("id")
@@ -702,7 +709,7 @@ def apply_op(stem: str, op: dict) -> dict:
         if kind == "text.delete":
             edits["texts"] = [t for t in edits["texts"] if t.get("id") != tid]
         else:
-            new = merge_text(found[0], op.get("set") or {}, duration, sc["width"], sc["height"])
+            new = merge_text(found[0], op.get("set") or {}, duration, sc["width"], sc["height"], fonts(stem))
             edits["texts"] = [new if t.get("id") == tid else t for t in edits["texts"]]
     elif kind == "reset":
         edits = normalize({})

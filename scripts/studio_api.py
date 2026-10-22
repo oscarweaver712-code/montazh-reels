@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import approve
 import brain
+import fonts
 import formats
 import host
 import jobqueue
@@ -648,11 +649,26 @@ def get_setup(name: str):
         raise HTTPException(409, str(e))
     refs = sorted(x.name for x in p.references.iterdir() if x.is_file() and not x.name.startswith(".")) \
         if p.references.exists() else []
-    best, _, why = templates.suggest(p)
+    best, _, why, alt = templates.decide(p)
     return {"project": p.name, "title": p.title, "questions": projects.SETUP_QUESTIONS, "answers": answers,
             "missing": [q["id"] for q in projects.missing_setup(p)], "references": refs,
+            "fonts": [f for f in fonts.listing(p) if f["where"] == "проект"],
             "templates": templates.catalog(), "template": templates.current(p),
-            "suggest": {"id": best["id"], "why": why} if best else None}
+            "suggest": {"id": best["id"], "why": why, "alt": {"id": alt["id"], "name": alt["name"]} if alt else None}
+            if best else None}
+
+
+@router.post("/api/studio/fonts/{name:path}")
+async def add_font(name: str, file: UploadFile = File(...)):
+    """Шрифт бренда в projects/<проект>/fonts/ (scripts/fonts.py): файлом, одинаково на Mac и Windows (23.10.2026)."""
+    p = _project(name).home
+    data = await file.read()
+    if len(data) > 30 * 1024 * 1024:
+        raise HTTPException(400, "шрифт больше 30 МБ — это не шрифт или в нём лишнее")
+    try:
+        return {"ok": True, "font": fonts.add(p, file.filename or "font.ttf", data)}
+    except fonts.FontError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/api/studio/setup/{name:path}")
@@ -719,7 +735,18 @@ async def add_reference(name: str, file: UploadFile = File(...)):
         part.replace(target)
     finally:
         part.unlink(missing_ok=True)
-    return {"ok": True, "name": target.name}
+    # ролик-референс разбираем очередью (темп склеек, текст в кадре, ближайший стиль — analyze_reference): разбор голосует
+    # в подборе шаблона проекта (templates.project_facts, 23.10.2026: «выбор шаблона автоматом — по входу, референсам и
+    # пожеланиям»)
+    job = None
+    if target.suffix.lower() in projects.VIDEO_EXT:
+        try:
+            job = enqueue(f"40-ref-{p.home.name}-{materials.safe_name(target.stem)}"[:80],
+                          [["python", "scripts/analyze_reference.py", projects.rel(target)]],
+                          title=f"разбор референса {target.name}")
+        except HTTPException:
+            job = None                                       # такая задача уже в очереди
+    return {"ok": True, "name": target.name, "job": job}
 
 
 @router.get("/api/studio/materials/{stem}")
@@ -1357,6 +1384,14 @@ async def brain_send(data: dict = Body(...)):
             thread = brain.new_thread(old["engine"], f"{stem}: продолжение", stem)
             thread["fresh_of"] = old["id"]
             prompt = brain.handoff(old) + "\n\nНовая просьба человека:\n" + text
+    # новая сессия ролика, начатая руками («＋ новая»), продолжает дела прошлой: та же передача, что у свежей сессии по
+    # размеру (23.10.2026, Валера: окно ролика — его сессия монтажа, как в терминале; новая — без потери сделанного)
+    if stem and not fresh and not thread["messages"] and not thread.get("fresh_of"):
+        before = [t for t in brain.list_threads() if t["stem"] == stem and t["id"] != thread["id"] and t["count"]]
+        if before:
+            old = brain.load_thread(before[0]["id"])
+            thread["fresh_of"] = old["id"]
+            prompt = brain.handoff(old, why="человек открыл новую сессию этого ролика") + "\n\nНовая просьба человека:\n" + text
     if thread["title"] == "Новый разговор":
         thread["title"] = text[:60]
     thread["messages"].append({"role": "user", "text": text, "at": time.time()})

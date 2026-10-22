@@ -21,14 +21,16 @@
   "tone": [
    "динамичный, вирусный"
   ],
-  "kind": "pack"
+  "kind": "pack",
+  "pace": "fast"
  },
  "exemplar": {
   "project": "vkudesnik",
   "stem": "novoselie",
   "video": "projects/vkudesnik/output/novoselie_v6.mp4",
-  "source": "work/novoselie/page.py",
-  "verdict": "Заказчик «Вкудесника» 21.10.2026: «6 ок»"
+  "source": "presets/templates/brand-lifestyle/exemplar.page.py",
+  "verdict": "Заказчик «Вкудесника» 21.10.2026: «6 ок»",
+  "origin": "work/novoselie/page.py"
  },
  "brief": {
   "style": "hormozi",

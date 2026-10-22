@@ -1,1 +1,0 @@
-Head of Sekhmet — ['Egypt, Thebes(?), New Kingdom (1540–1069 BCE), Dynasty 18, reign of Amenhotep III (1390–1352 BCE)'], c. 1391–1353 BCE. Cleveland Museum of Art, 1916.2011, CC0 (Open Access). https://clevelandart.org/art/1916.2011

@@ -37,9 +37,6 @@ TEMPLATE_DIR = PRESET_DIR / "templates"
 REQUIRED = ("id", "name", "summary", "signals", "exemplar", "brief", "project", "rules", "how", "design")
 BEGIN = "<!-- шаблон проекта: этот блок пишет templates.py (studio: «Настроить проект» → шаблон) -->"
 END = "<!-- /шаблон -->"
-MIN_SCORE = 3            # слабее — «своё»: шаблон не ставится сам, человек выбирает в анкете
-# вес признака: «о чём ролики» говорит о жанре больше всего; характер монтажа — общий для многих жанров
-W_ABOUT, W_TEXT, W_TONE, W_KIND, W_AUDIO = 3, 1, 2, 3, 4
 
 
 class TemplateError(ValueError):
@@ -81,21 +78,31 @@ def validate(t: dict) -> list:
         bad.append(f"{where}: signals.about пуст — по чему узнавать жанр?")
     if sig.get("kind") not in (None, "talking", "pack"):
         bad.append(f"{where}: signals.kind «{sig.get('kind')}» — бывает talking или pack")
+    if sig.get("pace") not in (None, "fast", "calm"):
+        bad.append(f"{where}: signals.pace «{sig.get('pace')}» — бывает fast или calm")
+    # эталон — внутри шаблона: проекты и work/ — данные клиентов, на другой машине их нет (23.10.2026)
     source = ROOT / t["exemplar"].get("source", "")
-    if not t["exemplar"].get("source") or not source.exists():
+    if not t["exemplar"].get("source") or not source.is_file():
         bad.append(f"{where}: эталон без страницы или партитуры — exemplar.source «{t['exemplar'].get('source')}» не найден")
+    elif t["dir"] not in source.resolve().parents:
+        bad.append(f"{where}: exemplar.source «{t['exemplar']['source']}» вне папки шаблона — положи копию рядом с template.json")
     if t["design"]:
         import design
         path = t["dir"] / design.FILE
         if not path.exists():
             bad.append(f"{where}: design true, а DESIGN.md нет")
         else:
+            # шаблон раздаётся всем проектам и всем машинам: его шрифты — только движка (presets/fonts, OFL, в git).
+            # Шрифт заказчика здесь — провал, а не «на этой машине нет» (23.10.2026: шаблон expert-premium ссылался на
+            # SF Pro и Nicoletta, на Mac проверка была зелёной — шрифты лежали, на чистой Windows — красной)
             try:
-                design.Design(path, t["id"])
+                d = design.Design(path, t["id"])
+                foreign = [p.name for p in d.font_paths.values() if p.parent != design.FONT_DIR]
+                if foreign:
+                    bad.append(f"{where}: DESIGN.md — шрифты не из presets/fonts: {', '.join(sorted(set(foreign)))}")
             except design.DesignError as e:
-                if "нет файла шрифта" not in str(e):         # шрифты не OFL (заказчика) — на этой машине может не быть
-                    bad.append(f"{where}: DESIGN.md — {e}")
-    if not (t["dir"] / "exemplar.jpg").exists():
+                bad.append(f"{where}: DESIGN.md — {e}")
+    if proven(t) and not (t["dir"] / "exemplar.jpg").exists():
         bad.append(f"{where}: нет exemplar.jpg — templates.py sheets")
     return bad
 
@@ -106,123 +113,268 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", str(text).lower().replace("ё", "е"))
 
 
-def score(t: dict, answers: dict, kind: str | None = None, keep_audio: bool = False) -> tuple:
-    """(очки, почему) шаблона для анкеты: совпавшие признаки — словами для человека."""
+# Подбор (23.10.2026, аудит docs/АУДИТ-23-10.md): мешок слов ошибался на простых анкетах — психолог-эксперт получал
+# «Живой отзыв» (профессия стояла в признаках отзыва), влог-разговор — сборку из клипов (тип раздела не штрафовался),
+# «без музыки» голосовало за лирик. Теперь так:
+#   1. твёрдые факты отсекают чужие жанры: тип раздела (сборка / говорящая голова) и свой трек автора (keep_audio);
+#   2. очки — по словам анкеты (о чём ×3, остальное ×1, слова в отрицании «без/не/нет» не считаются), тону (×2),
+#      по речи самих видео проекта (×1: «что подаём на вход») и по разобранным референсам (analyze_reference: темп
+#      склеек и ближайший стиль, ×2);
+#   3. проверенный на заказе шаблон (exemplar.video) при равных очках — раньше базового;
+#   4. ничего не совпало — умолчание по тону (динамичный → вирусный эксперт, спокойный → премиальный), а не «своё»:
+#      «своё» — только выбором человека. Отрыв первого от второго меньше 2 очков — шаблон всё равно ставится, но
+#      помечается «неуверенно»: студия показывает второй вариант рядом.
+W_ABOUT, W_TEXT, W_TONE, W_SPEECH, W_REF = 3, 1, 2, 1, 2
+MIN_MARGIN = 2
+NEGATE = ("без", "не", "нет", "никаких", "ни", "кроме", "no", "without", "not")
+# умолчание по тону, если анкета не назвала жанр словами: шаблон на каждую ветку «говорящей головы»
+TONE_DEFAULT = (("дерзк", "expert-viral"), ("юмор", "expert-viral"), ("динамичн", "expert-viral"), ("вирусн", "expert-viral"),
+                ("премиальн", "expert-premium"), ("спокойн", "expert-premium"), ("минимал", "expert-premium"))
+
+
+def _hits(words: list, text: str) -> list:
+    """Признаки, которые есть в тексте не под отрицанием: «без музыки» за лирик не голосует."""
+    out = []
+    for w in words:
+        stem = _norm(w)
+        for m in re.finditer(re.escape(stem), text):
+            before = re.findall(r"[\w-]+", text[max(0, m.start() - 24):m.start()])[-2:]
+            if not any(b in NEGATE for b in before):
+                out.append(w)
+                break
+    return out
+
+
+def project_facts(project) -> dict:
+    """Что известно о проекте помимо анкеты: тип (pack, если хоть один раздел — сборка), свой трек автора, речь первых
+    видео (транскрипты work/<имя>.txt — «что подаём на вход») и разборы референсов (analyze_reference → work/_refs)."""
+    from common import WORK_DIR
+    project = project.home
+    kinds = {s.config.get("kind") for s in project.sections()} | {project.config.get("kind")}
+    stems = []
+    for part in [project, *project.sections()]:
+        stems += [p.stem for p in part.sources()] + [p.name for p in part.packs()]
+        packs = {p.name for p in part.packs()}
+        if packs and all(p.stem in packs for p in part.sources()):
+            kinds.add("pack")              # в input/ только сборки (папка клипов и её собранный <имя>.mov, pack.py --build)
+    speech = " ".join((WORK_DIR / f"{s}.txt").read_text(encoding="utf-8")[:4000]
+                      for s in stems[:3] if (WORK_DIR / f"{s}.txt").is_file())
+    refs = []
+    if project.references.is_dir():
+        for p in sorted(project.references.iterdir()):
+            cached = WORK_DIR / "_refs" / f"{p.stem}.json"
+            if cached.is_file():
+                try:
+                    refs.append(json.loads(cached.read_text(encoding="utf-8")))
+                except ValueError:
+                    continue
+    return {"kind": "pack" if "pack" in kinds else "talking", "keep_audio": bool(project.config.get("keep_audio")),
+            "speech": _norm(speech), "refs": refs}
+
+
+def score(t: dict, answers: dict, kind: str | None = None, keep_audio: bool = False, speech: str = "",
+          refs: list | None = None) -> tuple:
+    """(очки или None — жанр отсечён фактами, почему) шаблона для анкеты."""
     def text(key):
         v = answers.get(key) or ""
         return _norm(", ".join(v) if isinstance(v, list) else v)
+    sig, why = t["signals"], []
+    if sig.get("kind") and kind and sig["kind"] != kind:
+        return None, [f"другой тип: шаблон — {'сборка из клипов' if sig['kind'] == 'pack' else 'говорящая голова'}"]
+    if (sig.get("audio") == "keep") != bool(keep_audio):
+        return None, ["звук автора не трогаем — только лирик" if keep_audio else "шаблон под свой трек автора"]
     about = text("about")
-    rest = " ".join(text(k) for k in ("audience", "graphics", "sound", "references", "extra", "length"))
-    tone = [_norm(x) for x in (answers.get("tone") or [])] if isinstance(answers.get("tone"), list) else [text("tone")]
-    sig, pts, why = t["signals"], 0, []
-    hit_about = [w for w in sig["about"] if _norm(w) in about]
-    hit_rest = [w for w in sig["about"] if _norm(w) in rest and w not in hit_about]
-    hit_tone = [w for w in sig.get("tone", []) if any(_norm(w) in x for x in tone)]
-    pts += W_ABOUT * len(hit_about) + W_TEXT * len(hit_rest) + W_TONE * len(hit_tone)
+    rest = " ".join(text(k) for k in ("audience", "graphics", "sound", "references", "extra", "length", "captions"))
+    tone = " | ".join(_norm(x) for x in answers.get("tone") or []) if isinstance(answers.get("tone"), list) else text("tone")
+    hit_about = _hits(sig["about"], about)
+    hit_rest = [w for w in _hits(sig["about"], rest) if w not in hit_about]
+    hit_speech = [w for w in _hits(sig["about"], speech) if w not in hit_about + hit_rest] if speech else []
+    hit_tone = _hits(sig.get("tone", []), tone)
+    pts = W_ABOUT * len(hit_about) + W_TEXT * len(hit_rest) + W_TONE * len(hit_tone) + W_SPEECH * min(3, len(hit_speech))
     if hit_about or hit_rest:
         why.append("о чём: " + ", ".join(hit_about + hit_rest))
     if hit_tone:
         why.append("характер: " + ", ".join(hit_tone))
-    if sig.get("kind") and kind and sig["kind"] == kind:
-        pts += W_KIND if kind == "pack" else 0               # «говорящая голова» — у многих жанров, сборка — признак
-        if kind == "pack":
-            why.append("сборка из нескольких клипов")
-    if sig.get("audio") == "keep":
-        if keep_audio:
-            pts += W_AUDIO
-            why.append("звук автора не трогаем")
-        else:
-            pts -= W_AUDIO                                  # лирик без своего трека — не лирик
+    if hit_speech:
+        why.append("в речи видео: " + ", ".join(hit_speech[:3]))
+    style = t["brief"]["style"]
+    for ref in refs or []:
+        near = [m.get("style") for m in ref.get("matches") or []]
+        pace = ref.get("cuts_per_min") or 0
+        name = Path(str(ref.get("file", "референс"))).stem
+        if near[:1] == [style]:
+            pts += W_REF
+            why.append(f"референс {name}: ближе всего стиль «{style}»")
+        want = sig.get("pace")
+        if want and pace and ((want == "fast" and pace >= 18) or (want == "calm" and pace <= 8)):
+            pts += W_REF
+            why.append(f"референс {name}: {pace:g} склеек в минуту")
+    if sig.get("kind") == "pack" and kind == "pack":
+        pts += W_ABOUT
+        why.append("сборка из нескольких клипов")
+    if sig.get("audio") == "keep" and keep_audio:
+        pts += 4
+        why.append("звук автора не трогаем")
     return pts, why
 
 
-def match(answers: dict, kind: str | None = None, keep_audio: bool = False) -> list:
-    """Шаблоны по убыванию очков: [(очки, шаблон, почему)]."""
-    ranked = [(*score(t, answers, kind, keep_audio), t) for t in all_templates()]
-    return sorted(((p, t, why) for p, why, t in ranked), key=lambda x: -x[0])
+def match(answers: dict, kind: str | None = None, keep_audio: bool = False, speech: str = "", refs: list | None = None) -> list:
+    """Годные по фактам шаблоны по убыванию очков: [(очки, шаблон, почему)]. Равные — проверенный на заказе раньше."""
+    ranked = []
+    for t in all_templates():
+        pts, why = score(t, answers, kind, keep_audio, speech, refs)
+        if pts is not None:
+            ranked.append((pts, t, why))
+    return sorted(ranked, key=lambda x: (-x[0], not proven(x[1]), x[1]["id"]))
 
 
-def _project_kind(project) -> tuple:
-    """(тип: pack, если в проекте или разделе есть сборка; keep_audio проекта)."""
-    kinds = {s.config.get("kind") for s in project.sections()} | {project.config.get("kind")}
-    return ("pack" if "pack" in kinds else "talking"), bool(project.config.get("keep_audio"))
+def proven(t: dict) -> bool:
+    """Шаблон проверен на заказе: у эталона есть принятое видео. Базовый (по стилю и референсам) — нет."""
+    return bool((t.get("exemplar") or {}).get("video"))
 
 
 def suggest(project) -> tuple:
-    """(шаблон или None, очки, почему) — лучший по анкете проекта; слабее MIN_SCORE — None."""
+    """(шаблон или None, очки, почему) — лучший для проекта по анкете, речи видео и референсам. Ничего не совпало —
+    умолчание ветки по тону. None — только когда анкеты нет совсем или факты отсекли всё."""
+    t, pts, why, _ = decide(project)
+    return t, pts, why
+
+
+def decide(project) -> tuple:
+    """(шаблон или None, очки, почему, второй вариант или None) для проекта: анкета + речь его видео + референсы."""
     import projects
-    answers = projects.load_setup(project) or {}
-    kind, keep = _project_kind(project)
-    ranked = match(answers, kind, keep)
-    if not ranked or ranked[0][0] < MIN_SCORE:
-        return None, ranked[0][0] if ranked else 0, []
+    facts = project_facts(project)
+    return choose(projects.load_setup(project.home) or {}, facts["kind"], facts["keep_audio"], facts["speech"], facts["refs"])
+
+
+def choose(answers: dict, kind: str | None = None, keep_audio: bool = False, speech: str = "", refs: list | None = None) -> tuple:
+    """(шаблон или None, очки, почему, второй вариант или None) — второй есть, когда отрыв меньше MIN_MARGIN."""
+    ranked = match(answers, kind, keep_audio, speech, refs)
+    if not ranked:
+        return None, 0, [], None
     best = ranked[0]
-    return best[1], best[0], best[2]
+    if best[0] <= 0:
+        tone = " ".join(answers.get("tone") or []) if isinstance(answers.get("tone"), list) else str(answers.get("tone") or "")
+        fallback = next((tid for stem, tid in TONE_DEFAULT if stem in _norm(tone)), None)
+        pick = next((r for r in ranked if r[1]["id"] == fallback), None)
+        if pick is None:
+            return None, 0, [], None
+        return pick[1], pick[0], [f"жанр по анкете не назван — умолчание по характеру монтажа ({tone.strip()})"], None
+    second = ranked[1] if len(ranked) > 1 and best[0] - ranked[1][0] < MIN_MARGIN and ranked[1][0] > 0 else None
+    return best[1], best[0], best[2], (second[1] if second else None)
 
 
 # ---------------------------------------------------------------- применение
 
-def rules_block(t: dict, why: list) -> str:
+def rules_block(t: dict, why: list, alt: dict | None = None) -> str:
     ex = t["exemplar"]
+    video = ex.get("video")
+    seen = (f"видео — {video}, если оно есть на этой машине ({ex['verdict']})" if video
+            else f"принятого видео ещё нет — шаблон базовый: {ex['verdict']}")
     lines = [BEGIN, f"## Шаблон проекта: «{t['name']}» ({t['id']})", "",
              f"{t['summary']}", "",
-             f"Почему этот: {'; '.join(why) if why else 'выбран человеком'}. Сменить — «Проект → Настроить проект» → шаблон.",
+             f"Почему этот: {'; '.join(why) if why else 'выбран человеком'}. Сменить — «Проект → Настроить проект» → шаблон."
+             + (f" Выбран неуверенно: рядом «{alt['name']}» ({alt['id']}) — если ролик о другом, смени." if alt else ""),
              "",
-             f"**Эталон — посмотри до плана:** {ex['video']} ({ex['verdict']}); лист кадров — presets/templates/{t['id']}/exemplar.jpg; "
-             f"как собран — {ex['source']}. Это мерка качества и почерка, не копия: идея, слова и картинки — из этого ролика.",
+             f"**Эталон — посмотри до плана:** лист кадров presets/templates/{t['id']}/exemplar.jpg (есть на любой машине); "
+             f"{seen}; как собран — {ex['source']}. Это мерка качества и почерка, не копия: идея, слова и картинки — из этого ролика.",
+             "", "**Бренд — свой:** цвета и шрифты шаблона стартовые. Если в анкете есть «Шрифт, цвета» — перенеси их в DESIGN.md "
+             "проекта до первого монтажа; шрифты заказчика — в projects/<проект>/fonts (студия: «Настроить проект» → «Шрифты "
+             "проекта», или scripts/fonts.py add).",
              "", "**Уже выучено на эталоне (правила проекта, пока автор не скажет иначе):**"]
     lines += [f"- {r}" for r in t["rules"]]
     lines += ["", f"**Как монтировать:** {t['how']}", "", END]
     return "\n".join(lines)
 
 
+def _sha(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.is_file() else ""
+
+
 def apply(project, tid: str | None = None, why: list | None = None, force: bool = False) -> dict:
-    """Ставит шаблон проекту: бриф и умолчания в project.json (заданное человеком не трогает, кроме force), DESIGN.md (если
-    своего нет), блок «Шаблон проекта» в rules.md. Возвращает {"template", "why", "set", "design"}."""
+    """Ставит шаблон проекту: бриф и умолчания в project.json, DESIGN.md, блок «Шаблон проекта» в rules.md.
+    Возвращает {"template", "name", "why", "set", "design", "alt"}.
+
+    Смена шаблона честная (23.10.2026; до этого второй apply менял только блок в правилах — стиль и умолчания оставались
+    от первого): что записал прошлый шаблон, помнится в project.json → template_set; если человек это значение не
+    трогал — его заменяет новый шаблон (или убирает, если у нового такого нет). Поставленное руками не трогается, кроме
+    force. DESIGN.md прошлого шаблона (хэш в template_design) заменяется; DESIGN.md, который человек правил, — нет."""
+    import design
     import projects
+    import styles
     project = project.home
+    alt = None
     if tid is None:
-        t, _, why = suggest(project)
+        t, _, why, alt = decide(project)
         if t is None:
-            raise TemplateError(f"проект {project.name}: ни один шаблон не подходит по анкете уверенно — выбери сам "
-                                f"({', '.join(ids())}) или оставь «своё»")
+            raise TemplateError(f"проект {project.name}: шаблон не подобрать — анкеты нет или в ней не назван ни жанр, ни "
+                                f"характер монтажа; выбери сам ({', '.join(ids())}) или оставь «своё»")
     else:
         t = load(tid)
         why = why or ["выбран человеком"]
     path = project.root / "project.json"
     config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    changed = []
     brief = config.setdefault("brief", {})
-    for key, value in t["brief"].items():
-        if force or key not in brief or brief.get(key) in (None, "", {}, []) or (key == "style" and not config.get("template")):
-            if brief.get(key) != value:
-                brief[key] = value
-                changed.append(f"brief.{key}")
-    for key, value in t["project"].items():
-        if force or key not in config:
-            if config.get(key) != value:
-                config[key] = value
-                changed.append(key)
+    old = config.get("template_set") or {}
+    wanted = {f"brief.{k}": v for k, v in t["brief"].items()} | dict(t["project"])
+
+    def get(key):
+        return brief.get(key[6:]) if key.startswith("brief.") else config.get(key)
+
+    def put(key, value):
+        target, name = (brief, key[6:]) if key.startswith("brief.") else (config, key)
+        if value is None:
+            target.pop(name, None)
+        else:
+            target[name] = value
+
+    def unset(key):
+        """Значение «не задано человеком»: пусто, умолчание брифа или записано прошлым шаблоном и не тронуто."""
+        value = get(key)
+        if key in old:
+            return value == old[key]
+        if value in (None, "", {}, []):
+            return True
+        return key == "brief.style" and value == styles.DEFAULT_BRIEF["style"] and not config.get("template")
+
+    changed, now_set = [], {}
+    for key in sorted(set(old) | set(wanted)):
+        if not (force or unset(key)):
+            continue                                        # поставил человек — его решение
+        value = wanted.get(key)
+        if get(key) != value:
+            put(key, value)
+            changed.append(key if value is not None else f"{key} (снято: было от прошлого шаблона)")
+        if value is not None:
+            now_set[key] = value
     config["template"] = t["id"]
+    config["template_set"] = now_set
     path.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     projects.load_config(path, project.name)                 # проверка: записанное читается
 
-    design_note = "у шаблона нет"
-    if t["design"]:
-        import design
-        target = project.root / design.FILE
-        if target.exists() and not force:
-            design_note = "у проекта своя — не трогаю"
-        else:
-            try:
-                design.Design(t["dir"] / design.FILE, project.name)
-                target.write_text((t["dir"] / design.FILE).read_text(encoding="utf-8"), encoding="utf-8")
-                design_note = "положена стартовая — шрифты и цвета бренда правятся в DESIGN.md"
-            except design.DesignError as e:
-                design_note = f"не положена: {e}"
+    target = project.root / design.FILE
+    ours = target.is_file() and _sha(target) == config.get("template_design")
+    if target.is_file() and not ours and not force:
+        design_note = "у проекта своя — не трогаю"
+    elif t["design"]:
+        try:
+            design.Design(t["dir"] / design.FILE, project.name)
+            target.write_text((t["dir"] / design.FILE).read_text(encoding="utf-8"), encoding="utf-8")
+            config["template_design"] = _sha(target)
+            design_note = "положена стартовая — цвета и шрифты бренда правятся в DESIGN.md"
+        except design.DesignError as e:
+            design_note = f"не положена: {e}"
+    elif ours:
+        target.unlink()
+        config["template_design"] = ""
+        design_note = "снята: была от прошлого шаблона, у этого своей нет"
+    else:
+        design_note = "у шаблона нет"
+    path.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     rules = project.rules_text() or ""
-    block = rules_block(t, why or [])
+    block = rules_block(t, why or [], alt)
     if BEGIN in rules and END in rules:
         head, rest = rules.split(BEGIN, 1)
         rules = head + block + rest.split(END, 1)[1]
@@ -232,7 +384,8 @@ def apply(project, tid: str | None = None, why: list | None = None, force: bool 
     else:
         rules = rules.rstrip() + "\n\n" + block + "\n"
     project.rules.write_text(rules, encoding="utf-8")
-    return {"template": t["id"], "name": t["name"], "why": why or [], "set": changed, "design": design_note}
+    return {"template": t["id"], "name": t["name"], "why": why or [], "set": changed, "design": design_note,
+            "alt": {"id": alt["id"], "name": alt["name"]} if alt else None}
 
 
 def current(project) -> str | None:
@@ -254,14 +407,17 @@ def clear(project) -> None:
 
 def catalog() -> list:
     """Для студии: [{id, name, summary, stem, verdict, design}]."""
-    return [{"id": t["id"], "name": t["name"], "summary": t["summary"], "stem": t["exemplar"]["stem"],
-             "verdict": t["exemplar"]["verdict"], "design": t["design"]} for t in all_templates()]
+    return [{"id": t["id"], "name": t["name"], "summary": t["summary"], "stem": t["exemplar"].get("stem") or "",
+             "verdict": t["exemplar"]["verdict"], "design": t["design"], "proven": proven(t),
+             "sheet": (t["dir"] / "exemplar.jpg").is_file()} for t in all_templates()]
 
 
 # ---------------------------------------------------------------- листы кадров эталонов
 
 def sheet(t: dict) -> Path:
     """exemplar.jpg — 20 кадров принятого ролика сеткой 5×4 (один ffmpeg, кадры идут по одному)."""
+    if not proven(t):
+        raise TemplateError(f"{t['id']}: шаблон базовый — принятого видео ещё нет, лист кадров собирается после первого апрува")
     video = ROOT / t["exemplar"]["video"]
     if not video.exists():
         raise TemplateError(f"{t['id']}: нет видео эталона {t['exemplar']['video']} — лист не собрать на этой машине")
@@ -292,11 +448,14 @@ def main():
     try:
         if args.cmd == "match":
             p = projects.get(args.project).home
-            kind, keep = _project_kind(p)
-            for pts, t, why in match(projects.load_setup(p) or {}, kind, keep):
-                print(f"  {pts:>3}  {t['id']:<16} {t['name']}" + (f" — {'; '.join(why)}" if why else ""))
-            best, pts, _ = suggest(p)
-            print(f"→ {best['id'] if best else 'своё (ни один не уверенно)'}; сейчас у проекта: {current(p) or '—'}")
+            f = project_facts(p)
+            ranked = match(projects.load_setup(p) or {}, f["kind"], f["keep_audio"], f["speech"], f["refs"])
+            for pts, t, why in ranked:
+                print(f"  {pts:>3}  {t['id']:<22} {t['name']}" + (f" — {'; '.join(why)}" if why else ""))
+            best, pts, why, alt = decide(p)
+            print(f"→ {best['id'] if best else 'не подобрать (нет анкеты или жанра и характера)'}"
+                  + (f" ({'; '.join(why)})" if best and not ranked[0][2] else "")
+                  + (f"; неуверенно, рядом {alt['id']}" if alt else "") + f"; сейчас у проекта: {current(p) or '—'}")
         elif args.cmd == "apply":
             r = apply(projects.get(args.project), args.template, force=args.force)
             print(f"✓ {args.project}: шаблон «{r['name']}» ({r['template']}) — {'; '.join(r['why'])}")
@@ -314,7 +473,7 @@ def main():
                     print(f"  · {e}")
         else:
             for t in all_templates():
-                print(f"  {t['id']:<16} {t['name']} — эталон {t['exemplar']['stem']}" + (" · DESIGN.md" if t["design"] else ""))
+                print(f"  {t['id']:<16} {t['name']} — " + (f"эталон {t['exemplar']['stem']}" if proven(t) else "базовый") + (" · DESIGN.md" if t["design"] else ""))
     except (TemplateError, projects.ProjectError) as e:
         sys.exit(f"✗ {e}")
 

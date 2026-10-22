@@ -43,7 +43,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT  # noqa: E402  (заодно UTF-8 в консоли — common это делает)
 
 PROJECTS_DIR = ROOT / "projects"
-DEFAULT = "antishkola"          # проект по умолчанию — ролики Валеры
+# Проект по умолчанию — куда идёт видео без проекта. Движок общий, проекты — данные клиентов каждого (23.10.2026,
+# scripts/clients.py): на чистой машине проектов нет, и умолчание — пустой «Мои ролики» (ensure_default создаёт его при
+# установке и старте студии). Своё умолчание машины — строкой в projects/.default (у Валеры — antishkola).
+FALLBACK = "main"
+
+
+def _default_name() -> str:
+    try:
+        name = (PROJECTS_DIR / ".default").read_text(encoding="utf-8").strip()
+    except OSError:
+        return FALLBACK
+    return name if re.match(r"^[a-z0-9][a-z0-9\-]*$", name) else FALLBACK
+
+
+DEFAULT = _default_name()
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9\-]*$")
 
@@ -73,9 +87,13 @@ CONFIG = {
     "keep_audio": False,                      # звук исходника как есть (трек подложил автор): prep не чистит и не режет
     "kind": "talking",                        # что такое несколько видео: talking — каждое свой ролик, pack — одним роликом
     "template": "",                           # шаблон дизайн-системы (presets/templates, scripts/templates.py); "" — своё
+    "template_set": {},                       # что записал шаблон (смена шаблона заменяет только это, templates.apply)
+    "template_design": "",                    # хэш DESIGN.md, который положил шаблон: правленый человеком не заменяется
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
                 "template": (str, "строкой: id шаблона из presets/templates или \"\""),
+                "template_set": (dict, "объектом — что записал шаблон (пишет templates.py)"),
+                "template_design": (str, "строкой — хэш DESIGN.md шаблона (пишет templates.py)"),
                 "kind": (str, "строкой: \"talking\" (говорящая голова) или \"pack\" (склейка)"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
                 "long_matte": (bool, "true или false"), "fx_theme": (str, "строкой — имя темы из fx.THEMES"),
@@ -290,6 +308,14 @@ def owner(path: Path) -> Project:
 
 def default() -> Project:
     return get(DEFAULT)
+
+
+def ensure_default() -> Project:
+    """Проект по умолчанию есть всегда: на чистой машине (друг, CI) — пустой «Мои ролики» без анкеты. Монтировать ИИ
+    в нём можно после анкеты — студия попросит её сама."""
+    if DEFAULT in names():
+        return default()
+    return create(DEFAULT, "Мои ролики")
 
 
 def index() -> dict:
@@ -552,7 +578,7 @@ def create(name: str, title: str = "") -> Project:
     config = {"title": title or name, "language": "ru", "cta": False, "face_max": None,
               "brief": {"style": "viral-behind", "formats": ["9:16"], "notes": ""},
               "_note": "Умолчания для всех роликов проекта; бриф ролика в студии меняет только своё. "
-                       "cta — финальная плашка «смотри у меня в профиле» (она про профиль Валеры). "
+                       "cta — финальная плашка «смотри у меня в профиле». "
                        "face_max — порог засвета лица по серии роликов; null — не мерить."}
     (root / "project.json").write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (root / "rules.md").write_text(RULES_TEMPLATE.format(title=title or name), encoding="utf-8")

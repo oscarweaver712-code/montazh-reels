@@ -14,25 +14,34 @@
    "школ",
    "математ",
    "физик",
+   "хими",
+   "биолог",
    "задач",
    "разбор",
    "образован",
    "обучен",
-   "лайфхак",
-   "факт"
+   "учу",
+   "курс",
+   "англ",
+   "язык",
+   "студент",
+   "поступлен",
+   "лайфхак"
   ],
   "tone": [
    "динамичный, вирусный",
    "дерзкий, с юмором"
   ],
-  "kind": "talking"
+  "kind": "talking",
+  "pace": "fast"
  },
  "exemplar": {
   "project": "antishkola/reels",
   "stem": "IMG_3647",
   "video": "projects/antishkola/reels/output/IMG_3647_v1.mp4",
-  "source": "work/IMG_3647/score.json",
-  "verdict": "Валера 20.10.2026: «Да заебись вообще монтаж честно. Все охуенно»"
+  "source": "presets/templates/expert-viral/exemplar.score.json",
+  "verdict": "Валера 20.10.2026: «Да заебись вообще монтаж честно. Все охуенно»",
+  "origin": "work/IMG_3647/score.json"
  },
  "brief": {
   "style": "viral-behind",

@@ -420,7 +420,7 @@ class Montage:
                               extra_css=extra_css, fmt=tk.fmt, captions=captions, cutout=cutout,
                               cta=cfg_cta and cta_at is not None, **page_kw)
         if self.design:
-            self.notes.append(f"дизайн-система: projects/{self.project.name}/DESIGN.md — шрифты, цвета, маркер субтитров")
+            self.notes.append(f"дизайн-система: {self.design.path.resolve().relative_to(ROOT).as_posix()} — шрифты, цвета, маркер субтитров")
         mark = MARK + (f'\n    <meta name="reels-hook" content="без вспышки: {self.hook_why}" />' if hook is None else "")
         if self.design:
             mark += "\n    " + self.design.meta()

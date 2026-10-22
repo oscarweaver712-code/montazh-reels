@@ -1,48 +1,47 @@
 ---
 version: alpha
-name: Подпись и шапка
+name: Подпись и шапка (шаблон)
 description: >-
-  Дизайн-система роликов Виктории Топольской (@target_vikatopol, маркетолог для бьюти-салонов в США). Собрана 22.10.2026
-  по ТЗ заказчицы: «Шрифты: Nicoletta + SF Pro Display — выглядит вот так», «цвет можно такой же оставить» (образец —
-  projects/slavamontazh/input/IMAGE 2026-10-22 12:28:01.jpg), шапка как у @doc.gulakova (IMAGE … 12:28:22.jpg).
-  Акцент — кирпично-красная плашка из её же поста (IMG_0960.PNG, «С ТАРГЕТА»): серия рилсов и постов выглядит одним
-  аккаунтом. Шрифты не OFL — кладёт projects/slavamontazh/make_fonts.py.
+  Стартовая дизайн-система шаблона «Эксперт, премиум» — почерк IMG_0930 (Виктория, 22.10.2026): пара «рукопись +
+  строка гротеском», шапка с ником, кирпичный акцент на цифрах. Шрифты — открытые аналоги того, что было у заказчицы
+  (SF Pro → Inter Display, Nicoletta → Caveat), есть на любой машине. Цвета и шрифты — стартовые: бренд нового проекта
+  ставится поверх (анкета → «Шрифт, цвета», шрифты проекта — projects/<проект>/fonts).
 colors:
-  text: "#FFFFFF"        # SF Pro белым, как «ВОТ ТАК» на образце: субтитры, шапка, строки под рукописью
-  hand: "#F6EAB0"        # Nicoletta кремово-жёлтым — снят с образца заказчицы (медиана букв ≈ #F9F1BE, без сглаживания)
+  text: "#FFFFFF"        # гротеск белым: субтитры, шапка, строки под рукописью
+  hand: "#F6EAB0"        # рукопись кремово-жёлтым
   plate: "#1A1512"       # тёплые чернила: подложки, карточка поста
-  pen: "#B3261E"         # красная ручка — зачеркнуть «просто таргет»
-  accent: "#8E1B12"      # кирпич из её поста: плашка «С ТАРГЕТА» (медиана #74140D с бликами — чуть светлее, чтобы читался)
-  on-accent: "#FFFFFF"   # белый на кирпичной плашке, как в посте
+  pen: "#B3261E"         # красная ручка — зачеркнуть миф
+  accent: "#8E1B12"      # кирпичный акцент: цифры, квадраты пути, маркер
+  on-accent: "#FFFFFF"   # белый на акценте
   flash: "#FFFFFF"
   shade: "#000000"
 gradients:
   accent: "linear-gradient(165deg, #A8281B 0%, #8A1A11 45%, #9C2216 60%, #6E120B 100%)"   # кирпич с мягким бликом
 typography:
   caption:
-    fontFamily: SF Pro Display
+    fontFamily: Inter Display
     fontWeight: 600
-    src: SF-Pro-Display-Semibold.otf
+    src: InterDisplay-SemiBold.ttf
   whisper:
-    fontFamily: SF Pro Display
+    fontFamily: Inter Display
     fontWeight: 300
-    src: SF-Pro-Display-Light.otf
+    src: InterDisplay-Light.ttf
   headline:
-    fontFamily: SF Pro Display
+    fontFamily: Inter Display
     fontWeight: 700
-    src: SF-Pro-Display-Bold.otf
+    src: InterDisplay-Bold.ttf
   number:
-    fontFamily: SF Pro Display
+    fontFamily: Inter Display
     fontWeight: 700
-    src: SF-Pro-Display-Bold.otf
+    src: InterDisplay-Bold.ttf
   hand:
-    fontFamily: Nicoletta script
-    fontWeight: 400
-    src: NicolettaScript.ttf
+    fontFamily: Caveat
+    fontWeight: 700
+    src: Caveat-Bold.ttf
   variable:
-    fontFamily: SF Pro Display
+    fontFamily: Inter Display
     fontWeight: 500
-    src: SF-Pro-Display-Medium.otf
+    src: InterDisplay-Medium.ttf
 rounded:
   marker: 0.12em
   box: 10px

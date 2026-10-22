@@ -187,9 +187,8 @@ def prepare_assets(ass_path: Path | None, stem: str) -> str | None:
     """Шрифты и субтитры кладём рядом в work/ — libass ищет их относительно рабочей папки."""
     work_fonts = WORK_DIR / "fonts"
     work_fonts.mkdir(exist_ok=True)
-    for font in FONT_DIR.iterdir():
-        if font.suffix.lower() not in (".ttf", ".otf"):
-            continue
+    import fonts as font_files
+    for font in font_files.files().values():                 # движка и догруженные на машине (scripts/fonts.py)
         target = work_fonts / font.name
         if not target.exists() or target.stat().st_mtime < font.stat().st_mtime:
             shutil.copy2(font, target)

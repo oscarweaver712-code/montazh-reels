@@ -23,9 +23,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import fonts  # noqa: E402
 from common import ROOT  # noqa: E402
 
-FONT_DIR = ROOT / "presets" / "fonts"
+FONT_DIR = fonts.ENGINE
 FILE = "DESIGN.md"
 MARK = "reels-design"
 COLORS = ("text", "plate", "pen", "accent", "on-accent", "flash", "shade")
@@ -44,7 +45,12 @@ LETTER_PAD = 0.14
 
 
 class DesignError(ValueError):
-    """DESIGN.md с ошибкой — по-русски, с местом: человек или ИИ правит по этому тексту."""
+    """DESIGN.md с ошибкой — по-русски, с местом: человек или ИИ правит по этому тексту. missing_fonts — файлы шрифтов,
+    которых нет на этой машине (отдельно от прочих ошибок: шаблону и проверкам важно отличать «нет файла» от «сломано»)."""
+
+    def __init__(self, text: str, missing_fonts: tuple = ()):
+        super().__init__(text)
+        self.missing_fonts = tuple(missing_fonts)
 
 
 def _rgb(hex_: str) -> tuple:
@@ -72,7 +78,10 @@ class Design:
     def __init__(self, path: Path, project: str):
         import yaml
         self.path, self.project = Path(path), project
-        where = f"projects/{project}/{FILE}"
+        try:
+            where = self.path.resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            where = f"projects/{project}/{FILE}"
         text = self.path.read_text(encoding="utf-8")
         try:
             tokens = yaml.safe_load(_front_matter(text, where))
@@ -112,7 +121,7 @@ class Design:
                 errs.append(f"gradients.accent: точки «#RRGGBB N%» — от двух, по возрастанию процентов: {self.gradient}")
 
         typo = tokens.get("typography") or {}
-        self.fonts = {}
+        self.fonts, self.font_paths, missing = {}, {}, []
         for role in ROLES:
             spec = typo.get(role)
             if not isinstance(spec, dict):
@@ -126,10 +135,16 @@ class Design:
                 errs.append(f"typography.{role}.fontWeight: число 100–900, а не {weight!r}")
             if style not in ("normal", "italic"):
                 errs.append(f"typography.{role}.fontStyle: normal или italic, а не {style!r}")
-            if not isinstance(src, str) or not (FONT_DIR / src).is_file():
-                errs.append(f"typography.{role}.src: файла {src!r} нет в presets/fonts — положи туда шрифт (OFL)")
-            elif not _cyrillic(FONT_DIR / src):
+            # шрифт — файл: проекта (projects/<проект>/fonts, бренд заказчика), догруженный или движка (scripts/fonts.py)
+            found = fonts.find(src, project) if isinstance(src, str) and src else None
+            if found is None:
+                missing.append(str(src))
+                errs.append(f"typography.{role}.src: файла {src!r} нет ни в шрифтах проекта (projects/{project}/fonts), ни в "
+                            f"presets/fonts — догрузи: студия «Настроить проект» → «Шрифты проекта» или scripts/fonts.py add")
+            elif not _cyrillic(found):
                 errs.append(f"typography.{role}.src: в {src} нет кириллицы — русские буквы выйдут квадратами")
+            else:
+                self.font_paths[role] = found
             if not errs or all(not e.startswith(f"typography.{role}") for e in errs):
                 self.fonts[role] = {"family": family.strip(), "weight": weight, "style": style, "src": src}
 
@@ -173,7 +188,7 @@ class Design:
                 self.footage = {"name": str(foot.get("name") or ""), "style": " ".join(foot["style"].split()),
                                 "motion": " ".join(foot["motion"].split()), "saturate": float(sat)}
         if errs:
-            raise DesignError(f"{where}:\n  " + "\n  ".join(errs))
+            raise DesignError(f"{where}:\n  " + "\n  ".join(errs), missing)
 
     # ---------------------------------------------------------------- для страницы
 

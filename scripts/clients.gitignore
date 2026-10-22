@@ -1,0 +1,59 @@
+# Что из projects/ и work/ хранит репозиторий клиентов (scripts/clients.py, 23.10.2026). Синтаксис .gitignore, пути — от
+# корня папки. До 23.10.2026 эти же правила стояли в .gitignore движка, и клиенты уезжали вместе с кодом.
+
+# проекты: всё, кроме видео (исходники и выпуски — гигабайты) и музыки (треки фонотек не раздаём отдельно от роликов)
+projects/*/input/*
+projects/*/output/*
+!projects/*/input/.gitkeep
+!projects/*/output/.gitkeep
+projects/*/*/input/*
+projects/*/*/output/*
+!projects/*/*/input/.gitkeep
+!projects/*/*/output/.gitkeep
+projects/*/references/*
+!projects/*/references/.gitkeep
+!projects/*/references/*.md
+projects/*/music/*
+!projects/*/music/.gitkeep
+.DS_Store
+
+# work/ — промежуточное пересобирается из исходника; решения режиссёра и транскрипты — исходники ролика (по номерам
+# слов из транскрипта написаны text_fixes, перераспознавание может сдвинуть нумерацию)
+work/*
+!work/*.txt
+!work/*.words.json
+!work/*/
+work/_*/
+work/fonts/
+work/frames/
+work/*/*
+!work/*/edit.json
+!work/*/director.json
+!work/*/director.*.json
+!work/*/brief.json
+!work/*/plan.md
+!work/*/approved.json
+!work/*/timeline.json
+!work/*/page.py
+!work/*/page.*.py
+!work/*/score.json
+!work/*/score.*.json
+!work/*/pack.json
+!work/*/footage.json
+!work/*/downloads/
+!work/*/materials/
+work/*/materials/*.mp4
+work/*/materials/*.mov
+work/*/materials/*.m4v
+work/*/materials/*.webm
+work/*/materials/yt-*
+work/*/materials/mx-*
+work/*/materials/sfx-mixkit-*
+!work/*/manim/
+work/*/manim/*.mp4
+work/*/manim/*.png
+work/*/manim/*.srt
+!work/*/board/
+
+# описание папки — файл движка
+projects/README.md

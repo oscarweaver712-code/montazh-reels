@@ -1,67 +1,16 @@
 # В git: код, правила, пресеты и решения режиссёра. Видео и всё, что пересобирается
 # из них, остаётся на машине — это гигабайты.
 
-# видео не хранятся в git — они большие. Проект (projects/<имя>/) хранится целиком, кроме
-# исходников и выпусков: правила, project.json и ссылки на референсы — в git
-projects/*/input/*
-projects/*/output/*
-!projects/*/input/.gitkeep
-!projects/*/output/.gitkeep
-# разделы проекта (projects/<проект>/<раздел>/, 21.10.2026) — на уровень глубже: без этого git add раздела тянул
-# в репозиторий все исходники (4,6 ГБ)
-projects/*/*/input/*
-projects/*/*/output/*
-!projects/*/*/input/.gitkeep
-!projects/*/*/output/.gitkeep
-projects/*/references/*
-!projects/*/references/.gitkeep
-!projects/*/references/*.md
-
-# work/ — промежуточное: дубли, маски, кадры, логи очереди. Пересобирается из исходника.
-# Но решения режиссёра и транскрипты — исходники ролика: по номерам слов из транскрипта
-# написаны text_fixes, и перераспознавание может сдвинуть нумерацию. Картинки из downloads/
-# искались и подбирались руками — их тоже храним.
-# Правила — для роликов с любыми именами, не только IMG_*. Служебные папки (_queue, _studio:
-# диалоги с мозгом, _views, _refs) и кэши (fonts, frames) остаются на машине.
-work/*
-!work/*.txt
-!work/*.words.json
-!work/*/
-work/_*/
-work/fonts/
-work/frames/
-work/*/*
-!work/*/edit.json
-!work/*/director.json
-!work/*/director.*.json
-!work/*/brief.json
-!work/*/plan.md
-!work/*/approved.json
-!work/*/timeline.json
-!work/*/page.py
-!work/*/page.*.py
-!work/*/score.json
-!work/*/score.*.json
-!work/*/pack.json
-!work/*/downloads/
-# материалы, которые человек положил к ролику (студия → «Материалы»): фото и звук — в git, видео — на машине
-!work/*/materials/
-work/*/materials/*.mp4
-work/*/materials/*.mov
-work/*/materials/*.m4v
-work/*/materials/*.webm
-# музыка из фонотеки YouTube (yt-*): по её условиям треки не распространяются отдельно от роликов — не в git
-work/*/materials/yt-*
-# Mixkit (mx-*, Stock Music Free License, 20.10.2026) — тоже не раздаём отдельно от роликов
-work/*/materials/mx-*
-# звуки Mixkit (sfx-mixkit-*, Sound Effects Free License, 22.10.2026): не mx-, иначе проверки сочтут их музыкой; тоже не раздаём
-work/*/materials/sfx-mixkit-*
-projects/*/music/*
-!projects/*/music/.gitkeep
-!work/*/manim/
-work/*/manim/*.mp4
-work/*/manim/*.png
-work/*/manim/*.srt
+# Данные клиентов — не в git движка (23.10.2026, Валера: «общий движок, клиентов отдельно, в этом и смысл»).
+# Проекты (анкеты, правила, DESIGN.md, шрифты бренда) и решения роликов из work/ хранит свой репозиторий клиентов
+# в .clients/ — scripts/clients.py, что именно — scripts/clients.gitignore. Видео — нигде: пересобираются из исходника.
+/projects/*
+!/projects/README.md
+/work/
+/.clients/
+# страницы роликов пишет page.py из решений клиента; в движке — только общие вендоры и галереи
+/studio/*
+!/studio/_vendor/
 
 # окружения python: .venv основное, .venv-audio отдельное под torch (вместе ~3,6 ГБ)
 .venv*/
@@ -103,6 +52,6 @@ studio/*/package.json
 studio/_fx_gallery/
 studio/_bp_gallery/
 
-# шрифты заказчицы «СлаваМонтаж» (22.10.2026): не OFL — не раздаём, кладёт projects/slavamontazh/make_fonts.py
-presets/fonts/NicolettaScript.ttf
-presets/fonts/SF-Pro-Display-*.otf
+
+# догруженные шрифты машины и шрифты проектов (scripts/fonts.py, 23.10.2026): лицензии заказчиков — мимо git движка
+presets/fonts/local/

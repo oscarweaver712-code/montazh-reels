@@ -71,6 +71,9 @@ step "Звуки и GSAP на месте"
 [ -f studio/_vendor/gsap.min.js ] || fail "Нет studio/_vendor/gsap.min.js — репозиторий скачан не целиком."
 ls presets/sfx/*.mp3 >/dev/null 2>&1 || fail "Нет звуков в presets/sfx — репозиторий скачан не целиком."
 
+step "Проекты: у каждого свои клиенты (projects/ — не в git движка)"
+.venv/bin/python scripts/clients.py ensure || fail "Не создался проект по умолчанию."
+
 step "Самопроверка (около минуты: честно кодирует видео)"
 .venv/bin/python scripts/selfcheck.py || fail "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."
 

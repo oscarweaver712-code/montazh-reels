@@ -25,8 +25,9 @@
   "project": "nastyuha",
   "stem": "IMG_5688",
   "video": "projects/nastyuha/output/IMG_5688_v3.mp4",
-  "source": "work/IMG_5688/page.py",
-  "verdict": "Валера 21.10.2026: «Отлично. принимаю»"
+  "source": "presets/templates/lyric/exemplar.page.py",
+  "verdict": "Валера 21.10.2026: «Отлично. принимаю»",
+  "origin": "work/IMG_5688/page.py"
  },
  "brief": {
   "style": "viral-behind",

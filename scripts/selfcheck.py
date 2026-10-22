@@ -1129,7 +1129,10 @@ def check_footage(report: Report, tmp: Path):
     # уходит в каждый промпт, а вшитый хвост «фото с телефона» его не перебивает; у проекта без системы — как было
     import projects
     from types import SimpleNamespace
-    look, move = footage.project_look(projects.of_or_default("IMG_3647"))
+    # система Антишколы — копией из шаблона expert-viral: проекты — данные клиентов, на чистой машине их нет (23.10.2026)
+    with temp_projects(tmp / "ft_look", "ds") as made:
+        shutil.copy2(ROOT / "presets" / "templates" / "expert-viral" / "DESIGN.md", made["ds"].root / "DESIGN.md")
+        look, move = footage.project_look(projects.get("ds"))
     plain, _ = footage.project_look(SimpleNamespace(name="_нет_такого_", config={}))
     lock = {k: v for k, v in brief.items() if k != "style"}
     first, second, _ = footage.messages(footage.validate({**lock, "style": look, "motion_style": move}))
@@ -1806,7 +1809,7 @@ def check_design(report: Report, tmp: Path):
 
     print("\nДизайн-система")
     try:
-        system = design.by_name("antishkola")
+        system = design.Design(ROOT / "presets" / "templates" / "expert-viral" / "DESIGN.md", "antishkola")   # копия системы
         ok = system is not None and len(system.fonts) == len(design.ROLES) and len(system.stops) >= 2
         report.check(ok, "DESIGN.md Антишколы читается: цвета, градиент, шесть ролей шрифтов с кириллицей",
                      ", ".join(f"{r} {f['family']}" for r, f in (system.fonts if system else {}).items()))
@@ -3129,43 +3132,97 @@ def check_ai_workflow(report: Report, tmp: Path):
                  f"{cfg.get('language')}, {cfg.get('brief', {}).get('formats')}, cta={cfg.get('cta')}")
 
     # 4б. шаблоны дизайн-систем (22.10.2026, Валера: «чтобы система сразу понимала, на какой шаблон ориентироваться… с
-    # первого раза годноту»): все годны; анкета узнаёт жанр; применение пишет бриф, уроки и эталон, повтор не дублирует
+    # первого раза годноту»): все годны; анкета узнаёт жанр; применение пишет бриф, уроки и эталон, повтор не дублирует.
+    # 23.10.2026 (аудит docs/АУДИТ-23-10.md): шрифт шаблона не из presets/fonts — красный (на Mac проверка была зелёной,
+    # пока шрифты заказчицы лежали рядом, на чистой Windows — красной); ловушки подбора; смена шаблона честная
+    import fonts as font_files
     import templates
     bad = [b for t in templates.all_templates() for b in templates.validate(t)]
-    report.check(not bad and len(templates.ids()) >= 5, "шаблоны дизайн-систем годны: стиль, эталон, лист кадров, DESIGN.md",
+    report.check(not bad and len(templates.ids()) >= 10, "шаблоны дизайн-систем годны: стиль, эталон внутри шаблона, шрифты движка",
                  "; ".join(bad[:3]) or f"{len(templates.ids())} шт.")
+    probe_font = font_files.LOCAL / "_selfcheck_probe.ttf"
+    fake = tmp / "tpl_fake" / "expert-premium"
+    try:
+        shutil.copytree(templates.TEMPLATE_DIR / "expert-premium", fake)
+        font_files.LOCAL.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(font_files.ENGINE / "Caveat-Bold.ttf", probe_font)
+        fake_t = templates.load("expert-premium") | {"dir": fake}
+        md = (fake / "DESIGN.md").read_text(encoding="utf-8")
+        (fake / "DESIGN.md").write_text(md.replace("src: Caveat-Bold.ttf", "src: _selfcheck_probe.ttf"), encoding="utf-8")
+        foreign = templates.validate(fake_t)
+        (fake / "DESIGN.md").write_text(md.replace("src: Caveat-Bold.ttf", "src: NoSuchFont-Bold.ttf"), encoding="utf-8")
+        missing = templates.validate(fake_t)
+    finally:
+        probe_font.unlink(missing_ok=True)
+    report.check(any("не из presets/fonts" in b for b in foreign) and any("NoSuchFont" in b for b in missing),
+                 "шаблон на шрифте не из движка или без файла шрифта — красный (на любой машине одинаково)",
+                 f"чужой: {len(foreign)} провал(а), нет файла: {len(missing)}")
+    # ловушки подбора: каждая — настоящая ошибка мешка слов (аудит 23.10.2026)
     cases = [({"about": "Виктория — таргетолог и маркетолог для бьюти-салонов, кейсы клиентов",
                "tone": ["спокойный, экспертный", "премиальный, минимализм"]}, "talking", False, "expert-premium"),
              ({"about": "Бренд подарков, новоселье команды в новом офисе", "tone": ["динамичный, вирусный"]}, "pack", False,
               "brand-lifestyle"),
              ({"about": "Настя поёт под свой трек"}, "talking", True, "lyric"),
-             ({"about": "Отзывы клиенток психолога", "tone": ["динамичный, вирусный", "дерзкий, с юмором"]}, "talking", False,
-              "testimonial"),
+             ({"about": "Отзывы клиенток психолога, благодарность", "tone": ["тёплый"]}, "talking", False, "testimonial"),
              ({"about": "Репетитор ЕГЭ по математике объясняет задачи", "tone": ["динамичный, вирусный"]}, "talking", False,
               "expert-viral"),
+             ({"about": "Психолог: про тревогу и выгорание, советы", "tone": ["спокойный, экспертный"]}, "talking", False,
+              "expert-premium"),
+             ({"about": "Влог про путешествия, говорю в камеру", "tone": ["тёплый"]}, "talking", False, "storytime"),
+             ({"about": "Учу английскому, разбираю частые ошибки", "tone": ["дерзкий, с юмором"]}, "talking", False,
+              "expert-viral"),
+             ({"about": "Стоматолог про импланты", "sound": "без музыки, только голос"}, "talking", False, "expert-premium"),
+             ({"about": "Фитнес-тренер: упражнения дома и питание", "tone": ["динамичный, вирусный"]}, "talking", False,
+              "bold-captions"),
+             ({"about": "котики и закаты", "tone": ["дерзкий, с юмором"]}, "talking", False, "expert-viral"),
              ({"about": "котики и закаты"}, "talking", False, None)]
     got = []
     for answers, kind, keep, want in cases:
-        ranked = templates.match(answers, kind, keep)
-        top = ranked[0][1]["id"] if ranked and ranked[0][0] >= templates.MIN_SCORE else None
-        got.append((want, top))
-    report.check(all(w == g for w, g in got), "анкета нового проекта узнаёт свой шаблон, а чужое оставляет «своим»",
-                 ", ".join(f"{w or 'своё'}→{g or 'своё'}" for w, g in got))
+        top = templates.choose(answers, kind, keep)[0]
+        got.append((want, top["id"] if top else None))
+    lyric_off = templates.score(templates.load("lyric"), {"about": "стоматолог", "sound": "без музыки"}, "talking", False)[0]
+    pack_off = templates.score(templates.load("brand-lifestyle"), {"about": "влог про офис"}, "talking", False)[0]
+    ref = {"file": "ref.mp4", "matches": [{"style": "hormozi"}], "cuts_per_min": 30}
+    by_ref = templates.choose({"about": "говорю в камеру", "tone": ["динамичный, вирусный"]}, "talking", False,
+                              refs=[ref])[0]
+    report.check(all(w == g for w, g in got) and lyric_off is None and pack_off is None and by_ref["id"] == "bold-captions",
+                 "подбор шаблона: жанр по анкете, речи и референсам; чужой тип и «без музыки» не голосуют; без жанра — по тону",
+                 ", ".join(f"{w or 'своё'}→{g or 'своё'}" for w, g in got if w != g) or f"{len(got)} ловушек, референс → {by_ref['id']}")
     with temp_projects(tmp / "tpl_projects", "tpl") as made:
         p = made["tpl"]
-        projects.save_setup(p, dict(READY_ANSWERS, about="Отзывы клиенток психолога, благодарность"))
+        projects.save_setup(p, dict(READY_ANSWERS, about="Отзывы клиенток психолога, благодарность", tone=["тёплый"]))
         first = templates.apply(projects.get("tpl"))
         cfg_t = json.loads((p.root / "project.json").read_text(encoding="utf-8"))
         templates.apply(projects.get("tpl"), "testimonial")
         rules_t = projects.get("tpl").rules_text()
+        # смена: стиль и умолчания — нового шаблона, DESIGN.md — его; поставленное руками остаётся
+        templates.apply(projects.get("tpl"), "expert-premium")
+        cfg_a = json.loads((p.root / "project.json").read_text(encoding="utf-8"))
+        has_ds = (p.root / "DESIGN.md").is_file()
+        cfg_a["music_level"] = 0.33                                  # человек поставил сам
+        (p.root / "project.json").write_text(json.dumps(cfg_a, ensure_ascii=False), encoding="utf-8")
+        templates.apply(projects.get("tpl"), "testimonial")
+        cfg_b = json.loads((p.root / "project.json").read_text(encoding="utf-8"))
+        ds_gone = not (p.root / "DESIGN.md").exists()
+        templates.apply(projects.get("tpl"), "expert-premium")
+        (p.root / "DESIGN.md").write_text((p.root / "DESIGN.md").read_text(encoding="utf-8") + "\n<!-- правил человек -->\n",
+                                          encoding="utf-8")
+        kept = templates.apply(projects.get("tpl"), "testimonial")["design"]
         templates.clear(projects.get("tpl"))
         cleared = projects.get("tpl").rules_text()
     report.check(first["template"] == "testimonial" and cfg_t.get("template") == "testimonial"
                  and cfg_t.get("brief", {}).get("style") == "testimonial" and cfg_t.get("music") is True
-                 and rules_t.count(templates.BEGIN) == 1 and "IMG_9665_v2.mp4" in rules_t
+                 and rules_t.count(templates.BEGIN) == 1 and "exemplar.jpg" in rules_t
                  and rules_t.count(projects.SETUP_BEGIN) == 1 and templates.BEGIN not in cleared,
                  "шаблон ставится в проект: бриф, умолчания, блок с эталоном в правилах — один; «своё» его убирает",
                  f"{first['template']}, стиль {cfg_t.get('brief', {}).get('style')}, блоков {rules_t.count(templates.BEGIN)}")
+    report.check(cfg_a.get("brief", {}).get("style") == "viral-behind" and cfg_a.get("music") is False and has_ds
+                 and cfg_b.get("brief", {}).get("style") == "testimonial" and cfg_b.get("music") is True
+                 and cfg_b.get("music_level") == 0.33 and ds_gone and "своя" in kept,
+                 "смена шаблона меняет стиль, умолчания и DESIGN.md; поставленное руками и правленый DESIGN.md — не трогает",
+                 f"стиль {cfg_a.get('brief', {}).get('style')}→{cfg_b.get('brief', {}).get('style')}, музыка "
+                 f"{cfg_a.get('music')}→{cfg_b.get('music')}, уровень руками {cfg_b.get('music_level')}, DESIGN.md: "
+                 f"{has_ds}/{'снят' if ds_gone else 'остался'}/{kept}")
 
     # 5. материалы: свой файл с замером, отказ не-медиа, происхождение того, что в странице, звук по норме
     saved_m = (materials.WORK_DIR, materials.ROOT)
@@ -3577,7 +3634,7 @@ def check_sections(report: Report, tmp: Path):
         cfg["brief"] = {"style": "viral-behind", "formats": ["9:16"], "notes": "серия"}
         cfg["music"] = True
         (main.root / "project.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
-        shutil.copy(ROOT / "projects" / "antishkola" / "DESIGN.md", main.root / "DESIGN.md")    # настоящая система
+        shutil.copy(ROOT / "presets" / "templates" / "expert-viral" / "DESIGN.md", main.root / "DESIGN.md")    # система Антишколы
         key = {"X-Studio-Token": TOKEN}
         made_sec = live.post("/api/studio/sections", json={"project": "main", "title": "Ютуб", "kind": "pack",
                                                           "formats": ["16:9"]}, headers=key)
@@ -3637,7 +3694,17 @@ def check_projects(report: Report, tmp: Path):
     import verify_render
 
     print("\nПроекты")
+    projects.ensure_default()                    # на чистой машине проектов нет: умолчание создаёт установка — и здесь
     problems = projects.check()
+    # данные клиентов — не в git движка (23.10.2026): проекты и решения роликов хранит .clients/ (scripts/clients.py).
+    # Файл клиента, попавший в индекс движка, уехал бы ко всем, кому раздают движок
+    if (ROOT / ".git").exists():
+        leaked = [f for f in subprocess.run(["git", "ls-files", "--", "projects", "work", "studio"], cwd=ROOT,
+                                            capture_output=True, text=True, encoding="utf-8").stdout.splitlines()
+                  if f != "projects/README.md" and not f.startswith("studio/_vendor/")]
+        report.check(not leaked, "данные клиентов не в git движка: projects/, work/ и страницы роликов — в .clients/",
+                     f"в индексе движка: {', '.join(leaked[:3])}" + (f" и ещё {len(leaked) - 3}" if len(leaked) > 3 else "")
+                     if leaked else "чисто")
     # до 14.10 видео лежали в общих input/ и output/: файл, брошенный туда по привычке, никто не увидит
     stray = [f"{d}/{f.name}" for d in ("input", "output") if (ROOT / d).is_dir()
              for f in (ROOT / d).iterdir() if f.suffix.lower() in projects.VIDEO_EXT]

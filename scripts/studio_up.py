@@ -127,6 +127,12 @@ def main():
             print(f"Скиллы для Claude подключены ссылками: {', '.join(fixed)} — видны со следующей сессии.")
     except OSError as e:
         print(f"⚠ Скиллы для Claude не подключились: {e}")
+    # проект по умолчанию есть всегда (23.10.2026: проекты — данные клиентов, на чистой машине их нет)
+    try:
+        import projects
+        projects.ensure_default()
+    except Exception as e:                                   # noqa: BLE001 — студия поднимается и без него
+        print(f"⚠ Проект по умолчанию не создался: {e}")
     if os.environ.get("REELS_STUDIO_CHILD") == "1" or os.environ.get("REELS_NO_STUDIO") == "1":
         return
 

@@ -230,13 +230,20 @@ def note_timing(step: list, seconds: float) -> None:
         pass                                   # замер — подсказка, а не условие работы очереди
 
 
+def split_step(step: str) -> list:
+    """Строка шага → слова команды. Путь с обратными слэшами (агент на Windows пишет work\\IMG_1\\aroll.mp4) shlex в режиме
+    POSIX съел бы молча — «workIMG_1aroll.mp4» (23.10.2026); слэш перед буквой — разделитель пути, питон и ffmpeg на
+    Windows понимают и прямой. Экранированные кавычки и пробелы не трогаем."""
+    return shlex.split(re.sub(r"\\(?=[^\s\"'\\])", "/", step))
+
+
 def run_job(job: Path, log) -> int:
     """Выполняет задачу; код возврата первого упавшего шага или 0."""
     if job.suffix == ".sh":
         return run_step(["/bin/bash", str(job)], log, job.stem, HANG_SECONDS)
     try:
         spec = json.loads(job.read_text(encoding="utf-8"))
-        steps = [shlex.split(s) if isinstance(s, str) else list(s) for s in spec["steps"]]
+        steps = [split_step(s) if isinstance(s, str) else list(s) for s in spec["steps"]]
         hang = float(spec.get("hang_minutes") or HANG_SECONDS / 60) * 60
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         log.write(f"✗ задача {job.name} описана с ошибкой: {e}\n")
@@ -423,7 +430,7 @@ def main():
         return
     if args.cmd == "add":
         try:
-            path = write_job(args.name, [shlex.split(s) for s in args.steps])
+            path = write_job(args.name, [split_step(s) for s in args.steps])
         except (ValueError, FileExistsError) as e:
             sys.exit(f"✗ {e}")
         woke = False if args.no_wake else wake()

@@ -5,7 +5,7 @@
 //   выключить (mute);
 //   подвинуть и масштабировать на кадре (dx, dy — пиксели сцены; scale) — свойствами CSS translate и
 //   scale: они складываются с transform, который анимирует GSAP, и анимацию не ломают;
-//   перекрасить (color) и сменить шрифт (font — файл из presets/fonts без расширения);
+//   перекрасить (color) и сменить шрифт (font — .ttf без расширения или .otf с ним: движка или проекта, scripts/fonts.py);
 //   переписать текст (texts — тексты блока по порядку, как они стоят в разметке).
 // Субтитры (EDITS.captions): шрифт, цвет, цвет акцента, масштаб и сдвиг по высоте.
 //
@@ -19,7 +19,7 @@
 
   function fontFaces(fonts) {
     if (!fonts.size) return;
-    const css = [...fonts].map((f) => `@font-face { font-family: "${family(f)}"; src: url("assets/fonts/${f}.ttf"); }`).join("\n");
+    const css = [...fonts].map((f) => `@font-face { font-family: "${family(f)}"; src: url("assets/fonts/${/\.(ttf|otf)$/i.test(f) ? f : f + ".ttf"}"); }`).join("\n");
     const st = document.createElement("style");
     st.id = "studio-fonts";
     st.textContent = css;

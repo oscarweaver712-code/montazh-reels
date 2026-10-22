@@ -498,7 +498,7 @@ def _final_text(message: dict, limit: int) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
-def handoff(thread: dict, keep: int = 6) -> str:
+def handoff(thread: dict, keep: int = 6, why: str = "прошлая разрослась, и монтаж в ней стал бы хуже") -> str:
     """Передача дел свежей сессии: последние просьбы человека и итоги ответов. Подробности — в файлах."""
     msgs = thread.get("messages") or []
     pairs = []
@@ -512,7 +512,7 @@ def handoff(thread: dict, keep: int = 6) -> str:
     where = (f"Состояние ролика — в файлах work/{stem}/ (plan.md, edit.json, director.json, page.py, timeline.json — "
              f"ручные правки человека, их не затирать). Читай их, а не полагайся на этот пересказ.") if stem else \
         "Состояние — в файлах проекта; читай их, а не полагайся на этот пересказ."
-    return ("Это продолжение работы в свежей сессии: прошлая разрослась, и монтаж в ней стал бы хуже.\n"
+    return (f"Это продолжение работы в свежей сессии: {why}.\n"
             f"Что было в прошлой сессии ({len(pairs)} просьб, последние {min(keep, len(pairs))}):\n"
             + "\n".join(pairs[-keep:]) + "\n" + where)
 

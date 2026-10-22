@@ -83,6 +83,10 @@ Step "Звуки и GSAP на месте"
 if (-not (Test-Path "studio\_vendor\gsap.min.js")) { Fail "Нет studio\_vendor\gsap.min.js — репозиторий скачан не целиком." }
 if (-not (Get-ChildItem "presets\sfx\*.mp3" -ErrorAction SilentlyContinue)) { Fail "Нет звуков в presets\sfx — репозиторий скачан не целиком." }
 
+Step "Проекты: у каждого свои клиенты (projects/ — не в git движка)"
+& $Python scripts\clients.py ensure
+Check "Не создался проект по умолчанию."
+
 Step "Самопроверка (около минуты: честно кодирует видео)"
 & $Python scripts\selfcheck.py
 Check "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."

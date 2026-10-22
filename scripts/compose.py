@@ -34,7 +34,9 @@ import formats
 import materials
 import styles
 import viz
-from common import FONT_DIR, ROOT, WORK_DIR
+import fonts  # noqa: E402
+import projects  # noqa: E402
+from common import ROOT, WORK_DIR
 from track import coverage_violations, css_transform, solve_camera
 
 STUDIO = ROOT / "studio"
@@ -450,7 +452,12 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
     # все шрифты presets/fonts — жёсткими ссылками, места не занимают: в монтажной шрифт слоя
     # или субтитров меняется на любой из них, и страница должна найти его без пересборки
     # .otf тоже: шрифты заказчика бывают только в нём (SF Pro, «СлаваМонтаж» 22.10.2026), а DESIGN.md их пускает
-    for src in sorted([*FONT_DIR.glob("*.ttf"), *FONT_DIR.glob("*.otf")]):
+    # и шрифты проекта (projects/<проект>/fonts — бренд заказчика, 23.10.2026): одинаково на Mac и Windows, файлами
+    try:
+        owner = projects.of(stem)
+    except projects.ProjectError:
+        owner = None
+    for src in fonts.files(owner).values():
         copy_if_newer(src, assets / "fonts" / src.name)
     for src in (work / "downloads").glob("*"):
         if src.suffix.lower() in (".jpg", ".jpeg", ".png", ".svg", ".webp"):

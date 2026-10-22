@@ -270,6 +270,8 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; backg
 .ai-start { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel2); padding: 12px; display: grid; gap: 10px; margin-bottom: 12px; }
 .ai-start h3 { margin: 0; font: 800 13px var(--display); }
 .ai-start p { margin: 0; font-size: 12px; color: var(--mute); }
+.how1 { display: grid; gap: 4px; font-size: 11px; color: var(--mute); }
+.how1 label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
 .brain-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .brain-head select { border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); padding: 3px 6px; max-width: 100%; min-width: 0; flex: 1; }
 .aipane:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
@@ -659,9 +661,9 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
       <div id="ai-start"></div>
       <div class="batch" id="batch" hidden></div>
       <div class="brain-head">
-        <span class="mlabel">Разговор с ИИ</span>
-        <select id="threads" aria-label="Разговор"></select>
-        <button type="button" class="icon" id="new-thread" title="Новый разговор про этот ролик">＋</button>
+        <span class="mlabel">Сессия монтажа</span>
+        <select id="threads" aria-label="Сессия монтажа ролика"></select>
+        <button type="button" class="icon" id="new-thread" title="Новая сессия этого ролика — с передачей дел от прошлой (контекст свежий, решения — из файлов ролика)">＋ новая</button>
         <button type="button" class="icon" id="stop" hidden>Остановить</button>
       </div>
       <div class="log" id="log" aria-live="polite"></div>
@@ -736,6 +738,10 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
   <div class="drop" id="ref-drop" tabindex="0" role="button">＋ Скриншоты, ролики, примеры, которые нравятся, — перетащи сюда или нажми</div>
   <input type="file" id="ref-file" multiple hidden>
   <div class="reflist" id="ref-list"></div>
+  <div class="pop-h" style="margin-top:12px">Шрифты проекта</div>
+  <div class="drop" id="font-drop" tabindex="0" role="button">＋ Шрифты бренда (.ttf, .otf) — перетащи сюда или нажми. Лежат с проектом, одинаково на Mac и Windows</div>
+  <input type="file" id="font-file" accept=".ttf,.otf" multiple hidden>
+  <div class="reflist" id="font-list"></div>
   <div class="say" id="setup-say"></div>
   <div class="row">
     <button type="button" class="btn" data-rules>Правила целиком</button>
@@ -1903,7 +1909,7 @@ function textNodesOf(el) { const out = [], w = el.ownerDocument.createTreeWalker
 function pvFace(f) {
   if (!S.pv || !f || S.pv.doc.getElementById(`pvface-${f}`)) return;
   const st = S.pv.doc.createElement("style"); st.id = `pvface-${f}`;
-  st.textContent = `@font-face { font-family: "Студия ${f}"; src: url("assets/fonts/${f}.ttf"); }`;
+  st.textContent = `@font-face { font-family: "Студия ${f}"; src: url("assets/fonts/${/\.(ttf|otf)$/i.test(f) ? f : f + ".ttf"}"); }`;
   S.pv.doc.head.appendChild(st);
 }
 // вид слоя прямо в плеере — то же, что сделает layers.js на странице, но без перезагрузки
@@ -2571,7 +2577,8 @@ function renderAiStart() {
         <div class="row2"><span class="grow">Вкладку можно закрыть — ИИ доделает сам.</span>${run && run.thread ? `<button type="button" class="icon" id="ai-stop" data-thread="${esc(run.thread)}">Остановить</button>` : ""}</div></div>` : "";
   const cta = busy ? (live || `<p>Ждёт своей очереди: тяжёлое идёт по одному ролику.</p>`)
     : !done ? `<p>ИИ сделает всё сам: план, рез по тишине, камеру, субтитры, графику и звук — в стиле ${style}. Сменить стиль и цели — вкладка «Стиль» слева.</p>
-               <button type="button" class="btn rec big" id="go-brain">▶ Запустить ИИ-монтаж</button>`
+               <button type="button" class="btn rec big" id="go-brain">▶ Запустить ИИ-монтаж</button>
+               <div class="how1" role="radiogroup" aria-label="Как монтировать">${[["session", "сессией — как в терминале: каждый шаг виден ниже, можно вмешаться словами"], ["autopilot", "автопилотом — дешевле (~$2), без разговора; итог — в строке пачки"]].map(([v, t]) => `<label><input type="radio" name="how1" value="${v}" ${howOne() === v ? "checked" : ""}> ${t}</label>`).join("")}</div>`
     : v.outputs.length ? `<p>Смотри над плеером. Не нравится — скажи ниже словами или поправь руками.</p>`
         + (S.tracks && S.tracks.stale ? `<button type="button" class="btn rec big" id="ai-export">⬇ Собрать ролик с правками</button>` : "")
     : `<p>Всё уже видно в «Монтаж ●». Собрать ролик в файл — кнопкой ниже, около 10 минут.</p><button type="button" class="btn rec big" id="ai-export">⬇ Собрать ролик</button>`;
@@ -2580,6 +2587,7 @@ function renderAiStart() {
         return `<details class="steps" ${busy || n < st.length ? "open" : ""}><summary>Шаги ИИ-монтажа · ${n} из ${st.length}</summary><div class="stepper">${st.map((x) => `<div class="s ${x.cls}"><i>${x.cls === "done" ? "✓" : ""}</i>${esc(x.name)}${x.est ? `<small class="est" title="примерно, по прошлым прогонам на этой машине">${x.est}</small>` : ""}</div>`).join("")}</div></details>`; })()}
       ${done && !busy ? `<div class="pop-h" style="margin:4px 0 0">Попросить в один клик</div><div class="chips">${CHIPS.map((c) => `<button type="button" class="chip" data-chip="${esc(c)}">${esc(c)}</button>`).join("")}</div>` : ""}</div>`;
   if ($("go-brain")) $("go-brain").addEventListener("click", startAiMontage);
+  box.querySelectorAll('input[name="how1"]').forEach((r) => r.addEventListener("change", () => store.set("howOne", r.value)));
   if ($("ai-stop")) $("ai-stop").addEventListener("click", async (e) => {
     if (!confirm("Остановить ИИ-монтаж? Сделанное останется, продолжить можно словами в чате.")) return;
     try { await api(`/api/brain/stop/${e.target.dataset.thread}`, { method: "POST" }); } catch (err) { say("brain-say", err.message, true); }
@@ -2590,6 +2598,10 @@ function renderAiStart() {
     say("brain-say", "Допиши, если нужно, и нажми «Отправить» (⌘↵).");
   }));
 }
+// окно ролика — его сессия монтажа (Валера 23.10.2026: «окно на видосе и должно являться сессией… для монтажа
+// конкретного видео, как та сессия в терминале»): один ролик из окна — сессией по умолчанию, автопилот — по выбору;
+// пачка (много роликов) по-прежнему автопилотом
+function howOne() { return store.get("howOne", "session"); }
 async function startAiMontage() {
   if (S.starting) return;
   S.starting = S.stem; S.busySince = Date.now(); renderAiStart(); renderAiLive(); renderReels();
@@ -2599,14 +2611,14 @@ async function startAiMontage() {
     const v = current(), pack = v && v.pack;
     // автопилот (по умолчанию): один ролик — пачкой из одного; варианты A/B и сборку (отбор кусков из нескольких видео)
     // автопилот пока не делает — тогда сессия ИИ
-    if (store.get("how", "autopilot") === "autopilot" && !b.variants.length && !pack) {
+    if (howOne() === "autopilot" && !b.variants.length && !pack) {
       renderBatch(await api("/api/brain/batch", { method: "POST", json: { stems: [S.stem], engine: S.engine, mode: S.mode, parallel: 1, how: "autopilot" } }));
       say("brain-say", `${S.stem}: монтирует автопилот — подготовка, ИИ решает, что показать, критик смотрит черновик, рендер. Ход — в строке пачки, лог — work/${S.stem}/autopilot.log.`);
       return;
     }
-    if (b.variants.length && store.get("how", "autopilot") === "autopilot") say("brain-say", "В брифе варианты A/B — их автопилот пока не делает: монтирует сессия ИИ, как раньше.");
+    if (b.variants.length && howOne() === "autopilot") say("brain-say", "В брифе варианты A/B — их автопилот пока не делает: монтирует сессия ИИ, как раньше.");
     const variants = b.variants.length ? ` Плюс варианты для A/B: ${b.variants.map(styleName).join(", ")} — каждый отдельным проектом (compose/render_reel --variant).` : "";
-    if (pack && store.get("how", "autopilot") === "autopilot") say("brain-say", "Это сборка из нескольких видео — отбор кусков автопилот пока не делает: монтирует сессия ИИ.");
+    if (pack && howOne() === "autopilot") say("brain-say", "Это сборка из нескольких видео — отбор кусков автопилот пока не делает: монтирует сессия ИИ.");
     const packNote = pack ? ` Это сборка: ${pack.clips} видео → один ролик — сначала разбор клипов и отбор кусков (pack.py, порядок — в контексте студии).` : "";
     const text = `Смонтируй ${S.stem} по брифу (work/${S.stem}/brief.json): стиль «${styleName(b.style)}», форматы ${b.formats.join(", ")}.${packNote}${variants} Тяжёлое — через очередь. В конце коротко отчитайся: что где на экране, что спорно, как откатить.`;
     await newThread(`${S.stem}: монтаж`);
@@ -3128,8 +3140,9 @@ function renderTpl() {
     + `<button type="button" class="chip" data-tpl="" aria-pressed="${!pick}">своё</button>`;
   const t = SU.tpl.find((x) => x.id === (pick || (SU.sug && SU.sug.id)));
   const why = SU.sug && t && SU.sug.id === t.id && SU.sug.why.length ? `<br><em>По анкете: ${esc(SU.sug.why.join("; "))}</em>` : "";
-  const about = t ? `<div class="about"><div><b>${esc(t.name)}</b>${pick === t.id ? " — стоит у проекта" : " — предлагаю"}: ${esc(t.summary)}<br><em>Эталон ${esc(t.stem)} · ${esc(t.verdict)}${t.design ? " · своя дизайн-система" : ""}</em>${why}</div>`
-    + `<a href="/api/studio/template-sheet/${esc(t.id)}" target="_blank" rel="noopener"><img src="/api/studio/template-sheet/${esc(t.id)}" alt="Кадры эталона «${esc(t.name)}»" loading="lazy"></a></div>`
+  const alt = SU.sug && SU.sug.alt && t && SU.sug.id === t.id ? `<br><em>Выбран неуверенно — рядом «${esc(SU.sug.alt.name)}»: если ролики о другом, нажми его выше.</em>` : "";
+  const about = t ? `<div class="about"><div><b>${esc(t.name)}</b>${pick === t.id ? " — стоит у проекта" : " — предлагаю"}: ${esc(t.summary)}<br><em>${t.proven ? `Эталон ${esc(t.stem)} · ` : "Базовый шаблон · "}${esc(t.verdict)}${t.design ? " · своя дизайн-система" : ""}</em>${why}${alt}</div>`
+    + (t.sheet ? `<a href="/api/studio/template-sheet/${esc(t.id)}" target="_blank" rel="noopener"><img src="/api/studio/template-sheet/${esc(t.id)}" alt="Кадры эталона «${esc(t.name)}»" loading="lazy"></a>` : "") + `</div>`
     : `<div class="about"><div><em>Проект без шаблона — ИИ собирает почерк с нуля по анкете и правилам. Шаблон даёт стиль, дизайн-систему, выученные уроки и эталон принятого ролика.</em></div></div>`;
   $("setup-tpl").innerHTML = `<div class="opts">${chips}</div>${about}`;
 }
@@ -3150,7 +3163,7 @@ async function openSetup(project) {
     SU.q = r.questions; SU.answers = r.answers || {};
     SU.tpl = r.templates || []; SU.cur = r.template || null; SU.sug = r.suggest || null; renderTpl();
     $("setup-title").textContent = `Настройка проекта «${r.title.split(" — ")[0]}»`;
-    renderSetup(r.missing); renderRefs(r.references);
+    renderSetup(r.missing); renderRefs(r.references); renderFonts(r.fonts);
     say("setup-say", r.missing.length ? `Не хватает ответов: ${r.missing.length}.` : "Проект настроен ✓ Можно уточнить ответы.");
     if (!$("setup-dialog").open) $("setup-dialog").showModal();
   } catch (e) { say("brain-say", e.message, true); }
@@ -3165,6 +3178,23 @@ function renderSetup(missing = []) {
     return `<div class="q ${missing.includes(q.id) ? "miss" : ""}"><b>${esc(q.q)}${q.required ? " <em>*</em>" : ""}</b>${opts}${field}</div>`;
   }).join("");
 }
+function renderFonts(list) {
+  $("font-list").innerHTML = (list || []).map((f) => `<span title="${esc(f.file)}${f.cyrillic ? "" : " — без кириллицы"}">${esc(f.family)} ${f.weight}${f.italic ? " курсив" : ""}${f.cyrillic ? "" : " · без кириллицы"}</span>`).join("")
+    || `<span>своих нет — открытые шрифты движка</span>`;
+}
+async function uploadFonts(files) {
+  for (const f of files) {
+    const fd = new FormData(); fd.append("file", f);
+    try { say("setup-say", `Загружаю ${f.name}…`); await api(`/api/studio/fonts/${encodeURIComponent(SU.project)}`, { method: "POST", form: fd }); }
+    catch (e) { say("setup-say", `${f.name}: ${e.message}`, true); return; }
+  }
+  const r = await api(`/api/studio/setup/${encodeURIComponent(SU.project)}`); renderFonts(r.fonts);
+  say("setup-say", `Шрифты добавлены: ${files.length}. Впиши их в «Шрифт, цвета» — ИИ поставит их в дизайн-систему проекта.`);
+}
+$("font-drop").addEventListener("click", () => $("font-file").click());
+$("font-file").addEventListener("change", (e) => uploadFonts([...e.target.files]));
+$("font-drop").addEventListener("dragover", (e) => e.preventDefault());
+$("font-drop").addEventListener("drop", (e) => { e.preventDefault(); e.stopPropagation(); uploadFonts([...e.dataTransfer.files]); });
 function renderRefs(refs) { $("ref-list").innerHTML = (refs || []).map((r) => `<span>${esc(r)}</span>`).join("") || `<span>пока нет</span>`; }
 $("setup-form").addEventListener("click", (e) => {
   const b = e.target.closest("[data-opt]"); if (!b) return;

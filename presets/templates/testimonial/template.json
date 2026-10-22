@@ -5,29 +5,29 @@
  "signals": {
   "about": [
    "отзыв",
-   "клиентк",
-   "клиент",
    "благодар",
+   "клиентка рассказывает",
+   "клиент рассказывает",
+   "ученик рассказывает",
+   "история клиента",
    "результат работы",
    "трансформац",
    "до и после",
-   "психолог",
-   "коуч",
-   "терап",
-   "наставни"
+   "спасибо"
   ],
   "tone": [
-   "тёплый",
-   "спокойный, экспертный"
+   "тёплый"
   ],
-  "kind": "talking"
+  "kind": "talking",
+  "pace": "calm"
  },
  "exemplar": {
   "project": "olga-statirova/rils",
   "stem": "IMG_9665",
   "video": "projects/olga-statirova/rils/output/IMG_9665_v2.mp4",
-  "source": "work/IMG_9665/page.py",
-  "verdict": "Валера 22.10.2026: «Ну мужчина, охуенно!»"
+  "source": "presets/templates/testimonial/exemplar.page.py",
+  "verdict": "Валера 22.10.2026: «Ну мужчина, охуенно!»",
+  "origin": "work/IMG_9665/page.py"
  },
  "brief": {
   "style": "testimonial",

@@ -445,9 +445,10 @@ def font_info(path: Path) -> dict | None:
 
 @app.get("/api/fonts")
 def fonts():
+    import fonts as font_files
     found = []
-    for p in sorted(FONT_DIR.glob("*")):
-        if p.suffix.lower() in FONT_EXT and "-var" not in p.stem:
+    for p in font_files.files().values():                   # движка и догруженные на этой машине (presets/fonts/local)
+        if p.suffix.lower() in FONT_EXT:
             info = font_info(p)
             if info:
                 found.append(info)
@@ -457,7 +458,8 @@ def fonts():
 @app.get("/api/font")
 def font(file: str = "Montserrat-ExtraBold.ttf"):
     """Отдаёт шрифт странице — превью набирается ровно тем, что уйдёт в видео."""
-    path = FONT_DIR / Path(file).name
+    import fonts as font_files
+    path = font_files.find(file) or FONT_DIR / "Montserrat-ExtraBold.ttf"
     if not path.exists() or path.suffix.lower() not in FONT_EXT:
         path = FONT_DIR / "Montserrat-ExtraBold.ttf"
     media = "font/otf" if path.suffix.lower() == ".otf" else "font/ttf"
@@ -470,8 +472,10 @@ async def upload_font(file: UploadFile = File(...)):
     if Path(name).suffix.lower() not in FONT_EXT:
         return {"error": "нужен файл .ttf или .otf"}
 
-    FONT_DIR.mkdir(parents=True, exist_ok=True)
-    target = FONT_DIR / name
+    # догруженный шрифт — на эту машину (presets/fonts/local, мимо git): в presets/fonts только OFL движка (23.10.2026)
+    import fonts as font_files
+    font_files.LOCAL.mkdir(parents=True, exist_ok=True)
+    target = font_files.LOCAL / name
     with open(target, "wb") as f:
         while chunk := await file.read(1 << 20):
             f.write(chunk)
