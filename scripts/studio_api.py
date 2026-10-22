@@ -156,8 +156,9 @@ def video_state(path: Path, project: "projects.Project") -> dict:
             "transcribed": (WORK_DIR / f"{stem}.words.json").exists(),
             "prepped": (work / "aroll.mp4").exists(),
             "tracked": (work / "aroll.faces.json").exists(),
-            "cutout": (work / "aroll.cutout.webm").exists(),
             "page": (ROOT / "studio" / stem / "index.html").exists(),
+            # маска — после страницы и по её окнам (22.10.2026); решение «не нужна» тоже шаг сделанный
+            "cutout": (work / "aroll.cutout.webm").exists() or (work / "aroll.cutout.json").exists(),
         },
         "brief": {"exists": bool(brief.get("exists")), "style": brief["style"],
                   "formats": brief["formats"], "variants": brief["variants"],

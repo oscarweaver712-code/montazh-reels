@@ -502,12 +502,13 @@ def caption_js(caps: dict) -> str:
 def build_page(title: str, duration: float, behind: str, front: str, beats: str, sounds: list,
                fg_windows: list, cta_at: float, plate_img: str | None = None,
                plate_style: str = "", extra_css: str = "", cta_small: str = "смотри у меня в профиле",
-               fmt: str = "9:16", captions: dict | None = None, cutout: bool = True, cta: bool = True) -> str:
+               fmt: str = "9:16", captions: dict | None = None, cutout: bool | None = None, cta: bool = True) -> str:
     """Собирает index.html. Время — по дублю (aroll), секунды.
 
     fmt — формат сцены (formats.py), captions — субтитры стиля (styles.kit_captions).
-    cutout=False — без слоя вырезанного человека: стилю без текста за спиной не нужна
-    маска (matte.py — самые долгие 4 минуты подготовки).
+    cutout — слой вырезанного человека; None — есть, если есть окна fg_windows. Стилю без текста за спиной
+    не нужна маска (matte.py — самый долгий шаг подготовки): cutout=False. С вырезкой маска считается
+    после страницы и только по fg_windows (matte.py --windows page).
     cta=False — без финальной плашки «смотри у меня в профиле» и её щелчка: ролик не для
     нашего профиля (тестовое для заказчика, 13.10.2026).
     """
@@ -525,6 +526,8 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
                                      f"left: {cl}px; top: {ct}px; width: 900px;")
                     .replace("left: 70px; top: 1480px;", f"left: {al}px; top: {at}px;"))
     style_css = stage_style(fmt) + (caption_css(captions, fmt) if captions else "")
+    if cutout is None:
+        cutout = bool(fg_windows)
     if not cutout and fg_windows:
         raise ValueError("Окна вырезки (fg_windows) без слоя вырезки: передай cutout=True и сделай matte.py")
     helpers = HELPERS if not captions else HELPERS.replace(CAPTIONS_JS, caption_js(captions))
@@ -535,6 +538,7 @@ def build_page(title: str, duration: float, behind: str, front: str, beats: str,
     t = cta_at
     cta_js = (CTA_JS.replace("58.40", f"{t:.2f}").replace("58.75", f"{t + 0.35:.2f}")
               .replace("59.07", f"{t + 0.67:.2f}").replace("59.4", f"{t + 1.0:.2f}"))
+    # строку окон читает matte.page_windows (FG_LINE): маска считается только по ним — формат не менять в одиночку
     windows = ", ".join(f"[{a:.2f}, {b:.2f}]" for a, b in fg_windows)
     if not cta:
         cta_html = cta_js = ""

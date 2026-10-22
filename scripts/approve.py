@@ -81,7 +81,9 @@ def plan(stem: str, final: str) -> dict:
         if renders.is_dir():
             drafts += sorted(p for p in renders.iterdir() if p.is_file())
     work = WORK_DIR / stem
-    intermediates = sorted([*work.glob("aroll.matte_*.mkv"), *work.glob(f"{stem}.*x*.mov")]) if work.is_dir() else []
+    # маска: целиком (до 22.10.2026) и кусками по окнам (matte.cut_windows) — готовая вырезка остаётся
+    intermediates = sorted([*work.glob("aroll.matte_*.mkv"), *work.glob("aroll*.pieces/*"),
+                            *work.glob(f"{stem}.*x*.mov")]) if work.is_dir() else []
     groups = {"drafts": [item(p) for p in drafts], "intermediates": [item(p) for p in intermediates]}
     return {"stem": stem, "file": approved.name, "keep": item(approved),
             "groups": {key: {"title": GROUPS[key], "items": items,

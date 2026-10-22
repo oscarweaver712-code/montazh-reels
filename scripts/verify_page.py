@@ -333,6 +333,25 @@ CHECK_JS = r"""
         }
       }
     }
+    // где виден человек поверх (#cam-fg с вырезкой): с 22.10.2026 маска считается только там (matte.py --windows) —
+    // окно, под которым маски нет, показало бы пустоту вместо человека, а текст за спиной встал бы поверх лица
+    res.fgShown = [];
+    {
+      const fg = document.getElementById("cam-fg");
+      if (fg && document.getElementById("cutout")) {
+        const shown = () => { for (let n = fg; n && n !== document.body; n = n.parentElement)
+          if (parseFloat(getComputedStyle(n).opacity) <= 0.1) return false; return true; };
+        let open = null;
+        tl.totalTime(0, false);
+        for (let k = 0; k <= Math.round(duration * fps); k++) {
+          const t = k / fps;
+          tl.totalTime(t, false);
+          if (shown()) { if (open === null) open = t; }
+          else if (open !== null) { res.fgShown.push([+open.toFixed(3), +t.toFixed(3)]); open = null; }
+        }
+        if (open !== null) res.fgShown.push([+open.toFixed(3), +duration.toFixed(3)]);
+      }
+    }
     // доля ролика с человеком в кадре (Валера 19.10.2026: «хочу, чтобы в 50+% видео было моё лицо — личный бренд
     // качаем»): сколько замеров видна перебивка во весь кадр (футаж, серия картинок, чертёж data-fullframe)
     res.cutawayShare = 0;
@@ -954,6 +973,37 @@ def stage_format(page: str) -> str | None:
     return formats.of_size(int(found.group(1)), int(found.group(2))) if found else None
 
 
+def cutout_gaps(project: Path, page: str, shown: list) -> list:
+    """Где человек поверх (#cam-fg) виден, а маски под ним нет: вырезки нет вовсе, она от другого дубля или
+    посчитана по другим окнам (assets/cutout.json — что посчитал matte.cut_windows; нет записи — вся длина)."""
+    if not shown:
+        return []
+    import matte
+    hint = f"matte.py work/{take_dir(project).name}/aroll.mp4 --windows page (очередью)"
+    if not (project / "assets" / "cutout.webm").exists():
+        return [f"вырезки нет, а человек поверх — {len(shown)} окон с {shown[0][0]:.2f} с: {hint}"]
+    record = project / "assets" / "cutout.json"
+    try:
+        state = json.loads(record.read_text(encoding="utf-8")) if record.exists() else None
+    except ValueError:
+        return [f"{record.relative_to(ROOT)} — не JSON: пересобери вырезку, {hint}"]
+    aroll = take_dir(project) / "aroll.mp4"
+    if state is not None and aroll.exists() and state.get("video") != matte.identity(aroll):
+        return [f"вырезка посчитана по другому дублю (aroll.mp4 пересобран после неё) — {hint}"]
+    covered = matte.coverage(state, float((state or {}).get("fps") or FPS))
+    if covered is None:
+        return []
+    slack = 1.0 / FPS
+    bare = []
+    for a, b in shown:
+        for c0, c1 in covered:                 # окно режется покрытием; что осталось — без маски
+            if c0 - slack <= a < c1:
+                a = max(a, c1)
+        if b - a > slack:
+            bare.append(f"{a:.2f}–{b:.2f} с: человек поверх, а маски нет — {hint}")
+    return bare
+
+
 def take_dir(project: Path) -> Path:
     """work/<имя>/ дубля, из которого собран проект: вариант для A/B (studio/<имя>--<стиль>/) — из того же."""
     return WORK_DIR / project.name.split("--")[0]
@@ -1169,10 +1219,12 @@ def cta_leak(name: str, page_text: str) -> str | None:
     return ""
 
 
-def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
+def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending: bool = False) -> list:
     """Печатает отчёт по странице; возвращает список провалов (пустой — можно рендерить).
 
     strict — страница идёт в рендер: собранная до норм звука не проходит. Сводка --all — не строгая.
+    matte_pending — черновик до маски (analyst.assemble): маска считается после страницы, по её окнам, —
+    окна без маски печатаются, но не провал. Рендер так не идёт: render_reel проверяет без этого флага.
     """
     project = Path(stem_or_dir)
     if not project.is_dir():
@@ -1194,6 +1246,8 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
     print(f"Страница {project.name}")
     page_text = page_path.read_text(encoding="utf-8")
     gone = missing_assets(project, page_text)
+    if matte_pending:                         # вырезка придёт после страницы — её отсутствие скажет проверка окон
+        gone = [g for g in gone if g != "assets/cutout.webm"]
     check(not gone, "все картинки, звуки и шрифты на месте", gone)
     leak = cta_leak(project.name, page_text)
     if leak is not None:
@@ -1304,6 +1358,11 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
             check(not off, "цвета и шрифты — только из DESIGN.md проекта", off)
         elif off:
             print(f"  · мимо DESIGN.md: {len(off)} (при правке ролика — цвет или шрифт из системы)")
+    unmasked = cutout_gaps(project, page_text, res.get("fgShown", []))
+    if unmasked and matte_pending:
+        print(f"  · маска по окнам ещё не посчитана ({len(unmasked)}): {unmasked[0]}")
+    else:
+        check(not unmasked, "под каждым окном «человек поверх» посчитана маска", unmasked)
     over = res.get("fgOverCut", [])
     check(not over, "на перебивке (футаж, серия картинок) нет человека поверх — окна вырезки до и после",
           [f"вырезка видна поверх перебивки на {over[0]:.2f}–{over[-1]:.2f} с ({len(over)} замеров)"] if over else [])

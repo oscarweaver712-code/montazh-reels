@@ -171,6 +171,11 @@ def head_room(stem: str) -> str:
     import verify_page
     from common import ROOT
     track = verify_page.face_track(ROOT / "studio" / stem)
+    import matte
+    ok, why = matte.need(stem)
+    if not ok:                                  # маски не будет: за спиной не ставить ничего (22.10.2026, IMG_0930)
+        return (f"ЗА СПИНОЙ — НЕЛЬЗЯ: маски человека у ролика не будет ({why}). Раскладка behind запрещена, слова, "
+                f"пометки и числа сборка поставит на грудь сама; схемы — chest или split.")
     if not track:
         return "ГОЛОВА В КАДРЕ: слежения нет — «за спиной» ставь только маршрут над головой (y ≤ 0.15)."
     q = lambda i, k: sorted(f[i] for f in track)[min(len(track) - 1, int(k * len(track)))]     # noqa: E731
@@ -258,7 +263,8 @@ def assemble(stem: str, variant: str | None, score: dict) -> list:
             compose.compose(stem, variant=variant)      # первая сборка: камера и ассеты — сплиту нужна камера
         sc.build(stem, variant, score)
         compose.compose(stem, variant=variant)          # субтитры с решениями партитуры
-        return verify_page.verify(name)
+        # маска считается после страницы и только по её окнам (autopilot.cut_on_windows): здесь её ещё может не быть
+        return verify_page.verify(name, matte_pending=True)
 
 
 def run(stem: str, variant: str | None = "auto", tries: int = TRIES) -> Path:

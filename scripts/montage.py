@@ -101,6 +101,14 @@ class Montage:
         self.cutaways, self.extra_soft, self.notes = [], [], []
         self.splits, self._bp, self._fig = [], False, 0
         self.hook_at, self.hook_why = "auto", ""
+        self._matte = None
+
+    def matte_need(self) -> tuple:
+        """(нужна ли ролику маска, почему) — matte.need: стиль и место над головой. Нет — за спину не ставить."""
+        if self._matte is None:
+            import matte
+            self._matte = matte.need(self.stem, self.variant)
+        return self._matte
 
     # ---------------------------------------------------------------- содержание (пишет режиссёр)
 
@@ -248,7 +256,7 @@ class Montage:
 
     def build(self, title: str, cta_at: float | None = None, text_fixes: dict | None = None,
               accent_words: list | None = None, keep_case: list | None = None, track: str | None = None,
-              framing: bool = True, cutout: bool = True, director_extra: dict | None = None, jump_whip: bool = False,
+              framing: bool = True, cutout: bool | None = None, director_extra: dict | None = None, jump_whip: bool = False,
               music_start: float = 0.0, music_fade: float = 1.5, **page_kw) -> str:
         """Собирает studio/<проект>/index.html и work/<имя>/director.json; печатает, что поставлено само.
 
@@ -258,11 +266,38 @@ class Montage:
         music_start — с какой секунды трека начать (music.beat_grid: сильная доля на 0 ролика), music_fade — уход в
         конце (короткий — для ролика-петли). С project.json → music_duck музыка уходит под живой звук дубля и
         поднимается в тишине (music.duck_lane).
+        cutout — слой вырезанного человека. По умолчанию (None) — сам: есть окна вырезки (m.fg) — есть слой, нет — нет
+        (22.10.2026: маска считается после страницы и только по окнам). Окна есть, а маска ролику не нужна (matte.need:
+        стиль без вырезки, голова во весь кадр) — громкий отказ; осознанно — cutout=True.
         """
         import events
         tk, dur = self.tk, self.duration
         kit.check_sounds(self.sounds)                       # свои звуки режиссёра — сначала по правилам п.9
         auto_front, auto_js, auto_punch = [], [], []
+
+        # окно вырезки не заходит на перебивку: человек поверх клипа или листа во весь кадр — провал verify_page
+        # (19.10.2026, партитура аналитика IMG_3303: слово хука кончалось на 0,25 с позже, чем входил клип)
+        fg = []
+        for a0, b0 in sorted(self.fg_windows):
+            for c0, c1 in sorted(self.cutaways):
+                if c0 < b0 and c1 > a0:
+                    b0 = min(b0, c0 - 0.05) if c0 > a0 else b0
+                    a0 = max(a0, c1 + 0.05) if c0 <= a0 else a0
+            if b0 - a0 >= 0.2:
+                fg.append((round(a0, 2), round(b0, 2)))
+        self.fg_windows = fg
+        if cutout is None:
+            if fg and not self.matte_need()[0]:
+                raise ValueError(f"окна вырезки (человек поверх) {', '.join(f'{a:.2f}–{b:.2f}' for a, b in fg[:4])} с, а маска "
+                                 f"ролику не нужна: {self.matte_need()[1]} — графику на грудь или в сплит; осознанно за "
+                                 f"спину — build(cutout=True)")
+            cutout = bool(fg)
+        if cutout and fg:
+            self.notes.append(f"вырезка: окон {len(fg)}, {sum(b - a for a, b in fg):.1f} с — маска после страницы, только по "
+                              f"ним: matte.py work/{self.stem}/aroll.mp4 --windows page")
+        elif not cutout:
+            self.notes.append("вырезка не нужна: окон «человек поверх» нет" + (
+                "" if self.matte_need()[0] else f" ({self.matte_need()[1]})") + " — страница без маски")
 
         hook = self._hook_time()
         if hook is not None:
@@ -326,18 +361,6 @@ class Montage:
         if self.splits:
             import blueprint as bp
             self.css(bp.SPLIT_CSS)
-
-        # окно вырезки не заходит на перебивку: человек поверх клипа или листа во весь кадр — провал verify_page
-        # (19.10.2026, партитура аналитика IMG_3303: слово хука кончалось на 0,25 с позже, чем входил клип)
-        fg = []
-        for a0, b0 in sorted(self.fg_windows):
-            for c0, c1 in sorted(self.cutaways):
-                if c0 < b0 and c1 > a0:
-                    b0 = min(b0, c0 - 0.05) if c0 > a0 else b0
-                    a0 = max(a0, c1 + 0.05) if c0 <= a0 else a0
-            if b0 - a0 >= 0.2:
-                fg.append((round(a0, 2), round(b0, 2)))
-        self.fg_windows = fg
 
         switch, whips = [], ""
         if framing:

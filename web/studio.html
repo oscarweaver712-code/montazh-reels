@@ -1111,7 +1111,7 @@ function reelState(v) {
   return `<span class="st new">новое</span>`;
 }
 function reelLi(v) {
-  const STEPS = ["transcribed", "prepped", "tracked", "cutout", "page"];
+  const STEPS = ["transcribed", "prepped", "tracked", "page", "cutout"];
   return `<li class="reel" tabindex="0" data-stem="${esc(v.stem)}" aria-current="${v.stem === S.stem}">
       <img class="thumb" loading="lazy" alt="" src="/api/studio/thumb/${encodeURIComponent(v.stem)}" onerror="this.style.visibility='hidden'">
       <div class="reel-head"><span class="reel-name">${esc(v.stem)}${v.pack ? `<span class="pk" title="сборка: один ролик из ${v.pack.clips} видео (${mmss(v.pack.seconds)} сырья)${v.pack.built ? " — собрана" : ""}">▦ ${v.pack.clips}</span>` : ""}</span><span class="reel-meta">${v.orientation === "горизонталь" ? "▭" : "▯"} ${mmss(v.duration)}</span></div>
@@ -2328,7 +2328,7 @@ $("heads").addEventListener("click", (e) => {
 
 /* ---------- шаги ИИ-монтажа ---------- */
 const AI_STEPS = [["transcribed", "Речь распознана"], ["prepped", "Дубль собран: рез по тишине"], ["tracked", "Лицо найдено, камера готова"],
-                  ["cutout", "Человек вырезан (текст за спиной)"], ["page", "Графика и субтитры готовы"], ["out", "Ролик собран"]];
+                  ["page", "Графика и субтитры готовы"], ["cutout", "Человек вырезан по окнам страницы (или не нужен)"], ["out", "Ролик собран"]];
 function stepState(v) {
   const done = { ...v.steps, out: v.outputs.length > 0 };
   const busy = busyStem(v.stem);

@@ -283,6 +283,9 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
                 m.footage(pid, item["name"], a, round(b - a, 2), label=item.get("label", ""))
             else:
                 piece = _piece(kind, pid, item, a, b, start, end)
+                if piece.layout == "behind" and not m.matte_need()[0]:
+                    raise ValueError(f"раскладка behind — человек поверх, а маски у ролика не будет: "
+                                     f"{m.matte_need()[1]}. Возьми chest или split")
                 m.blueprint(piece)
                 if item.get("hide"):
                     m.hide(piece.t0 - 0.05, piece.t1)
@@ -340,14 +343,15 @@ def _word(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
     # в дизайн-системе красный — только ошибка: крупное слово кремом, если партитура не сказала "red": true
     color = f" color: {RED};" if item.get("red", not m.design) else ""
     body = design.letters(text) if m.design else text
-    if size >= WORD_MIN:
+    if size >= WORD_MIN and m.matte_need()[0]:
         m.behind(f'        <div id="{pid}" class="g big" style="top: {bp.TOP_LINE + 2}px; font-size: {size}px;{color}">{body}</div>')
         m.fg(min(a, at) - 0.3, leave + 0.25)
     else:                                       # над головой тесно — на груди, под линией субтитров, поверх человека
         size = min(wide, 150)
         m.front(f'        <div id="{pid}" class="g big" data-safe="крупное слово на груди: над головой нет места" '
                 f'data-safe-zones="низ" style="top: 1240px; font-size: {size}px;{color}">{body}</div>')
-        m.notes.append(f"слово «{text}» — на груди: над головой (верх головы y {top:.0f}) не встаёт и в {WORD_MIN} px")
+        m.notes.append(f"слово «{text}» — на груди: " + (f"над головой (верх головы y {top:.0f}) не встаёт и в {WORD_MIN} px"
+                                                          if m.matte_need()[0] else f"маски нет — {m.matte_need()[1]}"))
     if m.design:                                # буквы из дыма, слева направо; удар камеры и звук — на «at»
         m.js(f'      dsSmoke("#{pid}", {min(a, at):.2f});\n'
              f'      leave("#{pid}", {leave:.2f}, {{ y: -60, dur: 0.2 }});')
@@ -394,7 +398,7 @@ def _hand(m, pid: str, item: dict, a: float, b: float) -> None:
     text = item["text"]
     leave = max(b, a + 1.2)
     top = bp.TOP_LINE + 2
-    size = _over_head(m, text, "Caveat", a, leave, top, 1.1, 116, 64)
+    size = _over_head(m, text, "Caveat", a, leave, top, 1.1, 116, 64) if m.matte_need()[0] else 0
     if size:
         layer, place = m.behind, f'style="top: {top}px; font-size: {size}px;"'
         m.fg(a - 0.3, leave + 0.25)
@@ -425,7 +429,7 @@ def _number(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
     text, sub = item["text"], item.get("sub", "")
     a0, leave = min(a, at), max(b, at + 0.8)
     top = bp.TOP_LINE + 2
-    size = _over_head(m, text, "Unbounded", a0, leave, top + (70 if sub else 0), 1.0, 270, 120)
+    size = _over_head(m, text, "Unbounded", a0, leave, top + (70 if sub else 0), 1.0, 270, 120) if m.matte_need()[0] else 0
     cap = f'<span class="ds-numcap">{html.escape(sub)}</span>' if sub else ""
     if size:
         m.behind(f'        <div id="{pid}" class="g ds-num-wrap" style="top: {top}px;">{cap}'

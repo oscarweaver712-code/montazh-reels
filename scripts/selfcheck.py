@@ -1773,6 +1773,7 @@ class _DesignTake:
     def punch(self, *a, **k): pass                          # noqa: E704
     def sound(self, *a, **k): pass                          # noqa: E704
     def _face(self, a, b): return (330.0, 440.0, 750.0, 1060.0)   # noqa: E704
+    def matte_need(self): return True, "место над головой есть"   # noqa: E704
 
 
 def check_design(report: Report, tmp: Path):
@@ -2579,6 +2580,163 @@ def check_cutout_video(report: Report, tmp: Path):
     shift = [round(float((a[s] - b[s]).mean()), 2) for s in inside]
     report.check(all(abs(d) < 1 for d in shift), "вырезка в цветах дубля: на коже Y, U, V совпадают (без пересчёта матрицы)",
                  f"сдвиг Y {shift[0]}, U {shift[1]}, V {shift[2]}")
+
+
+def check_matte_windows(report: Report, tmp: Path):
+    """Маска — только там, где её видно (22.10.2026, Валера: «вырезка самое долгое из всего процесса, мб ИИ будет
+    определять кусочки, где надо вырезать, и там вырезать?»; про IMG_0930: «за головой у человека нет места»).
+
+    Модель здесь — подделка: она читает номер кадра, нарисованный в самом кадре, и отдаёт его альфой. Так видно сразу
+    три вещи: какие кадры модель вообще смотрела (только окна и разогрев), что альфа кадра j стоит в кадре j вырезки
+    (22.10.2026 кусок IMG_3647 съехал на кадр: после -ss ffmpeg дублировал первый кадр — так делает файл со звуком,
+    поэтому здесь звук есть и ключевой кадр, как у дубля, раз в 12) и что вне окон вырезка прозрачная.
+    """
+    import kit
+    import matte
+    import verify_page
+
+    print("\nМаска только по окнам")
+    W, H, N = 320, 576, 120
+
+    def frame(k: int) -> bytes:                       # номер кадра — семь полос-битов
+        img = np.full((H, W), 40, np.uint8)
+        for b in range(7):
+            if k >> b & 1:
+                img[:, b * 40:(b + 1) * 40] = 215
+        return img.tobytes()
+
+    def number(f: np.ndarray) -> int:
+        return sum(1 << b for b in range(7) if f[H // 2, b * 40 + 20] > 128)
+
+    def level(k: int) -> int:                         # альфа кадра k: шаг 6 на кадр — сдвиг на кадр не спрячется в допуск
+        return 30 + 6 * (k % 35)
+
+    take = tmp / "mw" / "work" / "_sc_matte" / "aroll.mp4"
+    take.parent.mkdir(parents=True)
+    enc = subprocess.Popen([ffmpeg_bin(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{W}x{H}",
+                            "-r", "30", "-i", "-", "-f", "lavfi", "-i", "sine=d=4", *source_codec(), "-g", "12", "-bf", "0",
+                            "-pix_fmt", "yuv420p",
+                            "-c:a", "aac", "-shortest", str(take)], stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    for k in range(N):
+        enc.stdin.write(frame(k))
+    enc.stdin.close()
+    enc.wait()
+
+    class Numbered:
+        seen = []
+
+        def __init__(self, width: int, height: int):
+            self.width, self.height = width, height
+
+        def __call__(self, rgba: bytes) -> np.ndarray:
+            k = number(np.frombuffer(rgba, np.uint8).reshape(self.height, self.width, 4)[..., 0])
+            Numbered.seen.append(k)
+            return np.full((self.height, self.width), level(k), np.uint8)
+
+    def alphas(path: Path) -> list:
+        raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-c:v", "libvpx-vp9", "-i", str(path), "-pix_fmt", "yuva420p",
+                              "-f", "rawvideo", "-"], capture_output=True).stdout
+        size = W * H * 5 // 2
+        return [int(raw[i * size + W * H * 3 // 2 + (H // 2) * W + W // 2]) for i in range(len(raw) // size)]
+
+    matte.BACKENDS["numbered"] = Numbered
+    try:
+        ranges = matte.frame_ranges([(1.0, 1.3), (2.6, 2.8)], 30, N)
+        cut = matte.cut_windows(take, [(1.0, 1.3), (2.6, 2.8)], "numbered")
+        seen, Numbered.seen = Numbered.seen, []
+        allowed = {k for f0, f1 in ranges for k in range(max(0, f0 - matte.WARM), f1)}
+        want = sum(f1 - f0 + min(matte.WARM, f0) for f0, f1 in ranges)
+        got = alphas(take.with_name("aroll.cutout.webm"))
+        inside = {k for f0, f1 in ranges for k in range(f0, f1)}
+        off = [k for k, a in enumerate(got) if (abs(a - level(k)) > 2 if k in inside else a > 2)]
+        report.check(set(seen) <= allowed and len(seen) == want and cut["ranges"] == ranges,
+                     "модель смотрит только окна вырезки (с запасом 0,5 с и разогревом), не весь дубль",
+                     f"окна {ranges}: модель видела {len(seen)} кадров из {N} (ждали {want}), "
+                     f"лишние: {sorted(set(seen) - allowed)[:6] or 'нет'}")
+        report.check(len(got) == N and not off,
+                     "вырезка во всю длину дубля: в окне альфа кадра j — в кадре j, вне окон прозрачно",
+                     f"кадров {len(got)} из {N}; не на месте: "
+                     + (", ".join(f"{k}: {got[k]}" for k in off[:6]) or "нет"))
+
+        matte.cut_windows(take, [(1.0, 1.3), (2.6, 3.2)], "numbered")      # окно сдвинули — досчитать новое
+        grown, Numbered.seen = Numbered.seen, []
+        again = alphas(take.with_name("aroll.cutout.webm"))
+        new = matte.frame_ranges([(1.0, 1.3), (2.6, 3.2)], 30, N)
+        inside = {k for f0, f1 in new for k in range(f0, f1)}
+        off = [k for k, a in enumerate(again) if (abs(a - level(k)) > 2 if k in inside else a > 2)]
+        added = new[-1][1] - ranges[-1][1]
+        pieces = sorted(p.name for p in take.with_name("aroll.pieces").iterdir())
+        report.check(len(grown) == added + matte.WARM and not off and len(pieces) == 2 * len(new),
+                     "окно сдвинули — досчитывается только новый край, куски сливаются",
+                     f"досчитано {len(grown)} кадров (ждали {added + matte.WARM}), не на месте: {off[:4] or 'нет'}, "
+                     f"куски: {', '.join(pieces)}")
+    finally:
+        matte.BACKENDS.pop("numbered", None)
+
+    # окон нет — маска не считается вовсе: ни модели, ни вырезки, решение записано
+    bare = tmp / "mw" / "work" / "_sc_matte_nowin" / "aroll.mp4"
+    bare.parent.mkdir(parents=True)
+    shutil.copy2(take, bare)
+    run = subprocess.run([sys.executable, str(ROOT / "scripts" / "matte.py"), str(bare), "--windows", "page",
+                          "--backend", "mediapipe"], capture_output=True, encoding="utf-8", errors="replace", cwd=ROOT)
+    record = json.loads(bare.with_name("aroll.cutout.json").read_text(encoding="utf-8")) \
+        if bare.with_name("aroll.cutout.json").exists() else {}
+    made = sorted(p.name for p in bare.parent.iterdir() if p.name != "aroll.mp4" and p.name != "aroll.cutout.json")
+    report.check(run.returncode == 0 and not made and record.get("ranges") == [] and record.get("skipped"),
+                 "окон «человек поверх» на странице нет — маска не считается, решение записано",
+                 f"код {run.returncode}, лишние файлы: {', '.join(made) or 'нет'}, запись: {record.get('skipped')!r}"
+                 + (f"\n      {run.stderr.strip()[-300:]}" if run.returncode else ""))
+
+    # нужна ли маска вообще — по месту над головой (IMG_0930: волосы у верхнего края) до счёта и до страницы
+    full = [(0.25 * k, 230.0, 277.0, 930.0, 1208.0) for k in range(40)]    # как IMG_0930
+    usual = [(0.25 * k, 315.0, 510.0, 765.0, 1099.0) for k in range(40)]   # как IMG_3647 — текст за спиной встаёт
+    low, high = matte.head_room(full), matte.head_room(usual)
+    report.check(low is not None and high is not None and low < matte.HEAD_ROOM_MIN <= high,
+                 "голова во весь кадр — маска не нужна; голова пониже — нужна (по месту над головой)",
+                 f"во весь кадр — {low:.0f} px свободных строк, обычно — {high:.0f} px (порог {matte.HEAD_ROOM_MIN})")
+
+    # страница без окон — без слоя вырезки (маску не просит); с окнами — слой есть
+    no_layer = 'id="cutout"' not in build_page_safe(kit, "", "", "", [])
+    layer = 'id="cutout"' in build_page_safe(kit, "", "", "", [(0.2, 1.0)])
+    report.check(no_layer and layer, "страница без окон вырезки — без слоя человека; с окнами — со слоем",
+                 f"без окон слоя {'нет' if no_layer else 'есть'}, с окнами {'есть' if layer else 'нет'}")
+
+    # человек поверх, а маски под ним нет — громкий отказ verify_page (черновик до маски — только пометка)
+    project = tmp / "mw" / "fgpage"
+    (project / "assets").mkdir(parents=True)
+    shutil.copy2(ROOT / "studio" / "_vendor" / "gsap.min.js", project / "assets" / "gsap.min.js")
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = [[0, 0, 1], [0, 0, 1]];\n")
+    (project / "captions.js").write_text("window.CAPTIONS = [];\n", encoding="utf-8")
+    stage_page_assets(project)
+    (project / "index.html").write_text(build_page_safe(kit, "", "", "", [(0.2, 1.0)]), encoding="utf-8")
+    title = "под каждым окном «человек поверх» посчитана маска"
+    states = {}
+    for name, record in (("нет вырезки", None), ("маска на окне", {"fps": 30, "ranges": [[0, 45]]}),
+                         ("маска мимо окна", {"fps": 30, "ranges": [[15, 45]]}), ("вся длина", "full")):
+        (project / "assets" / "cutout.webm").unlink(missing_ok=True)
+        (project / "assets" / "cutout.json").unlink(missing_ok=True)
+        if record is not None:
+            shutil.copy2(take.with_name("aroll.cutout.webm"), project / "assets" / "cutout.webm")
+            if record != "full":
+                (project / "assets" / "cutout.json").write_text(json.dumps(record), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            states[name] = title in verify_page.verify(str(project), strict=False)
+    with contextlib.redirect_stdout(io.StringIO()):
+        (project / "assets" / "cutout.webm").unlink()
+        pending = title in verify_page.verify(str(project), strict=False, matte_pending=True)
+    want = {"нет вырезки": True, "маска на окне": False, "маска мимо окна": True, "вся длина": False}
+    report.check(states == want and not pending,
+                 "окно «человек поверх» без маски под ним — провал verify_page; черновик до маски — пометка",
+                 ", ".join(f"{k}: {'провал' if v else 'чисто'}" for k, v in states.items())
+                 + f"; черновик: {'провал' if pending else 'пометка'}")
+
+    # порядок автопилота: маска — после страницы (аналитика), не в подготовке
+    import autopilot
+    import inspect
+    flow, prep = inspect.getsource(autopilot.run), inspect.getsource(autopilot.prepare)
+    after = "analyst.run(" in flow and "cut_on_windows(" in flow and flow.index("analyst.run(") < flow.index("cut_on_windows(")
+    report.check(after and "matte" not in prep, "автопилот считает маску после страницы и по её окнам, не до аналитика",
+                 f"после аналитика: {'да' if after else 'нет'}, маска в подготовке: {'да' if 'matte' in prep else 'нет'}")
 
 
 def check_portable(report: Report, tmp: Path):
@@ -4778,6 +4936,7 @@ def main():
         section(report, check_matte_memory, tmp)
         section(report, check_cutout, tmp)
         section(report, check_cutout_video, tmp)
+        section(report, check_matte_windows, tmp)
         section(report, check_portable, tmp)
         section(report, check_approve, tmp)
         section(report, check_projects, tmp)

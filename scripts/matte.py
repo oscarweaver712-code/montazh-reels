@@ -40,10 +40,28 @@ MediaPipe совпал на 94–96% (RVM — на 88–92%), а на спорн
 длины ролика (выборка для комнаты — всегда PLATE_SAMPLES кадров). Потоки ограничены, чтобы
 ноутбук оставался живым.
 
-  .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --cutout
+Маска только по окнам (22.10.2026, раздел «маска только там, где её видно» ниже). Вырезку видно только в окнах
+«человек поверх» страницы — с этого дня маска считается после страницы и только по ним, а без окон не считается.
+Замер на Mac M (BiRefNet вместе с MediaPipe, 2,3 к/с):
+  IMG_3647 (65 с, эталон, одно окно 1,68–3,13 с): до — маска 861 с + вырезка 323 с ≈ 20 мин по всем 1963 кадрам;
+    после — 74 кадра (окно ±0,5 с), вся задача 58,5 с, вырезка 4 МБ вместо 109. Край: маска в окне и в запасе
+    совпала с полной маской того же дубля до 0,001/255 (пустая комната та же, разогрева WARM хватает), полоса
+    поверх пурпурного у краёв — та же.
+  IMG_0930 (61 с, голова во весь кадр, страница без вырезки): до — ~18,5 мин впустую (1849 кадров: ~13,4 мин маски
+    и ~5 мин вырезки по скорости IMG_3647); после — решение need за 0,5 с, маска не считается.
+  У партитур последних роликов окна занимают 0–24% длины (IMG_3651 — 20,6 с из 86), у page.py пачки 1790–1827 —
+    25–73%: там выигрыш меньше, но и там счёт идёт только по окнам.
+
+  .venv/bin/python scripts/matte.py --need IMG_3279                              # нужна ли маска (без счёта)
+  .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --windows page       # по окнам страницы — так монтируем
+  .venv/bin/python scripts/matte.py work/IMG_3279/aroll.mp4 --cutout             # по всему дублю, как до 22.10
 """
 import argparse
+import json
+import math
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -56,7 +74,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host
 import models
-from common import ffmpeg_bin, probe
+from common import ROOT, ffmpeg_bin, ffprobe_bin, probe
 from common import require_queue
 
 
@@ -69,6 +87,12 @@ NOISE_FLOOR = 4 / 255   # отличие от комнаты меряется в
 HAND_REACH = 0.25       # доля ширины кадра: кисть с банкой и микрофоном — ближе комнату не собираем
 HAND_MIN_AREA = 0.0015  # пятно кожи меньше этой доли кадра — шум, а не кисть
 ZOOM_SIDE = 0.55        # квадрат второго взгляда вокруг кисти — доля ширины кадра
+PAD = 0.5               # с: маска по окну вырезки с запасом по краям — окно сдвинули чуть-чуть, считать заново не надо
+WARM = 8                # кадров: модель смотрит их перед куском (покой края, доверие комнате), в маску они не идут
+HEAD_ROOM_MIN = 60      # px строк поля «за спиной», свободных от головы: меньше — тексту за спиной встать негде
+# кодек вырезки: и кусков по окнам, и прозрачных вставок между ними — одни параметры, иначе concat не склеит
+VP9 = ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24", "-deadline", "good",
+       "-cpu-used", "5", "-row-mt", "1", "-auto-alt-ref", "0"]
 
 
 class Plate:
@@ -615,8 +639,24 @@ def pick_backend(wanted: str) -> tuple:
                          f"в руке она теряет чаще (замер 14.10 в docstring BiRefNetMatte)")
 
 
-def run_matte(video: Path, backend: str, out: Path) -> dict:
+def seek_args(first: int, fps: float) -> list:
+    """Чтение с кадра first: -ss до -i с перекодированием точен по кадру; полкадра назад — от округления меток."""
+    return ["-ss", f"{(first - 0.5) / fps:.6f}"] if first > 0 else []
+
+
+# Сырые кадры — ровно те, что в видео: без этого вывод в rawvideo держит постоянную частоту, и после -ss первый кадр
+# (его метка — полкадра от нуля) ffmpeg порой повторял дважды. Кусок маски IMG_3647 съехал так на кадр: в кадре 35
+# стояла альфа кадра 34, край на движении расходился с человеком (замер 22.10.2026; selfcheck «куски по кадрам»)
+EXACT = ["-fps_mode", "passthrough"]
+
+
+def run_matte(video: Path, backend: str, out: Path, first: int = 0, count: int | None = None,
+              model=None) -> dict:
     """Маска по кадрам в серое видео без потерь (FFV1): основа для вырезки и текста.
+
+    first/count — кусок дубля (окно вырезки, cut_windows): модель сначала смотрит WARM кадров перед ним —
+    покой края (calm) и доверие пустой комнате сходятся, — а пишутся только кадры куска. model — уже готовый
+    движок с собранной комнатой: у всех кусков одна пустая комната из всего дубля, как у полной маски.
 
     Маска пишется во временный файл и встаёт на место только целой. Раньше упавший или
     прерванный прогон оставлял короткую маску под настоящим именем, следующий запуск с
@@ -625,19 +665,22 @@ def run_matte(video: Path, backend: str, out: Path) -> dict:
     """
     info = probe(video)
     width, height = info["width"], info["height"]
-    model = BACKENDS[backend](width, height)
-    note = model.prepare(video, info) if hasattr(model, "prepare") else ""
-    if note:
-        print(f"     {note}", flush=True)
+    if model is None:
+        model = BACKENDS[backend](width, height)
+        note = model.prepare(video, info) if hasattr(model, "prepare") else ""
+        if note:
+            print(f"     {note}", flush=True)
+    warm = min(WARM, first) if count is not None else 0
     frame_bytes = width * height * 4
-    expected = round(info["duration"] * info["fps"])
+    expected = count if count is not None else round(info["duration"] * info["fps"])
     part = out.with_name(f".{out.stem}.part{out.suffix}")
     # stderr ffmpeg — в файлы, а не в канал, который никто не читает: на битом исходнике
     # ffmpeg упирался бы в полный канал и вставал, а с ним и вся очередь
     reader_err, writer_err = tempfile.TemporaryFile(), tempfile.TemporaryFile()
 
     reader = subprocess.Popen(
-        [ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
+        [ffmpeg_bin(), "-v", "error", *seek_args(first - warm, info["fps"]), "-i", str(video), "-an", *EXACT,
+         *(["-frames:v", str(warm + count)] if count is not None else []),
          "-pix_fmt", "rgba", "-f", "rawvideo", "-"],
         stdout=subprocess.PIPE, stderr=reader_err)
     writer = subprocess.Popen(
@@ -650,17 +693,21 @@ def run_matte(video: Path, backend: str, out: Path) -> dict:
         err.seek(0)
         return err.read().decode(errors="replace")[-500:]
 
-    started, count = time.time(), 0
+    started, count_done, seen = time.time(), 0, 0
     try:
         try:
             while True:
                 rgba = reader.stdout.read(frame_bytes)
                 if len(rgba) < frame_bytes:
                     break
-                writer.stdin.write(model(rgba).tobytes())
-                count += 1
-                if count % 300 == 0:
-                    print(f"     {count} кадров, {count / (time.time() - started):.1f} к/с", flush=True)
+                alpha = model(rgba)
+                seen += 1
+                if seen <= warm:                      # разогрев: модель видела кадр, в маску он не идёт
+                    continue
+                writer.stdin.write(alpha.tobytes())
+                count_done += 1
+                if count_done % 300 == 0:
+                    print(f"     {count_done} кадров, {count_done / (time.time() - started):.1f} к/с", flush=True)
         finally:
             reader.stdout.close()
             reader.wait()
@@ -668,10 +715,11 @@ def run_matte(video: Path, backend: str, out: Path) -> dict:
             writer.wait()
         if writer.returncode != 0:
             raise RuntimeError(f"ffmpeg не записал маску:\n{tail(writer_err)}")
-        if count == 0:
+        if count_done == 0:
             raise RuntimeError(f"Из {video.name} не прочитано ни одного кадра")
-        if count < expected * 0.98 - 2:
-            raise RuntimeError(f"Маска короче дубля: {count} кадров из {expected} — чтение "
+        short = count_done != expected if count is not None else count_done < expected * 0.98 - 2
+        if short:
+            raise RuntimeError(f"Маска короче дубля: {count_done} кадров из {expected} — чтение "
                                f"{video.name} оборвалось:\n{tail(reader_err)}")
         part.replace(out)
     finally:
@@ -679,7 +727,7 @@ def run_matte(video: Path, backend: str, out: Path) -> dict:
         reader_err.close()
         writer_err.close()
     spent = time.time() - started
-    return {"frames": count, "seconds": spent, "fps": count / spent}
+    return {"frames": count_done, "seconds": spent, "fps": count_done / spent, "model": model}
 
 
 def foreground_plane(plane: np.ndarray, alpha: np.ndarray, size: int) -> np.ndarray:
@@ -725,8 +773,20 @@ def cutout_frame(yuv: bytes, mask: bytes, width: int, height: int) -> bytes:
                      foreground_plane(v, alpha_c, 21).tobytes(), a.tobytes()))
 
 
-def make_cutout(video: Path, matte: Path, out: Path) -> Path:
+def vp9_tags(info: dict) -> str:
+    """Метки цвета дубля на сами кадры вырезки (setparams), см. make_cutout."""
+    params = []
+    for name, key, default in (("colorspace", "matrix", "bt709"), ("color_primaries", "primaries", "bt709"),
+                               ("color_trc", "transfer", "bt709"), ("range", "range", "tv")):
+        value = info.get(key) or default
+        params.append(f"{name}={default if value in ('unknown', 'reserved') else value}")
+    return "setparams=" + ":".join(params)
+
+
+def make_cutout(video: Path, matte: Path, out: Path, first: int = 0, count: int | None = None) -> Path:
     """Человек без фона: видео + маска → VP9 с прозрачностью, его понимает браузер.
+
+    first/count — кусок дубля (окно вырезки): маска matte — ровно этого куска, видео читается с кадра first.
 
     Это слой поверх текста «за спиной» и поверх подменённого фона. Цвет края чистится от старого
     фона (foreground_plane): раньше кадр брался как есть, и полупрозрачный край нёс серый занавес
@@ -741,18 +801,13 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
     if width % 2 or height % 2:
         raise RuntimeError(f"Размер {width}×{height} нечётный — yuv420p так не умеет")
     frame_bytes = width * height * 3 // 2
-    expected = round(info["duration"] * info["fps"])
+    expected = count if count is not None else round(info["duration"] * info["fps"])
     threads = max(1, (os.cpu_count() or 4) - 5)
     # цвет — как у дубля: кодеку отдаются сырые плоскости, метки ставятся на сами кадры (setparams). Метка
     # «-colorspace bt709» на выходе при сырых кадрах без меток заставляла ffmpeg 8 пересчитать их как bt601 → bt709:
     # вырезка темнее и холоднее дубля (Y −2,4…−3,5), и в окнах вырезки цвет на человеке скакал, а по краю шёл
     # контур (19.10.2026, Валера: «то я одного цвета, то другого»). Проверка — selfcheck, «вырезка в цветах дубля»
-    params = []
-    for name, key, default in (("colorspace", "matrix", "bt709"), ("color_primaries", "primaries", "bt709"),
-                               ("color_trc", "transfer", "bt709"), ("range", "range", "tv")):
-        value = info.get(key) or default
-        params.append(f"{name}={default if value in ('unknown', 'reserved') else value}")
-    tags = ["-vf", "setparams=" + ":".join(params)]
+    tags = ["-vf", vp9_tags(info)]
     part = out.with_name(f".{out.stem}.part{out.suffix}")     # на место — только целое
     errs = [tempfile.TemporaryFile() for _ in range(3)]
 
@@ -760,23 +815,22 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
         err.seek(0)
         return err.read().decode(errors="replace")[-600:]
 
-    reader = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(video), "-an",
+    reader = subprocess.Popen([ffmpeg_bin(), "-v", "error", *seek_args(first, info["fps"]), "-i", str(video), "-an",
+                               *EXACT, *(["-frames:v", str(count)] if count is not None else []),
                                "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"],
                               stdout=subprocess.PIPE, stderr=errs[0])
     # маска с обычного дубля под дубль для страницы покрупнее (prep.py --hq): растягивается плавно —
     # от неё зависит только край, детали лица и волос идут из самого видео
     fit = [] if (probe(matte)["width"], probe(matte)["height"]) == (width, height) else \
         ["-vf", f"scale={width}:{height}:flags=bicubic"]
-    masks = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(matte), *fit,
+    masks = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-i", str(matte), *fit, *EXACT,
                               "-pix_fmt", "gray", "-f", "rawvideo", "-"],
                              stdout=subprocess.PIPE, stderr=errs[1])
     writer = subprocess.Popen([
         ffmpeg_bin(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "yuva420p",
         "-s", f"{width}x{height}", "-r", f"{info['fps']:g}", "-i", "-",
-        "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "24",
-        "-deadline", "good", "-cpu-used", "5", "-row-mt", "1", "-threads", str(threads),
-        "-auto-alt-ref", "0", *tags, str(part)], stdin=subprocess.PIPE, stderr=errs[2])
-    count, left = 0, 0
+        *VP9, "-threads", str(threads), *tags, str(part)], stdin=subprocess.PIPE, stderr=errs[2])
+    done, left = 0, 0
     try:
         try:
             while True:
@@ -786,7 +840,7 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
                     left = len(yuv) // frame_bytes + len(mask) // (width * height)
                     break
                 writer.stdin.write(cutout_frame(yuv, mask, width, height))
-                count += 1
+                done += 1
         except BrokenPipeError:
             pass                                      # кодек упал — причина ниже, из его вывода
         finally:
@@ -800,8 +854,8 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
             writer.wait()
         if writer.returncode != 0:
             raise RuntimeError(f"Не собралось прозрачное видео:\n{tail(errs[2])}")
-        if count < expected * 0.98 - 2 or left:
-            raise RuntimeError(f"Вырезка не совпала с дублем по длине: {count} кадров из {expected} — "
+        if (done != expected if count is not None else done < expected * 0.98 - 2) or left:
+            raise RuntimeError(f"Вырезка не совпала с дублем по длине: {done} кадров из {expected} — "
                                f"маска {matte.name} от другого или оборванного дубля, пересчитай её "
                                f"(matte.py без --cutout)\n{tail(errs[0])}{tail(errs[1])}")
         part.replace(out)
@@ -812,25 +866,396 @@ def make_cutout(video: Path, matte: Path, out: Path) -> Path:
     return out
 
 
+# ---------------------------------------------------------------- маска только там, где её видно (22.10.2026)
+#
+# Валера 22.10.2026: «вырезка самое долгое из всего процесса, мб ИИ будет определять кусочки, где надо вырезать, и там
+# вырезать?» и про IMG_0930: «за головой у человека нет места — она во весь экран». Вырезку видно только в окнах
+# «человек поверх» (#cam-fg страницы), а считалась она по всему дублю ДО страницы — 15 мин маски и 5 мин вырезки на
+# минуту, и у IMG_0930 (страница cutout=False) впустую целиком. Теперь:
+#   need()        — до страницы: нужна ли маска ролику вообще (стиль, место над головой). Нет — страница без вырезки;
+#   stem_windows() — после страницы: окна «человек поверх» со страниц ролика (основной и вариантов A/B);
+#   cut_windows() — маска и вырезка только по окнам с запасом PAD: каждый кусок своим вызовом ffmpeg (чтение с кадра,
+#                   ровно его кадры), прозрачное между ними — повтор готовых прозрачных кусков, всё склеивает concat-
+#                   демуксер копированием (инвариант 1: память не зависит ни от длины, ни от числа окон). Пустая комната
+#                   — по-прежнему из всего дубля (prepare: PLATE_SAMPLES кадров по всей длине), перед каждым куском модель
+#                   разогревается WARM кадрами. Готовые куски лежат в <видео>.pieces/: окно сдвинули — досчитывается
+#                   только новое. Что посчитано — <видео>.cutout.json (кадры), его копирует compose, а verify_page
+#                   громко не пускает страницу, где человек поверх, а маски под ним нет.
+
+FG_LINE = re.compile(r'(\[[\[\]\d.,\s]*\])\s*\.forEach\(\(\[a, b\]\) => \{ tl\.set\("#cam-fg"')
+
+
+def page_windows(page: str) -> list:
+    """Окна «человек поверх» страницы [(от, до)] — строка, которую пишет kit._page (единственное место)."""
+    found = FG_LINE.search(page)
+    return [(float(a), float(b)) for a, b in json.loads(found.group(1))] if found else []
+
+
+def stem_windows(stem: str) -> list:
+    """Окна вырезки всех страниц ролика: основной и вариантов A/B — вырезка у них одна (assets/cutout.webm)."""
+    studio = ROOT / "studio"
+    pages = [studio / stem / "index.html", *sorted(studio.glob(f"{stem}--*/index.html"))]
+    merged = []
+    for a, b in sorted(w for page in pages if page.exists() for w in page_windows(page.read_text(encoding="utf-8"))):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    return merged
+
+
+def head_room(track: list) -> float | None:
+    """Сколько px строк поля «за спиной» (blueprint.BOXES["behind"]) голова закрывает не больше чем на треть ширины —
+    в лучшие 10% ролика. track — verify_page.face_track: лицо по слежению с камерой; голова — как у verify_page и
+    аналитика: 0,2 высоты лица на волосы, по 0,15 ширины с боков. Слежения нет — None.
+
+    Замер 22.10.2026: IMG_0930 (волосы у верхнего края) — 0 px; ролики с текстом за спиной IMG_3303 — 91, IMG_3292 —
+    125, IMG_3651 — 127, IMG_3647 — 153, IMG_3645 — 197, IMG_1803 — 288."""
+    import blueprint
+    if not track:
+        return None
+    left, top, width, height = blueprint.BOXES["behind"]
+    free = []
+    for _, x0, y0, x1, y1 in track:
+        w, h = x1 - x0, y1 - y0
+        cover = (min(x1 + 0.15 * w, left + width) - max(x0 - 0.15 * w, left)) / width
+        free.append(height if cover <= 1 / 3 else float(np.clip(y0 - 0.2 * h - top, 0, height)))
+    return float(np.percentile(free, 90))
+
+
+def need(stem: str, variant: str | None = None) -> tuple:
+    """(нужна ли ролику маска, почему) — решение до страницы: аналитик и режиссёр не ставят текст за спину, если маски
+    не будет, а пустой страницы маска не считается.
+
+    Маска нужна только под человека поверх графики (текст за спиной, подменённый фон). Не нужна, если стиль ролика без
+    вырезки (presets/styles → graphics.cutout) или если за спиной тексту негде встать: голова закрывает поле «за спиной»
+    почти целиком (head_room < HEAD_ROOM_MIN). «Нужна» — ещё не счёт: считается только то, что окажется в окнах страницы.
+    """
+    import compose
+    style = compose.ruling_style(stem, variant)
+    if style:
+        graphics = style["params"]["graphics"]
+        if not graphics.get("cutout"):
+            return False, f"стиль «{style['name']}» без вырезки (graphics.cutout)"
+        if not graphics.get("behind_text"):
+            return True, f"стиль «{style['name']}» подменяет фон — маска по окнам страницы"
+    import verify_page
+    room = head_room(verify_page.face_track(compose.STUDIO / compose.project_name(stem, variant)))
+    if room is None:
+        return True, "слежения за лицом нет — решат окна страницы"
+    if room < HEAD_ROOM_MIN:
+        return False, (f"за спиной тексту негде встать: голова закрывает поле «за спиной» почти целиком — свободно "
+                       f"{room:.0f} px строк даже в лучшие моменты (нужно от {HEAD_ROOM_MIN})")
+    return True, f"над головой до {room:.0f} px свободных строк — маска по окнам страницы"
+
+
+def frame_ranges(windows: list, fps: float, frames: int, pad: float = PAD) -> list:
+    """Окна в секундах → куски кадров [[от, до)) с запасом pad; соседние ближе WARM кадров — одним куском
+    (промежуток короче разогрева дешевле посчитать, чем разогревать модель заново)."""
+    spans = sorted((max(0, math.floor((a - pad) * fps)), min(frames, math.ceil((b + pad) * fps))) for a, b in windows)
+    merged = []
+    for f0, f1 in spans:
+        if f1 <= f0:
+            continue
+        if merged and f0 <= merged[-1][1] + WARM:
+            merged[-1][1] = max(merged[-1][1], f1)
+        else:
+            merged.append([f0, f1])
+    return merged
+
+
+def subtract(ranges: list, have: list) -> list:
+    """Части ranges, которых нет в have (оба — [[от, до)) по возрастанию)."""
+    out = []
+    for f0, f1 in ranges:
+        for h0, h1 in have:
+            if h1 <= f0 or h0 >= f1:
+                continue
+            if h0 > f0:
+                out.append([f0, h0])
+            f0 = max(f0, h1)
+        if f1 > f0:
+            out.append([f0, f1])
+    return out
+
+
+def frame_count(video: Path) -> int:
+    """Видеокадров в файле — по пакетам, без декодирования. Длительность контейнера не годится: у дубля её задаёт
+    и звук (IMG_3647: 65,5 с — 1965 «кадров», а видеокадров 1963)."""
+    out = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
+                          "stream=nb_read_packets", "-of", "csv=p=0", str(video)], capture_output=True, encoding="utf-8")
+    try:
+        return int(out.stdout.strip())
+    except ValueError:
+        raise RuntimeError(f"не прочитал число кадров {video.name}: {out.stderr.strip()[-300:]}") from None
+
+
+def identity(video: Path) -> dict:
+    stat = video.stat()
+    return {"size": stat.st_size, "mtime": stat.st_mtime_ns}
+
+
+def state_path(video: Path) -> Path:
+    return video.with_name(f"{video.stem}.cutout.json")
+
+
+def load_state(video: Path) -> dict | None:
+    """Что уже посчитано для этого дубля (cut_windows); дубль пересобран — None: старые куски не годятся."""
+    path = state_path(video)
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return state if state.get("video") == identity(video) else None
+
+
+def coverage(state: dict | None, fps: float) -> list | None:
+    """Где вырезка посчитана, в секундах [(от, до)]; None — вся (полная маска или старая вырезка без cutout.json)."""
+    if state is None or state.get("full"):
+        return None
+    return [(f0 / fps, f1 / fps) for f0, f1 in state.get("ranges") or []]
+
+
+def _concat(entries: list, out: Path, fps: float) -> None:
+    """Куски [(файл, кадров)] одним файлом: concat-демуксер, копированием — без перекодирования и без графа."""
+    listing = out.with_name(f".{out.stem}.concat.txt")
+    part = out.with_name(f".{out.stem}.part{out.suffix}")
+    lines = ["ffconcat version 1.0"]
+    for path, frames in entries:
+        lines += [f"file '{str(path).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'",
+                  f"duration {frames / fps:.6f}"]
+    listing.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        done = subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                               "-c", "copy", str(part)], capture_output=True, encoding="utf-8", errors="replace")
+        if done.returncode != 0:
+            raise RuntimeError(f"concat не склеил куски {out.name}:\n{done.stderr[-500:]}")
+        want = sum(frames for _, frames in entries)
+        got = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
+                              "stream=nb_read_packets", "-of", "csv=p=0", str(part)],
+                             capture_output=True, encoding="utf-8").stdout.strip()
+        if got != str(want):
+            raise RuntimeError(f"склейка {out.name}: {got or '?'} кадров вместо {want}")
+        part.replace(out)
+    finally:
+        listing.unlink(missing_ok=True)
+        part.unlink(missing_ok=True)
+
+
+def _clear(info: dict, frames: int, out: Path) -> Path:
+    """Прозрачный кусок в frames кадров — в тех же метках цвета и параметрах кодека, что и вырезка."""
+    graph = (f"color=c=black@0:s={info['width']}x{info['height']}:r={info['fps']:g},format=yuva420p,"
+             f"{vp9_tags(info)}")
+    done = subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", graph, "-frames:v", str(frames),
+                           *VP9, "-threads", "2", str(out)], capture_output=True, encoding="utf-8", errors="replace")
+    if done.returncode != 0:
+        raise RuntimeError(f"не собрался прозрачный кусок:\n{done.stderr[-400:]}")
+    return out
+
+
+def _assemble(pieces: Path, prefix: str, ranges: list, total: int, info: dict, out: Path) -> None:
+    """Вырезка во всю длину дубля: куски по окнам, между ними прозрачно. Прозрачное — повтор двух готовых кусков
+    (секунда и кадр): кодировать минуту пустоты — 16 с машины, повторить готовое — ничего."""
+    unit = max(1, round(info["fps"]))
+    second, frame = pieces / f".clear-{unit}.webm", pieces / ".clear-1.webm"
+    try:
+        entries, pos = [], 0
+        for f0, f1 in [*ranges, [total, total]]:
+            gap = f0 - pos
+            if gap >= unit and not second.exists():
+                _clear(info, unit, second)
+            if gap % unit and not frame.exists():
+                _clear(info, 1, frame)
+            entries += [(second, unit)] * (gap // unit) + [(frame, 1)] * (gap % unit)
+            if f1 > f0:
+                entries.append((pieces / f"{prefix}-{f0}-{f1}.webm", f1 - f0))
+            pos = f1
+        _concat(entries, out, info["fps"])
+    finally:
+        second.unlink(missing_ok=True)
+        frame.unlink(missing_ok=True)
+
+
+def _merge_pieces(pieces: Path, ranges: list, prefixes: list, fps: float) -> list:
+    """Соседние куски (досчитанный край к готовому) — одним файлом каждого вида: кусок = непрерывный кусок кадров."""
+    merged = []
+    for f0, f1 in sorted(ranges):
+        if merged and f0 == merged[-1][-1][1]:
+            merged[-1].append([f0, f1])
+        else:
+            merged.append([[f0, f1]])
+    out = []
+    for run in merged:
+        f0, f1 = run[0][0], run[-1][1]
+        if len(run) > 1:
+            for prefix, ext in prefixes:
+                parts = [pieces / f"{prefix}-{a}-{b}{ext}" for a, b in run]
+                if all(p.exists() for p in parts):
+                    _concat([(p, b - a) for p, (a, b) in zip(parts, run)], pieces / f"{prefix}-{f0}-{f1}{ext}", fps)
+                    for p in parts:
+                        p.unlink()
+        out.append([f0, f1])
+    return out
+
+
+def cut_windows(video: Path, windows: list, backend: str, hq: Path | None = None, fresh: bool = False) -> dict:
+    """Маска и вырезка только по окнам: <видео>.cutout.webm во всю длину, прозрачный вне окон (с запасом PAD).
+
+    hq — дубль покрупнее (prep.py --hq): его вырезка режется той же маской тех же кусков (<hq>.cutout.webm).
+    Посчитанное раньше (тот же дубль, тот же движок) не считается заново. → что сделано, для вывода.
+    """
+    info = probe(video)
+    fps, total = info["fps"], frame_count(video)
+    pieces = video.with_name(f"{video.stem}.pieces")
+    state = None if fresh else load_state(video)
+    legacy = video.with_name(f"{video.stem}.matte_{backend}.mkv")
+    if state is None and not fresh and not state_path(video).exists() and legacy.exists() \
+            and legacy.stat().st_mtime >= video.stat().st_mtime and video.with_name(f"{video.stem}.cutout.webm").exists():
+        state = {"full": True}                        # полная вырезка до 22.10.2026: окна она и так покрывает
+    if state and state.get("full"):
+        return {"ranges": [[0, total]], "computed": 0, "seconds": 0.0, "full": True}
+    if state and state.get("backend") != backend:
+        state = None                                  # решение «не нужна» или другой движок — с чистого листа
+    if state is None and pieces.exists():
+        shutil.rmtree(pieces)                         # куски старого дубля или другого движка
+    pieces.mkdir(exist_ok=True)
+    have = (state or {}).get("ranges") or []
+    todo = subtract(frame_ranges(windows, fps, total), have)
+    started, note, model = time.time(), "", None
+    for f0, f1 in todo:
+        if model is None:
+            model = BACKENDS[backend](info["width"], info["height"])
+            note = model.prepare(video, info) if hasattr(model, "prepare") else ""
+            if note:
+                print(f"     {note}", flush=True)
+        mask = pieces / f"mask-{f0}-{f1}.mkv"
+        run_matte(video, backend, mask, first=f0, count=f1 - f0, model=model)
+        make_cutout(video, mask, pieces / f"cut-{f0}-{f1}.webm", first=f0, count=f1 - f0)
+        print(f"     окно {f0 / fps:.2f}–{f1 / fps:.2f} с: {f1 - f0} кадров", flush=True)
+    spent_matte = time.time() - started
+    kinds = [("mask", ".mkv"), ("cut", ".webm"), ("hq", ".webm")]
+    done = _merge_pieces(pieces, have + todo, kinds, fps)
+    rebuilt = {"cut": bool(todo) or state is None}
+    if hq:
+        if (state or {}).get("hq") != identity(hq):   # hq пересобран — его куски от старого
+            for old in pieces.glob("hq-*.webm"):
+                old.unlink()
+        rebuilt["hq"] = False
+        for f0, f1 in done:
+            if not (pieces / f"hq-{f0}-{f1}.webm").exists():
+                make_cutout(hq, pieces / f"mask-{f0}-{f1}.mkv", pieces / f"hq-{f0}-{f1}.webm", first=f0, count=f1 - f0)
+                rebuilt["hq"] = True
+        keep = {f"hq-{f0}-{f1}.webm" for f0, f1 in done}
+        for old in pieces.glob("hq-*.webm"):          # куски hq, не слитые с соседями, — уже посчитаны заново целиком
+            if old.name not in keep:
+                old.unlink()
+    for src, prefix in [(video, "cut")] + ([(hq, "hq")] if hq else []):
+        out = src.with_name(f"{src.stem}.cutout.webm")
+        if rebuilt[prefix] or not out.exists():
+            _assemble(pieces, prefix, done, total, info if src == video else probe(src), out)
+    record = {"video": identity(video), "backend": backend, "fps": fps, "frames": total, "ranges": done,
+              "windows": [list(w) for w in windows], "plate": note or (state or {}).get("plate", ""),
+              **({"hq": identity(hq)} if hq else {})}
+    state_path(video).write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    return {"ranges": done, "computed": sum(b - a for a, b in todo), "seconds": time.time() - started,
+            "matte_seconds": spent_matte, "full": False}
+
+
+def record_skip(video: Path, why: str) -> None:
+    """Маска ролику не нужна — записать решение (студия, отчёт): страница идёт без вырезки."""
+    info = probe(video)
+    state_path(video).write_text(json.dumps({"video": identity(video), "fps": info["fps"],
+                                             "frames": frame_count(video), "ranges": [],
+                                             "skipped": why}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+def parse_windows(spec: str, video: Path) -> list:
+    """--windows: page — окна страниц ролика (work/<имя>/aroll.mp4 → studio/<имя>…), или «1.5-3.2,10-12.4»."""
+    if spec == "page":
+        if video.parent.parent.name != "work":
+            sys.exit(f"  ✗ --windows page — для дубля work/<имя>/aroll.mp4, а не {video}")
+        return stem_windows(video.parent.name)
+    try:
+        return [tuple(float(x) for x in part.split("-")) for part in spec.split(",") if part.strip()]
+    except ValueError:
+        sys.exit(f"  ✗ --windows: page или «от-до,от-до» в секундах дубля, а не {spec!r}")
+
+
 def main():
-    require_queue("маска человека")
     ap = argparse.ArgumentParser(description="Маска человека по кадрам")
-    ap.add_argument("video")
+    ap.add_argument("video", nargs="?")
     ap.add_argument("--backend", choices=["auto", *sorted(BACKENDS)], default="auto",
                     help="auto — BiRefNet на видеочипе, без него MediaPipe")
     ap.add_argument("--out", help="куда положить маску (по умолчанию рядом с видео)")
     ap.add_argument("--cutout", action="store_true",
                     help="ещё и собрать человека без фона (.cutout.webm) из готовой маски")
+    ap.add_argument("--windows", metavar="page|ОТ-ДО,…",
+                    help="маска и вырезка только по окнам «человек поверх» (с запасом 0,5 с): page — со страниц ролика")
+    ap.add_argument("--fresh", action="store_true", help="с --windows: посчитанные куски не брать, считать заново")
+    ap.add_argument("--need", metavar="ИМЯ", help="только решение: нужна ли ролику маска и где окна — без счёта")
     ap.add_argument("--yes", action="store_true",
                     help="согласие на маску дольше пяти минут (BiRefNet на длинном дубле)")
     args = ap.parse_args()
 
+    if args.need:                                     # лёгкое: ни модели, ни кадров — мимо очереди
+        ok, why = need(args.need)
+        windows = stem_windows(args.need)
+        print(f"  {'→ маска нужна' if ok else '→ маска не нужна'}: {why}")
+        if windows:
+            span = sum(b - a for a, b in windows)
+            print(f"  → окна «человек поверх» на страницах: {len(windows)}, {span:.1f} с — "
+                  f"{', '.join(f'{a:.2f}–{b:.2f}' for a, b in windows[:8])}{' …' if len(windows) > 8 else ''}")
+        else:
+            print("  → окон «человек поверх» на страницах нет — маска не считается")
+        return
+    require_queue("маска человека")
+    if not args.video:
+        ap.error("укажи видео (work/<имя>/aroll.mp4) или --need <имя>")
     video = Path(args.video).resolve()
     if not video.exists():
         sys.exit(f"Нет файла: {video}")
     backend, why = pick_backend(args.backend)
     if why:
         print(f"  ⚠ {why}", flush=True)
+
+    if args.windows:
+        if video.name.endswith(".hq.mp4"):
+            sys.exit(f"  ✗ по окнам маска считается по обычному дублю ({video.name.replace('.hq', '')}): "
+                     f"вырезка hq режется ею же заодно")
+        windows = parse_windows(args.windows, video)
+        if not windows:
+            note = "на страницах ролика нет окон «человек поверх»" if args.windows == "page" else "окон нет"
+            record_skip(video, note)
+            print(f"  → маска не нужна: {note} — страница без вырезки, считать нечего")
+            return
+        info = probe(video)
+        fps, total = info["fps"], frame_count(video)
+        state = None if args.fresh else load_state(video)
+        have = (state or {}).get("ranges") or [] if (state or {}).get("backend") == backend else []
+        todo = subtract(frame_ranges(windows, fps, total), have)
+        frames = sum(b - a for a, b in todo) + WARM * len(todo) + (PLATE_SAMPLES if todo else 0)
+        eta = needs_consent(backend, frames)
+        agreed = project_consent(video) if eta and not args.yes else None
+        if eta and not args.yes and not agreed:
+            sys.exit(f"  ✗ Маска BiRefNet по окнам ({frames} кадров) — примерно {eta / 60:.0f} мин счёта. "
+                     f"Так и хотел — добавь --yes.")
+        hq = video.with_name(f"{video.stem}.hq.mp4")
+        hq = hq if hq.exists() else None
+        span = sum(b - a for a, b in todo) / fps
+        print(f"  → маска {backend} по окнам: {len(windows)} окон, считать {span:.1f} с из {total / fps:.1f} с"
+              + (" (+ вырезка hq)" if hq else ""), flush=True)
+        try:
+            done = cut_windows(video, windows, backend, hq=hq, fresh=args.fresh)
+        except RuntimeError as e:
+            sys.exit(f"  ✗ {e}")
+        if done["full"]:
+            print("  → у дубля полная вырезка — окна покрыты, считать нечего")
+            return
+        covered = sum(b - a for a, b in done["ranges"]) / fps
+        print(f"  → вырезка по окнам: {covered:.1f} с из {total / fps:.1f} с, посчитано {done['computed']} кадров "
+              f"за {done['seconds']:.0f} с (маска {done['matte_seconds']:.0f} с) → {video.stem}.cutout.webm")
+        return
+
     out = Path(args.out).resolve() if args.out else video.with_name(
         f"{video.stem}.matte_{backend}.mkv")
     if out.suffix.lower() != ".mkv":
@@ -849,7 +1274,8 @@ def main():
             sys.exit(f"  ✗ Маска BiRefNet для {info['duration']:.0f} с видео — примерно {eta / 60:.0f} мин счёта "
                      f"(видеочип и ~1,5 ядра, машина остаётся живой).\n"
                      f"    Так и хотел — добавь --yes. Быстрее (~{eta / 60 * BIREFNET_FPS / 4.7:.0f} мин) — "
-                     f"--backend mediapipe: банку и микрофон в руке он теряет чаще.")
+                     f"--backend mediapipe: банку и микрофон в руке он теряет чаще. Нужна ли маска целиком? "
+                     f"По окнам страницы — --windows page.")
         print(f"  → маска: {backend}" + (f", оценка ~{eta / 60:.0f} мин" if eta else ""), flush=True)
         try:
             stats = run_matte(video, backend, out)
@@ -862,6 +1288,9 @@ def main():
         cutout = make_cutout(video, out, video.with_name(f"{video.stem}.cutout.webm"))
         print(f"  → без фона за {time.time() - started:.0f} с → {cutout.name} "
               f"({cutout.stat().st_size / 1048576:.0f} МБ)")
+        # вся длина: окна любой страницы покрыты (verify_page). Маска с hq-дубля — от обычного: записываем на hq
+        state_path(video).write_text(json.dumps({"video": identity(video), "backend": backend, "full": True},
+                                                ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

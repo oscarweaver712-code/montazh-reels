@@ -429,16 +429,23 @@ def compose(stem: str, seconds: float | None = None, fresh: bool = False,
         (assets / sub).mkdir(parents=True, exist_ok=True)
     # "hq" в edit.json (15.10, IMG_1799): страница берёт дубль и вырезку с запасом под зум камеры —
     # prep.py --hq и matte.make_cutout по нему. Флаг есть, а файлов нет — громкий отказ, не тихая мыльность
+    # Вырезки может не быть вовсе: с 22.10.2026 маска считается после страницы и только по её окнам (matte.py
+    # --windows page). Чего не хватает странице, громко скажет verify_page — по окнам «человек поверх»
     picture, cutout = aroll, work / "aroll.cutout.webm"
     if (load_json(work / "edit.json", {}) or {}).get("hq"):
         picture, cutout = work / "aroll.hq.mp4", work / "aroll.hq.cutout.webm"
-        for need, hint in ((picture, f"prep.py --hq по исходнику {stem}"),
-                           (cutout, f"matte.py work/{stem}/aroll.hq.mp4 --cutout --out <готовая маска>")):
-            if not need.exists():
-                sys.exit(f"✗ в edit.json стоит hq, а {need.relative_to(ROOT)} нет — {hint}")
+        if not picture.exists():
+            sys.exit(f"✗ в edit.json стоит hq, а {picture.relative_to(ROOT)} нет — prep.py --hq по исходнику {stem}")
     copy_if_newer(picture, assets / "aroll.mp4")
     if cutout.exists():
         copy_if_newer(cutout, assets / "cutout.webm")
+        # где вырезка посчитана (matte.cut_windows) — рядом с ней: verify_page сверяет с окнами страницы. Нет записи —
+        # вырезка во всю длину (до 22.10.2026)
+        covered = work / "aroll.cutout.json"
+        if covered.exists():
+            shutil.copy2(covered, assets / "cutout.json")
+        else:
+            (assets / "cutout.json").unlink(missing_ok=True)
     copy_if_newer(VENDOR / "gsap.min.js", assets / "gsap.min.js")
     # все шрифты presets/fonts — жёсткими ссылками, места не занимают: в монтажной шрифт слоя
     # или субтитров меняется на любой из них, и страница должна найти его без пересборки

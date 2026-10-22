@@ -4,10 +4,16 @@
 Мозг студии монтировал ролик одним ходом на 200–300 тыс. токенов ($2–31): сам готовил дубль, писал page.py и гонял
 проверки. Здесь всё, что не требует ума, делает машина, а ИИ — два коротких хода со своей ценой:
 
-  распознавание → события дубля (edit.json) → дубль, слежение, маска → проект   — очередь (инвариант 2)
+  распознавание → события дубля (edit.json) → дубль, слежение → проект             — очередь (инвариант 2)
+  нужна ли маска (matte.need: стиль, место над головой) — до аналитика, ему же в материал
   аналитик: партитура по словам дубля → страница (score.py) → verify_page          — ИИ, ~$0,4–1 за ход
-  критик: лист кадров черновика → правки партитуры                                  — ИИ, ~$0,6
+  маска только по окнам «человек поверх» этой страницы (matte.py --windows page)    — очередь
+  критик: лист кадров черновика → правки партитуры (окна сдвинулись — маска досчитывается) — ИИ, ~$0,6
   рендер → мастеринг → verify_render                                                — очередь
+
+Маска — самый долгий шаг (~15 мин на минуту дубля у BiRefNet). До 22.10.2026 она считалась по всему дублю ДО
+аналитика, а видна только в окнах страницы (у партитур — 0–24% ролика) или не нужна вовсе (IMG_0930: голова во весь
+кадр, страница cutout=False). Теперь сначала страница, потом маска по её окнам; замер — docstring matte.py.
 
 Готовые шаги пропускаются (файлы на месте). Чего машина решить не может (согласие на долгую маску, сорванный дубль),
 автопилот называет и останавливается — громко, с тем, что сделать.
@@ -82,18 +88,27 @@ def prepare(stem: str) -> None:
         steps.append(f"python scripts/track.py work/{stem}/aroll.mp4")
     if steps:
         queued(f"20-prep-{stem}", steps)
-    if not (work / "aroll.cutout.webm").exists():
-        project = projects.of(stem)
-        if not project.config.get("long_matte"):
-            raise Stop(f"маска человека для {stem} — долгий счёт, а согласия проекта нет (project.json → long_matte): "
-                       f"запусти matte.py work/{stem}/aroll.mp4 --cutout --yes сам или включи long_matte")
-        queued(f"25-matte-{stem}", [f"python scripts/matte.py work/{stem}/aroll.mp4 --cutout"], timeout_min=240)
-    if edit.get("hq") and not (work / "aroll.hq.cutout.webm").exists():
-        mattes = sorted(work.glob("aroll.matte_*.mkv"), key=lambda p: p.stat().st_mtime)
-        if not mattes:
-            raise Stop(f"для hq-вырезки нет маски work/{stem}/aroll.matte_*.mkv")
-        queued(f"25-matte-hq-{stem}", [f"python scripts/matte.py work/{stem}/aroll.hq.mp4 --cutout "
-                                       f"--out work/{stem}/{mattes[-1].name}"])
+
+
+def cut_on_windows(stem: str) -> None:
+    """Маска и вырезка только по окнам «человек поверх» страниц ролика — после страницы; потом compose кладёт её в проект.
+    Окон нет — маска не считается, это пишется в итог. Долго (дольше пяти минут) без согласия проекта — стоп."""
+    import compose
+    import matte
+    windows = matte.stem_windows(stem)
+    aroll = WORK_DIR / stem / "aroll.mp4"
+    if not windows:
+        ok, why = matte.need(stem)
+        matte.record_skip(aroll, why if not ok else "на странице нет окон «человек поверх»")
+        print(f"  · маска не считается: {why if not ok else 'на странице нет окон «человек поверх»'}", flush=True)
+        return
+    info = matte.probe(aroll)
+    frames = sum(b - a for a, b in matte.frame_ranges(windows, info["fps"], matte.frame_count(aroll)))
+    if matte.needs_consent("birefnet", frames) and not projects.of(stem).config.get("long_matte"):
+        raise Stop(f"маска по окнам {stem} — {frames} кадров, дольше пяти минут, а согласия проекта нет (project.json → "
+                   f"long_matte): запусти matte.py work/{stem}/aroll.mp4 --windows page --yes сам или включи long_matte")
+    queued(f"25-matte-{stem}", [f"python scripts/matte.py work/{stem}/aroll.mp4 --windows page"], timeout_min=240)
+    compose.compose(stem)
 
 
 def run(stem: str, critic: bool = True, render: bool = True) -> None:
@@ -103,9 +118,13 @@ def run(stem: str, critic: bool = True, render: bool = True) -> None:
     print(f"▶ автопилот {stem}", flush=True)
     prepare(stem)
     compose.compose(stem)                                  # камера и ассеты: сплиту и словам над головой нужно лицо
+    import matte
+    ok, why = matte.need(stem)
+    print(f"  → маска {'по окнам страницы' if ok else 'не нужна'}: {why}", flush=True)
     analyst.run(stem, None)
-    if critic:
-        analyst.critique(stem, None)
+    cut_on_windows(stem)                                   # до критика: на листе кадров человек поверх — настоящий
+    if critic and analyst.critique(stem, None):
+        cut_on_windows(stem)                               # окна сдвинулись — досчитывается только новое
     # ИИ-клипы Flow автопилот не генерирует (это браузер и бонусы подписки) — берёт только уже принятые; правило проекта
     # «ИИ-видео 1–2 на ролик» тогда не выполнено — сказать до рендера, а не молча (AGENTS.md: «чего-то не может — говорит»)
     import score as sc
