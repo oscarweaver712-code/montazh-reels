@@ -1658,6 +1658,62 @@ def check_score(report: Report):
                  f"годная: {'; '.join(errs_good) or 'чисто'}; не поймано: {', '.join(missed) or 'ничего'}")
 
 
+def check_novelty(report: Report):
+    """Каждый ролик — своя идея (21.10.2026, Валера после IMG_3651: «тупо скопировал стиль прошлого удачного видео…
+    каждый раз что-то выдумываем»). Партитура, похожая на недавний ролик проекта (мотив, хук, набор приёмов), без идеи,
+    без своей сцены или с одним приёмом на весь ролик — провал с объяснением; своя сцена режиссёра проверяется по форме
+    (корень, свои id, свои стили, время словами, без часов и ссылок), счётчик — по шагам."""
+    import score as sc
+
+    print("\nКаждый ролик — своя идея")
+    words = [{"word": f"слово{i}", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(80)]
+    scene = {"kind": "scene", "w": [20, 26], "layer": "behind",
+             "html": '<div id="$id" class="g" style="left: 0px; top: 300px;"><svg><path id="$id-l" d="M0 0 L9 9"/></svg></div>',
+             "css": "#$id { color: var(--ds-text); } #$id-l { stroke: var(--ds-acc); }",
+             "js": "enter('#$id', {w:20});\ndraw('#$id-l', {w:22}, 0.5);\nleave('#$id', {e:26});"}
+    fresh = {"concept": {"idea": "цепочка знакомств до героя", "motif": "конверт идёт из рук в руки по карте",
+                         "hook": "лица складываются в цепочку на первом слове"},
+             "items": [{"kind": "count", "w": [2, 9], "steps": [{"text": "100", "w": 2}, {"text": "10 000", "w": 6}]},
+                       {"kind": "write", "w": [12, 15], "layout": "chest", "text": "1967"}, scene,
+                       {"kind": "vertigo", "w": [30, 33]}, {"kind": "strike", "w": [40, 42], "text": "миф"},
+                       {"kind": "wall", "w": [50, 58], "notes": [{"text": "Каринти", "w": 51}]}]}
+    old = {"concept": {"idea": "старый ролик", "motif": "числа мелом на чёрной доске", "hook": "крупное слово"},
+           "items": [{"kind": "word", "w": [1, 2], "text": "хук"}] + [{"kind": "write", "w": [4 * i, 4 * i + 1],
+                                                                        "layout": "chest", "text": "x"} for i in range(2, 8)]}
+    copy = {"concept": {"idea": "то же самое снова", "motif": "числа мелом на чёрной доске", "hook": "крупное слово"},
+            "items": [{"kind": "word", "w": [1, 2], "text": "хук"}, scene] + [
+                {"kind": "write", "w": [30 + 4 * i, 31 + 4 * i], "layout": "chest", "text": "x"} for i in range(6)]}
+    plain = {"items": [{"kind": "write", "w": [4 * i, 4 * i + 1], "layout": "chest", "text": "x"} for i in range(8)]}
+    saved = sc.recent_scores
+    sc.recent_scores = lambda stem, limit=sc.RECENT: [("СТАРЫЙ", old)][:limit]
+    try:
+        got = {name: sc.novelty("ПРОБА", s) for name, s in (("fresh", fresh), ("copy", copy), ("plain", plain))}
+    finally:
+        sc.recent_scores = saved
+    want_copy = {"мотив": "тот же мотив", "набор приёмов как у СТАРЫЙ": "те же приёмы", "хук открыт тем же": "тот же хук"}
+    want_plain = {"concept:": "нет идеи", "однообразно": "один приём", "нет ни одной своей сцены": "нет своей сцены"}
+    missed = [what for key, what in want_copy.items() if not any(key in e for e in got["copy"])] + \
+             [what for key, what in want_plain.items() if not any(key in e for e in got["plain"])]
+    report.check(not got["fresh"] and not missed, "повтор прошлого ролика, ролик без идеи и без своей сцены — провал",
+                 f"свежий: {'; '.join(got['fresh'])[:160] or 'чисто'}; не поймано: {', '.join(missed) or 'ничего'}")
+
+    bad_scenes = {
+        "корень": dict(scene, html='<section id="$id"></section>'),
+        "столкнётся": dict(scene, html='<div id="$id" class="g"><i id="caps"></i></div>'),         # чужой id
+        "url(": dict(scene, css="#$id { background: url(x.png); }"),
+        "селектор": dict(scene, css=".cap { opacity: 0; }"),
+        "своих часов": dict(scene, js="setTimeout(() => 0, 5);"),
+        "номер слова": dict(scene, js="enter('#$id', {w:500});"),
+    }
+    caught = {k: sc.check({"items": [v]}, words) for k, v in bad_scenes.items()}
+    good_errs = sc.check(fresh, words)
+    bad_count = sc.check({"items": [{"kind": "count", "w": [2, 9], "steps": [{"text": "10", "w": 6}, {"text": "1", "w": 3}]}]}, words)
+    leaked = [k for k, errs in caught.items() if not any(k in e for e in errs)]
+    report.check(not good_errs and not leaked and any("по порядку речи" in e for e in bad_count),
+                 "своя сцена режиссёра и счётчик: годные проходят, кривые ловятся до сборки",
+                 f"годная: {'; '.join(good_errs)[:160] or 'чисто'}; не поймано: {', '.join(leaked) or 'ничего'}")
+
+
 def check_blueprint(report: Report, tmp: Path):
     """«Чертёж» (scripts/blueprint.py, 19.10.2026): все приёмы складываются в страницу без ошибок и залипаний; в сплите
     проверка лица видит человека в окне листа (движение #stage не выкидывается из прогона); лист во весь кадр — это
@@ -4719,6 +4775,7 @@ def main():
     section(report, check_pauses)
     section(report, check_captions)
     section(report, check_score)
+    section(report, check_novelty)
     section(report, check_cleanup_on_failure, preset)
     section(report, check_long_runs)
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:

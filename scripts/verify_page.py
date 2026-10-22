@@ -1166,10 +1166,12 @@ def cta_leak(name: str, page_text: str) -> str | None:
     return ""
 
 
-def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
+def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, details: bool = False) -> list:
     """Печатает отчёт по странице; возвращает список провалов (пустой — можно рендерить).
 
     strict — страница идёт в рендер: собранная до норм звука не проходит. Сводка --all — не строгая.
+    details — провал с подробностями (какой элемент, когда, что сделать): аналитику, который чинит партитуру вслепую
+    (21.10.2026: IMG_3651 получал одни заголовки и третьим ходом сломал то, что работало).
     """
     project = Path(stem_or_dir)
     if not project.is_dir():
@@ -1179,14 +1181,14 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True) -> list:
         raise FileNotFoundError(f"Нет страницы {page_path}")
     failed = []
 
-    def check(ok: bool, title: str, details: list = ()):
+    def check(ok: bool, title: str, lines: list = ()):
         print(f"  {'✓' if ok else '✗'} {title}")
-        for line in list(details)[:8]:
+        for line in list(lines)[:8]:
             print(f"      {line}")
-        if len(details) > 8:
-            print(f"      … и ещё {len(details) - 8}")
+        if len(lines) > 8:
+            print(f"      … и ещё {len(lines) - 8}")
         if not ok:
-            failed.append(title)
+            failed.append(title + ("".join(f"\n    {line}" for line in list(lines)[:8]) if details else ""))
 
     print(f"Страница {project.name}")
     page_text = page_path.read_text(encoding="utf-8")

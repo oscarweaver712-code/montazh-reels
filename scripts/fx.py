@@ -39,6 +39,18 @@ THEMES = {
         "RANSOM": [("#1F3FA8", "#fff", "'InterX'"), ("#fff", "#141210", "'Cormorant'"), ("#141210", "#fff", "'JBMono'"),
                    ("#F5E15A", "#141210", "'InterX'"), ("#C8291F", "#fff", "'Cormorant'")],
         "MARKS": ["#fff", "#FF8FB1", "#F5E15A", "#fff"],
+        "PHONE_BODY": "#0E0F12",
+        "PHONE_EDGE": "#2A2C31",
+        "PHONE_SCREEN": "linear-gradient(180deg, #17181C, #0F1013)",
+        "BUBBLE_BG": "#24262C",
+        "BUBBLE_INK": "#EDEDED",
+        "ORB_INK": "#fff",
+        "ORB_BG": "linear-gradient(160deg, #2C2F38, #121318)",
+        "COUNT_FONT": '"Cormorant"',
+        "CLINE_FONT": '"Cormorant"',
+        "MONO": '"JBMono", monospace',
+        "GRID": "rgba(120,140,190,0.18)",
+        "SHADE_BG": "#0D0E10",
     },
     # стиль проекта antishkola (projects/antishkola/rules.md п.14, IMG_3303 v5): крем #F2EBDD и красный #F0352C, жёлтого
     # нет; крупное — Oswald заглавными, подвод и мелкое — Manrope, цитаты и номера — Cormorant; без тёмных плашек —
@@ -55,6 +67,18 @@ THEMES = {
         "RANSOM": [("#F0352C", "#F2EBDD", "'Oswald'"), ("#F2EBDD", "#141210", "'Cormorant'"), ("#141210", "#F2EBDD", "'Oswald'"),
                    ("#F2EBDD", "#F0352C", "'Manrope'"), ("#141210", "#F0352C", "'Cormorant'")],
         "MARKS": ["#F2EBDD", "#F0352C", "#F2EBDD", "#F0352C"],
+        "PHONE_BODY": "#0E0F12",
+        "PHONE_EDGE": "#2A2C31",
+        "PHONE_SCREEN": "linear-gradient(180deg, #17181C, #0F1013)",
+        "BUBBLE_BG": "#24262C",
+        "BUBBLE_INK": "#EDEDED",
+        "ORB_INK": "#fff",
+        "ORB_BG": "linear-gradient(160deg, #2C2F38, #121318)",
+        "COUNT_FONT": '"Cormorant"',
+        "CLINE_FONT": '"Cormorant"',
+        "MONO": '"JBMono", monospace',
+        "GRID": "rgba(120,140,190,0.18)",
+        "SHADE_BG": "#0D0E10",
     },
 }
 _theme = {"name": "default"}
@@ -69,9 +93,48 @@ def use(name: str) -> None:
 
 def use_for(stem: str) -> str:
     """Тема из project.json проекта ролика (поле fx_theme). page.py зовёт её первой строкой приёмов — так тема
-    не забывается: у antishkola без неё приёмы вышли бы жёлтыми, а жёлтого в стиле проекта нет (rules.md п.14)."""
+    не забывается: у antishkola без неё приёмы вышли бы жёлтыми, а жёлтого в стиле проекта нет (rules.md п.14).
+    У проекта с дизайн-системой (DESIGN.md) тема — из неё (21.10.2026): verify_page пускает только её цвета и шрифты."""
+    import design
     import projects
-    name = projects.of_or_default(stem).config.get("fx_theme", "default")
+    project = projects.of_or_default(stem)
+    system = design.of(project)
+    if system:
+        return use_design(system)
+    name = project.config.get("fx_theme", "default")
+    use(name)
+    return name
+
+
+def use_design(d) -> str:
+    """Тема приёмов из дизайн-системы проекта (design.Design): только её цвета (любой прозрачности) и шрифты по ролям.
+    Тёмное — «чернила» (plate), светлое — крем (text), акцент — лак, ручка — pen."""
+    from design import _rgba
+    c = d.colors
+    text, plate, pen, accent = c["text"], c["plate"], c.get("pen", c["accent"]), c["accent"]
+    fam = lambda role: f'"{d.family(role)}", sans-serif' if role in d.fonts else f'"{d.family("caption")}", sans-serif'  # noqa: E731
+    head, number, variable = fam("headline"), fam("number"), fam("variable")
+    name = f"design:{d.project}"
+    THEMES[name] = {
+        "ACCENT": accent, "ACCENT_INK": c.get("on-accent", text), "ACCENT_GLOW": _rgba(accent, 0.45),
+        "SANS": fam("caption"), "HEAD": head, "HEAD_CASE": "uppercase", "MAST": variable,
+        "MAST_WEIGHT": str(d.fonts.get("variable", d.fonts["caption"])["weight"]),
+        "PLATE_BG": plate, "PLATE_BORDER": f"1.5px solid {_rgba(text, 0.14)}",
+        "PLATE_RADIUS": str((d.tokens.get("rounded") or {}).get("box", "11px")),
+        "PLATE_TEXT": text, "PLATE_MUTED": _rgba(text, 0.45), "PLATE_LINE": _rgba(text, 0.12),
+        "LIGHT": text, "LIGHT_MUTED": _rgba(text, 0.8), "PAPER": text, "INK": plate, "PIN": pen,
+        "TAPE": _rgba(text, 0.88), "SCRIBBLE": pen, "OK": accent,
+        "SCENE": f"radial-gradient(ellipse at 50% 35%, {_rgba(text, 0.22)} 0%, {_rgba(plate, 0.9)} 60%, {plate} 100%)",
+        "RANSOM": [(accent, text, head), (text, plate, variable), (plate, text, head), (text, accent, number),
+                   (plate, accent, variable)],
+        "MARKS": [text, pen, text, pen],
+        "PHONE_BODY": plate, "PHONE_EDGE": _rgba(text, 0.22),
+        "PHONE_SCREEN": f"linear-gradient(180deg, {_rgba(text, 0.07)}, {plate})",
+        "BUBBLE_BG": _rgba(text, 0.14), "BUBBLE_INK": text, "ORB_INK": text,
+        "ORB_BG": f"linear-gradient(160deg, {_rgba(text, 0.16)}, {plate})",
+        "COUNT_FONT": number, "CLINE_FONT": variable, "MONO": fam("caption"),
+        "GRID": _rgba(plate, 0.12), "SHADE_BG": plate,
+    }
     use(name)
     return name
 
@@ -113,10 +176,10 @@ CSS = {
       .fx-check svg { position: absolute; inset: 0; }
 """,
     "phone": """
-      .fx-phone { width: 270px; height: 560px; border-radius: 52px; background: #0E0F12; padding: 16px;
-                  box-shadow: 0 0 0 3px #2A2C31, 0 40px 90px rgba(0,0,0,0.6); }
+      .fx-phone { width: 270px; height: 560px; border-radius: 52px; background: @PHONE_BODY@; padding: 16px;
+                  box-shadow: 0 0 0 3px @PHONE_EDGE@, 0 40px 90px rgba(0,0,0,0.6); }
       .fx-phone .scr { position: relative; width: 100%; height: 100%; border-radius: 38px; overflow: hidden;
-                       background: linear-gradient(180deg, #17181C, #0F1013); padding: 70px 18px 18px; }
+                       background: @PHONE_SCREEN@; padding: 70px 18px 18px; }
       .fx-phone .notch { position: absolute; left: 50%; top: 14px; width: 110px; height: 30px; margin-left: -55px;
                          border-radius: 16px; background: #000; }
       .fx-phone .who { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-family: @SANS@;
@@ -124,7 +187,7 @@ CSS = {
       .fx-phone .msg { margin-top: 12px; max-width: 86%; padding: 12px 16px; border-radius: 20px; font-family: @SANS@;
                        font-weight: 800; font-size: 21px; line-height: 1.25; opacity: 0; }
       .fx-phone .me { margin-left: auto; background: @ACCENT@; color: @ACCENT_INK@; border-bottom-right-radius: 6px; }
-      .fx-phone .ai { background: #24262C; color: #EDEDED; border-bottom-left-radius: 6px; }
+      .fx-phone .ai { background: @BUBBLE_BG@; color: @BUBBLE_INK@; border-bottom-left-radius: 6px; }
 """,
     "chat": """
       .fx-chat { width: 900px; padding: 24px 26px 22px; border-radius: 30px; background: @PAPER@;
@@ -139,7 +202,7 @@ CSS = {
       .fx-chat .tag { position: absolute; right: 16px; top: 14px; padding: 6px 14px; border-radius: 10px; background: @ACCENT@;
                       color: @ACCENT_INK@; font-size: 18px; letter-spacing: 0.08em; opacity: 0; }
       .fx-chat .inp { margin-top: 16px; padding: 16px 20px; border-radius: 16px; border: 2px solid rgba(0,0,0,0.1);
-                      font-family: "JBMono", monospace; font-size: 26px; color: @INK@; min-height: 64px; }
+                      font-family: @MONO@; font-size: 26px; color: @INK@; min-height: 64px; }
       .fx-chat .inp span { opacity: 0; }
 """,
     "wall": """
@@ -154,7 +217,7 @@ CSS = {
       .fx-orb { width: 150px; height: 266px; border-radius: 12px; overflow: hidden; background-size: cover;
                 background-position: center; border: 6px solid @PAPER@;
                 box-shadow: 0 20px 40px rgba(0,0,0,0.45); display: flex; align-items: flex-end; padding: 14px;
-                font-family: @SANS@; font-weight: 800; font-size: 22px; line-height: 1.1; color: #fff; }
+                font-family: @SANS@; font-weight: 800; font-size: 22px; line-height: 1.1; color: @ORB_INK@; }
 """,
     "chart": """
       .fx-days { display: flex; justify-content: space-between; width: 840px; font-family: @SANS@; font-weight: 800;
@@ -171,13 +234,13 @@ CSS = {
       .fx-side .r i { width: 24px; height: 24px; border-radius: 12px; background: @OK@; flex: none; }
       .fx-bar { height: 22px; border-radius: 11px; background: rgba(0,0,0,0.1); overflow: hidden; }
       .fx-bar i { display: block; height: 100%; width: 100%; background: @OK@; transform-origin: 0 50%; }
-      .fx-count { font-family: "Cormorant"; font-weight: 600; font-size: 180px; color: @INK@; line-height: 1;
+      .fx-count { font-family: @COUNT_FONT@; font-weight: 600; font-size: 180px; color: @INK@; line-height: 1;
                   font-variant-numeric: lining-nums tabular-nums; }
 """,
     "paper": """
       .fx-paper { left: 0; top: 0; width: 1080px; height: 1920px; background-color: @PAPER@;
                   background-image: radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1.4px),
-                                    linear-gradient(rgba(120,140,190,0.18) 2px, transparent 2px);
+                                    linear-gradient(@GRID@ 2px, transparent 2px);
                   background-size: 7px 7px, 100% 64px; }
       .fx-tape { width: 240px; height: 70px; background: @TAPE@; box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
       .fx-rans { display: flex; gap: 8px; }
@@ -188,7 +251,7 @@ CSS = {
                  text-transform: @HEAD_CASE@; letter-spacing: 0.08em; line-height: 0.8; text-shadow: 0 10px 40px rgba(0,0,0,0.35); }
       .fx-kick { font-family: @SANS@; font-weight: 800; font-size: 24px; letter-spacing: 0.32em; text-transform: uppercase;
                  color: @LIGHT@; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
-      .fx-cline { font-family: "Cormorant"; font-style: italic; font-weight: 600; font-size: 44px; color: @LIGHT@; line-height: 1.05;
+      .fx-cline { font-family: @CLINE_FONT@; font-style: italic; font-weight: 600; font-size: 44px; color: @LIGHT@; line-height: 1.05;
                   text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
 """,
     "glass": """
@@ -421,7 +484,7 @@ def orbit(fid: str, cards: list, t0: float, t1: float, center: tuple = (540, 860
     for i, c in enumerate(cards):
         c = c if isinstance(c, dict) else {"img": c}
         style = f'background-image: url(assets/img/{_e(c["img"])});' if c.get("img") else \
-            "background: linear-gradient(160deg, #2C2F38, #121318);"
+            f"background: {T('ORB_BG')};"
         inner = _e(c.get("text", ""))
         for layer, out in (("b", behind), ("f", front)):
             out.append(f'        <div id="{fid}-{layer}{i}" class="g fx fx-orb" style="left: 0; top: 0; {style}">{inner}</div>')
@@ -447,12 +510,13 @@ def orbit(fid: str, cards: list, t0: float, t1: float, center: tuple = (540, 860
 
 # ---------------------------------------------------------------- 4. рамка, 15. вертиго, 9. пролёт, 11. отъезд
 
-def frame_break(fid: str, t0: float, t1: float, box: tuple = (150, 470, 930, 1500), back: str = "#0D0E10") -> FX:
+def frame_break(fid: str, t0: float, t1: float, box: tuple = (150, 470, 930, 1500), back: str | None = None) -> FX:
     """№4 frame break: кадр сжимается в карточку, а человек остаётся во весь рост и «выходит» за её края.
 
     Сжимается только дубль (#aroll, clip-path), вырезка над ним — в прежнем размере. box — (x0, y0, x1, y1) на
     экране; в координаты дубля его переводит камера страницы в момент t0 (дубль внутри камеры с наездом).
     """
+    back = back or T("SHADE_BG")
     x0, y0, x1, y1 = box
     inset = (f"`inset(${{(({y0}) - c[1]) / c[2]}}px ${{{W} - (({x1}) - c[0]) / c[2]}}px "
              f"${{{H} - (({y1}) - c[1]) / c[2]}}px ${{(({x0}) - c[0]) / c[2]}}px round ${{46 / c[2]}}px)`")

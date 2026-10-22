@@ -604,8 +604,10 @@ def trilat(pid: str, t: float, until: float, sats: list, fix: float, label: str 
 
 # ---------------------------------------------------------------- лист, сплит, рамка клипа
 
-def _paper(sid: str, hole: tuple | None = None) -> str:
-    """Лист: чёрная бумага, мелкая и крупная сетка, рамка с отступом; hole — окно (x0, y0, x1, y1), где виден кадр."""
+def _paper(sid: str, hole: tuple | None = None, plain: bool = False) -> str:
+    """Лист: чёрная бумага, мелкая и крупная сетка, рамка с отступом; hole — окно (x0, y0, x1, y1), где виден кадр.
+    plain — чистый лист для своей сцены режиссёра (score.py, kind "scene"): только чернила и рамка окна, без сетки и
+    засечек «Чертежа» — сцена не обязана быть чертежом (21.10.2026, «каждый раз выдумываем»)."""
     outer = f"M 0 0 H {W} V {H} H 0 Z"
     cut = f" M {hole[0]} {hole[1]} V {hole[3]} H {hole[2]} V {hole[1]} Z" if hole else ""
     marks = "".join(f'<path d="M {x - 22} {y} H {x + 22} M {x} {y - 22} V {y + 22}" stroke="{CREAM}" stroke-width="2" '
@@ -617,6 +619,11 @@ def _paper(sid: str, hole: tuple | None = None) -> str:
                  f'<path d="M {x0 - 26} {y0} H {x0 - 8} M {x1 + 8} {y0} H {x1 + 26} M {x0 - 26} {y1} H {x0 - 8} M {x1 + 8} {y1} '
                  f'H {x1 + 26} M {x0 - 17} {y0} V {y1} M {x1 + 17} {y0} V {y1}" stroke="{CREAM}" stroke-opacity="0.5" '
                  f'stroke-width="2" fill="none" />')
+    if plain:
+        return (f'<svg width="{W}" height="{H}" viewBox="0 0 {W} {H}" style="position: absolute; left: 0; top: 0;">'
+                f'<path d="{outer}{cut}" fill="{INK}" fill-rule="evenodd" />'
+                + (f'<rect x="{hole[0]}" y="{hole[1]}" width="{hole[2] - hole[0]}" height="{hole[3] - hole[1]}" fill="none" '
+                   f'stroke="{CREAM}" stroke-opacity="0.5" stroke-width="2" />' if hole else "") + '</svg>')
     return (f'<svg width="{W}" height="{H}" viewBox="0 0 {W} {H}" style="position: absolute; left: 0; top: 0;">'
             f'<defs><pattern id="{sid}-g1" width="36" height="36" patternUnits="userSpaceOnUse">'
             f'<path d="M 36 0 L 0 0 0 36" fill="none" stroke="{CREAM}" stroke-opacity="0.07" stroke-width="1" /></pattern>'
@@ -636,7 +643,7 @@ def full_sheet(piece: Piece, at: float, until: float) -> tuple:
     sid = f"{piece.pid}-sheet"
     html = (f'        <div id="{sid}" class="g footage" data-fullframe="чертёж во весь кадр" '
             f'style="left: 0; top: 0; width: {W}px; height: {H}px; overflow: hidden; background: {INK};">\n'
-            f'          {_paper(sid)}\n{piece.html}\n        </div>')
+            f'          {_paper(sid, plain=piece.get("plain", False))}\n{piece.html}\n        </div>')
     return html, piece.js + kit._cutaway_js(sid, at, until - at) + "\n"
 
 
@@ -662,7 +669,7 @@ def split_parts(piece: Piece, geo: dict) -> tuple:
     при сжатии сцены оставляла по краям чёрную пустоту на треть секунды (19.10.2026, кадр 13.6 демо IMG_3292) — п.2
     правил: кадр всегда полный. Субтитры на время сплита — над листом (#caps zIndex)."""
     sid, a, b = f"{piece.pid}-sheet", piece.t0 - 0.25, piece.t1 + 0.3
-    html = f'        <div id="{sid}" class="bp-sheet">{_paper(sid, geo["hole"])}</div>'
+    html = f'        <div id="{sid}" class="bp-sheet">{_paper(sid, geo["hole"], plain=piece.get("plain", False))}</div>'
     k, x, y = geo["k"], geo["x"], geo["y"]
     js = (f'      // «Чертёж», сплит: человек в окне листа {geo["hole"]}, лицо {geo["face"]}\n'
           f'      tl.fromTo("#flash", {{ opacity: 0 }}, {{ opacity: 0.55, duration: 0.033, ease: "none", immediateRender: false }}, {a - 0.033:.3f});\n'
