@@ -7,6 +7,12 @@ projects/*/input/*
 projects/*/output/*
 !projects/*/input/.gitkeep
 !projects/*/output/.gitkeep
+# разделы проекта (projects/<проект>/<раздел>/, 21.10.2026) — на уровень глубже: без этого git add раздела тянул
+# в репозиторий все исходники (4,6 ГБ)
+projects/*/*/input/*
+projects/*/*/output/*
+!projects/*/*/input/.gitkeep
+!projects/*/*/output/.gitkeep
 projects/*/references/*
 !projects/*/references/.gitkeep
 !projects/*/references/*.md
