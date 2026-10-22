@@ -20,5 +20,6 @@
  "hook_flash": true,
  "face_min": 0.6,
  "caption_accent_scale": 1.15,
- "insert_gap_max": 6
+ "insert_gap_max": 6,
+ "template": "testimonial"
 }

@@ -28,6 +28,7 @@ import jobqueue
 import materials
 import projects
 import styles
+import templates
 import common
 from common import ROOT, WORK_DIR, ffprobe_bin
 from jobqueue import CURRENT, QUEUE, runner_alive
@@ -647,8 +648,11 @@ def get_setup(name: str):
         raise HTTPException(409, str(e))
     refs = sorted(x.name for x in p.references.iterdir() if x.is_file() and not x.name.startswith(".")) \
         if p.references.exists() else []
+    best, _, why = templates.suggest(p)
     return {"project": p.name, "title": p.title, "questions": projects.SETUP_QUESTIONS, "answers": answers,
-            "missing": [q["id"] for q in projects.missing_setup(p)], "references": refs}
+            "missing": [q["id"] for q in projects.missing_setup(p)], "references": refs,
+            "templates": templates.catalog(), "template": templates.current(p),
+            "suggest": {"id": best["id"], "why": why} if best else None}
 
 
 @router.post("/api/studio/setup/{name:path}")
@@ -661,7 +665,40 @@ def save_setup(name: str, data: dict = Body(...)):
         left = projects.save_setup(p, answers)
     except projects.ProjectError as e:
         raise HTTPException(400, str(e))
-    return {"ok": True, "missing": [q["id"] for q in left]}
+    # анкета полная, а шаблона ещё нет — ставим ближайший по ответам сам (22.10.2026, Валера: «чтобы система сразу
+    # понимала, на какой шаблон ориентироваться… с первого раза годноту»); человек сменит его в той же анкете
+    applied = None
+    if not left and not templates.current(projects.get(p.name)) and "template" not in (json.loads(
+            (p.root / "project.json").read_text(encoding="utf-8")) if (p.root / "project.json").exists() else {}):
+        try:
+            applied = templates.apply(projects.get(p.name))
+        except templates.TemplateError:
+            applied = None                                   # ни один не подходит уверенно — «своё», выбор за человеком
+    return {"ok": True, "missing": [q["id"] for q in left], "template": applied}
+
+
+@router.post("/api/studio/template/{name:path}")
+def set_template(name: str, data: dict = Body(...)):
+    """Шаблон проекта: id из presets/templates — поставить; "" — «своё» (блок шаблона из правил уходит)."""
+    p = _project(name).home
+    tid = data.get("template")
+    if not isinstance(tid, str):
+        raise HTTPException(400, "template — id шаблона строкой или \"\"")
+    try:
+        if not tid:
+            templates.clear(p)
+            return {"ok": True, "template": None}
+        return {"ok": True, "template": templates.apply(p, tid)}
+    except (templates.TemplateError, projects.ProjectError) as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/api/studio/template-sheet/{tid}")
+def template_sheet(tid: str):
+    if not re.fullmatch(r"[a-z0-9-]+", tid or "") or tid not in templates.ids():
+        raise HTTPException(404, "нет такого шаблона")
+    return FileResponse(templates.TEMPLATE_DIR / tid / "exemplar.jpg", media_type="image/jpeg",
+                        headers={"Cache-Control": "max-age=600"})
 
 
 @router.post("/api/studio/references/{name:path}")

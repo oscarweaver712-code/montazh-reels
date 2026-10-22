@@ -3128,6 +3128,45 @@ def check_ai_workflow(report: Report, tmp: Path):
                  "ответы анкеты становятся умолчаниями проекта: язык, форматы площадок, призыв",
                  f"{cfg.get('language')}, {cfg.get('brief', {}).get('formats')}, cta={cfg.get('cta')}")
 
+    # 4б. шаблоны дизайн-систем (22.10.2026, Валера: «чтобы система сразу понимала, на какой шаблон ориентироваться… с
+    # первого раза годноту»): все годны; анкета узнаёт жанр; применение пишет бриф, уроки и эталон, повтор не дублирует
+    import templates
+    bad = [b for t in templates.all_templates() for b in templates.validate(t)]
+    report.check(not bad and len(templates.ids()) >= 5, "шаблоны дизайн-систем годны: стиль, эталон, лист кадров, DESIGN.md",
+                 "; ".join(bad[:3]) or f"{len(templates.ids())} шт.")
+    cases = [({"about": "Виктория — таргетолог и маркетолог для бьюти-салонов, кейсы клиентов",
+               "tone": ["спокойный, экспертный", "премиальный, минимализм"]}, "talking", False, "expert-premium"),
+             ({"about": "Бренд подарков, новоселье команды в новом офисе", "tone": ["динамичный, вирусный"]}, "pack", False,
+              "brand-lifestyle"),
+             ({"about": "Настя поёт под свой трек"}, "talking", True, "lyric"),
+             ({"about": "Отзывы клиенток психолога", "tone": ["динамичный, вирусный", "дерзкий, с юмором"]}, "talking", False,
+              "testimonial"),
+             ({"about": "Репетитор ЕГЭ по математике объясняет задачи", "tone": ["динамичный, вирусный"]}, "talking", False,
+              "expert-viral"),
+             ({"about": "котики и закаты"}, "talking", False, None)]
+    got = []
+    for answers, kind, keep, want in cases:
+        ranked = templates.match(answers, kind, keep)
+        top = ranked[0][1]["id"] if ranked and ranked[0][0] >= templates.MIN_SCORE else None
+        got.append((want, top))
+    report.check(all(w == g for w, g in got), "анкета нового проекта узнаёт свой шаблон, а чужое оставляет «своим»",
+                 ", ".join(f"{w or 'своё'}→{g or 'своё'}" for w, g in got))
+    with temp_projects(tmp / "tpl_projects", "tpl") as made:
+        p = made["tpl"]
+        projects.save_setup(p, dict(READY_ANSWERS, about="Отзывы клиенток психолога, благодарность"))
+        first = templates.apply(projects.get("tpl"))
+        cfg_t = json.loads((p.root / "project.json").read_text(encoding="utf-8"))
+        templates.apply(projects.get("tpl"), "testimonial")
+        rules_t = projects.get("tpl").rules_text()
+        templates.clear(projects.get("tpl"))
+        cleared = projects.get("tpl").rules_text()
+    report.check(first["template"] == "testimonial" and cfg_t.get("template") == "testimonial"
+                 and cfg_t.get("brief", {}).get("style") == "testimonial" and cfg_t.get("music") is True
+                 and rules_t.count(templates.BEGIN) == 1 and "IMG_9665_v2.mp4" in rules_t
+                 and rules_t.count(projects.SETUP_BEGIN) == 1 and templates.BEGIN not in cleared,
+                 "шаблон ставится в проект: бриф, умолчания, блок с эталоном в правилах — один; «своё» его убирает",
+                 f"{first['template']}, стиль {cfg_t.get('brief', {}).get('style')}, блоков {rules_t.count(templates.BEGIN)}")
+
     # 5. материалы: свой файл с замером, отказ не-медиа, происхождение того, что в странице, звук по норме
     saved_m = (materials.WORK_DIR, materials.ROOT)
     materials.WORK_DIR, materials.ROOT = tmp / "m_work", tmp / "m_root"

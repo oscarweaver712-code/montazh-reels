@@ -1,0 +1,81 @@
+{
+ "id": "brand-lifestyle",
+ "name": "Бренд: лайф-влог из клипов",
+ "summary": "Бренд или команда, событие из нескольких клипов: лайф-влог на удержание — вспышки лучших моментов в долю музыки на открытии, ускорения рывком, петля, живые эмоции людей вместо украшений.",
+ "signals": {
+  "about": [
+   "бренд",
+   "команд",
+   "событи",
+   "праздник",
+   "новосель",
+   "подарк",
+   "магазин",
+   "товар",
+   "офис",
+   "мероприят",
+   "влог",
+   "производств",
+   "открыти"
+  ],
+  "tone": [
+   "динамичный, вирусный"
+  ],
+  "kind": "pack"
+ },
+ "exemplar": {
+  "project": "vkudesnik",
+  "stem": "novoselie",
+  "video": "projects/vkudesnik/output/novoselie_v6.mp4",
+  "source": "work/novoselie/page.py",
+  "verdict": "Заказчик «Вкудесника» 21.10.2026: «6 ок»"
+ },
+ "brief": {
+  "style": "hormozi",
+  "formats": [
+   "9:16"
+  ],
+  "boldness": 0.5,
+  "goals": {
+   "reach": 4,
+   "retention": 5,
+   "trust": 4,
+   "saves": 2,
+   "sales": 3
+  },
+  "overrides": {
+   "camera.base_zoom": 1.0,
+   "camera.punch": "none",
+   "camera.punch_level": 1.08,
+   "captions.mode": "karaoke",
+   "captions.case": "natural",
+   "captions.font": "onest-semibold",
+   "captions.highlight": "#FFD60A",
+   "captions.color": "#FFFFFF",
+   "captions.size": 0.84,
+   "color.grade": "warm",
+   "color.brightness": 0,
+   "captions.position": "chest"
+  }
+ },
+ "project": {
+  "music": true,
+  "music_level": 0.5,
+  "soft_sounds": true,
+  "hook_flash": false,
+  "cut_pauses": true,
+  "pause_max": 0.6,
+  "pause_keep": 0.25,
+  "music_duck": true
+ },
+ "rules": [
+  "Не пересказ по порядку, а лайф-влог: открытие — вспышки лучших моментов в долю музыки, потом история; ролик — петлёй.",
+  "Эмоцию держат люди в кадре: без сердечек, полароидов, рукописных пометок и сеток 2×2 («борщишь с душевностью»).",
+  "Шрифт — современный гротеск без обводки (у эталона Unbounded SemiBold + Onest), мягкая тень и затемнение края; текст за головой и вырезка на 720p с рук — нет.",
+  "Заголовок открытия влетает один раз, по слову, и стоит через все вспышки.",
+  "Музыка в тему, тише под живым звуком (music_duck), громче в тишине; ИИ-генерации — нет.",
+  "Шрифтовую пару согласовать доской вариантов до монтажа; согласованное переносить из исходника доски один в один."
+ ],
+ "how": "Сборка: папка клипов в input/<имя>/ → scripts/pack.py (pack.json: ramp, hold, snap в долю трека, cut_pauses false), страница по образцу work/novoselie/page.py (m.build(jump_whip=True, music_start=…, music_fade=0.3)).",
+ "design": false
+}

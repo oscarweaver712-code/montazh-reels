@@ -72,8 +72,10 @@ CONFIG = {
     "music_duck": False,                      # музыка поднимается в тишине дубля и уходит под голос (music.duck_lane)
     "keep_audio": False,                      # звук исходника как есть (трек подложил автор): prep не чистит и не режет
     "kind": "talking",                        # что такое несколько видео: talking — каждое свой ролик, pack — одним роликом
+    "template": "",                           # шаблон дизайн-системы (presets/templates, scripts/templates.py); "" — своё
 }
 CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строкой"), "brief": (dict, "объектом"),
+                "template": (str, "строкой: id шаблона из presets/templates или \"\""),
                 "kind": (str, "строкой: \"talking\" (говорящая голова) или \"pack\" (склейка)"),
                 "cta": (bool, "true или false"), "face_max": ((int, float, type(None)), "числом или null"),
                 "long_matte": (bool, "true или false"), "fx_theme": (str, "строкой — имя темы из fx.THEMES"),

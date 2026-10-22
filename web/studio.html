@@ -463,6 +463,13 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .msg .fresh { font-size: 11.5px; color: var(--mute); border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
 .tabs button { padding-left: 2px; padding-right: 2px; }
 .setup { display: grid; gap: 12px; margin-top: 12px; max-height: 52vh; overflow: auto; padding-right: 6px; }
+.tpl { display: grid; gap: 8px; margin-top: 6px; }
+.tpl .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.tpl .opts button[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--ink); }
+.tpl .about { display: grid; grid-template-columns: 1fr 132px; gap: 12px; align-items: start; font-size: 12.5px; line-height: 1.45; }
+.tpl .about img { width: 132px; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
+.tpl .about em { color: var(--muted, inherit); font-style: normal; opacity: 0.75; }
+@media (max-width: 640px) { .tpl .about { grid-template-columns: 1fr; } }
 .setup .q { display: grid; gap: 6px; }
 .setup .q > b { font-size: 12.5px; } .setup .q > b em { color: var(--rec); font-style: normal; }
 .setup .q.miss > b { color: var(--rec); }
@@ -722,6 +729,8 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
 <dialog class="modal wide" id="setup-dialog" aria-labelledby="setup-title">
   <h3 id="setup-title">Настройка проекта</h3>
   <div class="say">ИИ читает это перед каждым монтажом проекта. Отмеченное <b style="color:var(--rec)">*</b> обязательно: без этого ИИ-монтаж проекта не запустится. Ответы лягут блоком «Анкета проекта» в правила — остальные правила можно дописать там же.</div>
+  <div class="pop-h" style="margin-top:12px">Шаблон дизайн-системы</div>
+  <div class="tpl" id="setup-tpl"></div>
   <form class="setup" id="setup-form" onsubmit="return false"></form>
   <div class="pop-h" style="margin-top:12px">Файлы-референсы</div>
   <div class="drop" id="ref-drop" tabindex="0" role="button">＋ Скриншоты, ролики, примеры, которые нравятся, — перетащи сюда или нажми</div>
@@ -3112,13 +3121,34 @@ $("rules-ai").addEventListener("click", async () => {
 });
 
 /* ---------- анкета проекта ---------- */
-const SU = { project: null, q: [], answers: {} };
+const SU = { project: null, q: [], answers: {}, tpl: [], cur: null, sug: null };
+function renderTpl() {
+  const pick = SU.cur || "";
+  const chips = SU.tpl.map((t) => `<button type="button" class="chip" data-tpl="${esc(t.id)}" aria-pressed="${pick === t.id}">${esc(t.name)}${SU.sug && SU.sug.id === t.id && pick !== t.id ? " · подходит" : ""}</button>`).join("")
+    + `<button type="button" class="chip" data-tpl="" aria-pressed="${!pick}">своё</button>`;
+  const t = SU.tpl.find((x) => x.id === (pick || (SU.sug && SU.sug.id)));
+  const why = SU.sug && t && SU.sug.id === t.id && SU.sug.why.length ? `<br><em>По анкете: ${esc(SU.sug.why.join("; "))}</em>` : "";
+  const about = t ? `<div class="about"><div><b>${esc(t.name)}</b>${pick === t.id ? " — стоит у проекта" : " — предлагаю"}: ${esc(t.summary)}<br><em>Эталон ${esc(t.stem)} · ${esc(t.verdict)}${t.design ? " · своя дизайн-система" : ""}</em>${why}</div>`
+    + `<a href="/api/studio/template-sheet/${esc(t.id)}" target="_blank" rel="noopener"><img src="/api/studio/template-sheet/${esc(t.id)}" alt="Кадры эталона «${esc(t.name)}»" loading="lazy"></a></div>`
+    : `<div class="about"><div><em>Проект без шаблона — ИИ собирает почерк с нуля по анкете и правилам. Шаблон даёт стиль, дизайн-систему, выученные уроки и эталон принятого ролика.</em></div></div>`;
+  $("setup-tpl").innerHTML = `<div class="opts">${chips}</div>${about}`;
+}
+$("setup-tpl").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-tpl]"); if (!b) return;
+  try {
+    const r = await api(`/api/studio/template/${encodeURIComponent(SU.project)}`, { method: "POST", json: { template: b.dataset.tpl } });
+    SU.cur = r.template ? r.template.template : null; renderTpl();
+    say("setup-say", r.template ? `Шаблон «${r.template.name}» поставлен: бриф и умолчания — в проекте, уроки и эталон — в правилах. DESIGN.md: ${r.template.design}.`
+      : "Проект без шаблона — блок шаблона убран из правил.");
+  } catch (err) { say("setup-say", err.message, true); }
+});
 async function openSetup(project) {
   closeMenus();
   SU.project = project || uploadProject();
   try {
     const r = await api(`/api/studio/setup/${encodeURIComponent(SU.project)}`);
     SU.q = r.questions; SU.answers = r.answers || {};
+    SU.tpl = r.templates || []; SU.cur = r.template || null; SU.sug = r.suggest || null; renderTpl();
     $("setup-title").textContent = `Настройка проекта «${r.title.split(" — ")[0]}»`;
     renderSetup(r.missing); renderRefs(r.references);
     say("setup-say", r.missing.length ? `Не хватает ответов: ${r.missing.length}.` : "Проект настроен ✓ Можно уточнить ответы.");
@@ -3159,7 +3189,10 @@ $("setup-save").addEventListener("click", async () => {
     SU.answers = setupAnswers();
     const r = await api(`/api/studio/setup/${encodeURIComponent(SU.project)}`, { method: "POST", json: { answers: SU.answers } });
     renderSetup(r.missing);
-    say("setup-say", r.missing.length ? `Сохранено. Ещё нужны ответы (отмечены красным): ${r.missing.length}.` : "Сохранено — проект настроен ✓ ИИ будет монтировать по этим ответам.", !!r.missing.length);
+    if (r.template) { SU.cur = r.template.template; renderTpl(); }
+    say("setup-say", r.missing.length ? `Сохранено. Ещё нужны ответы (отмечены красным): ${r.missing.length}.`
+      : r.template ? `Сохранено — проект настроен ✓ По анкете поставлен шаблон «${r.template.name}» (${r.template.why.join("; ")}). Сменить — выше.`
+      : "Сохранено — проект настроен ✓ ИИ будет монтировать по этим ответам.", !!r.missing.length);
     await poll(); renderAiStart();
   } catch (e) { say("setup-say", e.message, true); }
 });
