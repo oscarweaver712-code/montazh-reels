@@ -759,6 +759,14 @@ def check_pauses(report: Report):
     cut = 764 / 30
     near = min((float(x) for x in re.findall(r"whip\(([\d.]+)\)", whips)), key=lambda x: abs(x - cut))
     edge = min((x for p in punches for x in p[:2]), key=lambda x: abs(x - cut))
+    # «Живой отзыв» (testimonial.fit_word, IMG_9665 v1: «висело слово, которое не произносилось»): whisper тянул «я»
+    # на 2 с через «э-э» — слово кончается с первым куском голоса; короткая щель внутри слова его не рвёт
+    from testimonial import fit_word
+    hum = fit_word({"word": "я", "start": 2.2, "end": 4.16}, [[2.2, 2.9], [4.0, 4.16]])
+    whole = fit_word({"word": "изменить", "start": 1.0, "end": 2.0}, [[1.1, 1.5], [1.6, 1.95]])
+    report.check(hum["end"] == 2.94 and whole["end"] == 1.99 and whole["start"] == 1.08,
+                 "слово отзыва — по голосу: «я… э-э…» кончается с голосом, щель внутри слова его не рвёт",
+                 f"«я» {hum['start']}–{hum['end']} (ждали до 2.94), «изменить» {whole['start']}–{whole['end']} (1.08–1.99)")
     report.check(near <= cut + 1e-6 and math.ceil(edge * 30 - 1e-6) == 764,
                  "склейка между сотыми: смаз и смена крупности — на её кадре, а не кадром позже",
                  f"рез {cut:.4f} с (кадр 764), смаз whip({near}), граница крупного {edge} → кадр {math.ceil(edge * 30 - 1e-6)}")
