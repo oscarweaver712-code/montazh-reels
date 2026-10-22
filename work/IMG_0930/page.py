@@ -40,12 +40,12 @@ m.css(f"""
                     background: linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.22) 45%, rgba(0,0,0,0) 100%); }}
       #low-shade {{ left: 0; top: 1060px; width: 1080px; height: 860px;
                     background: linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.38) 45%, rgba(0,0,0,0) 100%); }}
-      .chain {{ left: 0; width: 1080px; display: flex; justify-content: center; align-items: center; gap: 18px; }}
-      .chip {{ position: relative; padding: 14px 30px 16px; border-radius: 44px; font-family: "SF Pro Display"; font-weight: 600;
-               font-size: 46px; color: #FFFFFF; background: rgba(26,21,18,0.6); border: 2px solid rgba(255,255,255,0.35);
+      .chain {{ left: 0; width: 1080px; display: flex; justify-content: center; align-items: center; gap: 14px; }}
+      .chip {{ position: relative; padding: 12px 24px 14px; border-radius: 40px; font-family: "SF Pro Display"; font-weight: 600;
+               font-size: 40px; color: #FFFFFF; background: rgba(26,21,18,0.6); border: 2px solid rgba(255,255,255,0.35);
                overflow: hidden; isolation: isolate; text-shadow: 0 2px 8px rgba(0,0,0,0.4); }}
       .chip i {{ position: absolute; inset: 0; z-index: -1; background: var(--ds-grad); opacity: 0; }}
-      .arr {{ font-family: "SF Pro Display"; font-weight: 300; font-size: 52px; color: #FFFFFF; text-shadow: {SHADOW}; }}
+      .arr {{ font-family: "SF Pro Display"; font-weight: 300; font-size: 46px; color: #FFFFFF; text-shadow: {SHADOW}; }}
       #st-tg path {{ vector-effect: non-scaling-stroke; stroke-width: 9; }}
       #loop path {{ fill: none; stroke: #FFFFFF; stroke-width: 7; stroke-linecap: round; }}
       #post {{ left: 210px; top: 262px; width: 660px; height: 910px; overflow: hidden; border-radius: 30px; background: #FFFFFF;
@@ -58,6 +58,21 @@ m.css(f"""
       .num-w {{ isolation: isolate; }}
       .num-cap {{ display: block; font-family: "SF Pro Display"; font-weight: 300; font-size: 44px; line-height: 1.15;
                   color: #FFFFFF; text-shadow: {SHADOW}; }}
+      #bars {{ left: 60px; top: 1370px; width: 900px; height: 290px; }}
+      #bars .bar {{ position: absolute; top: 0; width: 210px; height: 220px; border-radius: 22px 22px 6px 6px; overflow: hidden;
+                    transform-origin: 50% 100%; transform: scaleY(0); box-shadow: 0 10px 34px rgba(0,0,0,0.45); }}
+      #bA {{ left: 50px; background: rgba(26,21,18,0.6); border: 2px solid rgba(255,255,255,0.35); box-sizing: border-box; }}
+      #bA-part {{ position: absolute; left: 0; bottom: 0; width: 100%; height: 50.3%; background: var(--ds-grad); opacity: 0; }}
+      #bars #bB {{ left: 310px; top: 109px; height: 111px; background: var(--ds-grad); }}
+      #bars .bar-n {{ position: absolute; left: 0; top: 14px; width: 100%; text-align: center; font-family: "SF Pro Display";
+                      font-weight: 700; font-size: 72px; line-height: 1; color: #FFFFFF; text-shadow: 0 2px 10px rgba(0,0,0,0.45); }}
+      #bars .bar-l {{ position: absolute; top: 234px; width: 310px; text-align: center; font-family: "SF Pro Display"; font-weight: 400;
+                      font-size: 38px; line-height: 1; color: #FFFFFF; text-shadow: {SHADOW}; opacity: 0; }}
+      #lvl {{ position: absolute; left: 50px; top: 108px; width: 470px; border-top: 3px dashed rgba(255,255,255,0.85);
+              transform-origin: 100% 50%; transform: scaleX(0); }}
+      #pct {{ position: absolute; left: 556px; top: 46px; opacity: 0; filter: drop-shadow(0 4px 14px rgba(0,0,0,0.55)); }}
+      #pct .num {{ font-size: 96px; }}
+      #pct .num-cap {{ font-size: 36px; }}
       .num {{ display: inline-block; font-family: "SF Pro Display"; font-weight: 700; font-size: 150px; line-height: 1;
               background-image: var(--ds-grad); -webkit-background-clip: text; background-clip: text;
               -webkit-text-fill-color: transparent; color: transparent; }}
@@ -111,11 +126,11 @@ m.hide(20.6, 22.05)
 m.front(f'        <div id="chain" class="g chain" {LOW} style="top: 1338px;">'
         '<div class="chip" id="ch1"><i></i>заявка</div><div class="arr">→</div>'
         '<div class="chip" id="ch2"><i></i>покупка</div><div class="arr">→</div>'
-        '<div class="chip" id="ch3"><i></i>повтор</div></div>\n'
-        f'        <svg id="loop" class="g" {LOW} viewBox="0 0 800 130" style="left: 140px; top: 1428px; width: 800px; height: 130px;">'
+        '<div class="chip" id="ch3"><i></i>повторная покупка</div></div>\n'
+        f'        <svg id="loop" class="g" {LOW} viewBox="0 0 900 130" style="left: 40px; top: 1428px; width: 900px; height: 130px;">'
         '<path id="loop-p" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" '
-        'd="M 690 6 C 690 118, 110 118, 110 10" />'
-        '<path id="loop-h" d="M 110 8 L 88 40 M 110 8 L 134 38" style="opacity: 0;" /></svg>')
+        'd="M 757 6 C 757 118, 124 118, 124 10" />'
+        '<path id="loop-h" d="M 124 8 L 102 40 M 124 8 L 148 38" style="opacity: 0;" /></svg>')
 m.js('      enter("#chain", 22.13, { fromY: 30, fromScale: 1, blur: 12, dur: 0.4 });\n'
      '      tl.fromTo("#ch1 i", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, 25.37);\n'
      '      tl.fromTo("#ch2 i", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, 25.95);\n'
@@ -146,14 +161,33 @@ m.js('      tl.fromTo("#post-dim", { opacity: 0 }, { opacity: 1, duration: 0.3, 
      '      tl.to("#post", { opacity: 0, y: -260, scale: 0.86, rotation: -5, filter: BLUR(12), duration: 0.32, ease: "power2.in" }, 37.15);\n'
      '      tl.to("#post-dim", { opacity: 0, duration: 0.3, ease: "power1.in" }, 37.15);')
 
-# 7. цифры кейса: 604 заявки → 304 стали клиентами → 50,3 % (число со слайда её поста)
-NUMS = [("n604", "604", "заявки за лето", 37.63, 39.52), ("n304", "304", "новых покупателей", 39.59, 42.52),
-        ("n503", "50,3 %", "конверсия заявки в покупку", 42.61, 46.75)]
-for nid, num, cap, a, b in NUMS:
-    m.front(f'        <div id="{nid}" class="g num-w" {LOW} style="top: 1384px;">'
-            f'<span class="num-cap">{cap}</span><span class="num">{num}</span></div>')
-    m.js(f'      slam("#{nid}", {a:.2f}, {{ fromScale: 1.35, dur: 0.2 }});\n'
-         f'      leave("#{nid}", {b:.2f}, {{ y: -30, dur: 0.18 }});')
+# 7. цифры кейса одной диаграммой (правка заказчицы 22.10: «604 заявки и 304 клиента надо обыграть в одной анимации…
+#    столбиком показать, что из 604 304 принесли деньги»): столбик 604 растёт на «604 заявки», рядом кирпичный 304 —
+#    вдвое ниже, на «304»; на «салона» пунктир переносит его высоту на первый столбик, низ 604 загорается — 50,3 %
+m.front(f'        <div id="bars" class="g" {LOW}>'
+        '<div id="bA" class="bar"><div id="bA-part"></div><span id="bA-n" class="bar-n">604</span></div>'
+        '<div id="bB" class="bar"><span id="bB-n" class="bar-n">304</span></div>'
+        '<div id="lvl"></div>'
+        '<div id="bA-l" class="bar-l" style="left: 0;">заявки</div>'
+        '<div id="bB-l" class="bar-l" style="left: 260px;">принесли деньги</div>'
+        '<div id="pct"><span class="num">50,3 %</span><span class="num-cap">конверсия в покупку</span></div></div>')
+m.js('      function countUp(sel, n, t, dur) {\n'
+     '        const el = document.querySelector(sel), c = { v: 0 };\n'
+     '        tl.fromTo(c, { v: 0 }, { v: n, duration: dur, ease: "power2.out", immediateRender: false,\n'
+     '                                onUpdate: () => { el.textContent = Math.round(c.v); } }, t);\n'
+     '      }\n'
+     '      tl.set("#bars", { opacity: 1 }, 37.63);\n'
+     '      tl.fromTo("#bA", { scaleY: 0 }, { scaleY: 1, duration: 0.55, ease: "power3.out", immediateRender: false }, 37.63);\n'
+     '      countUp("#bA-n", 604, 37.63, 0.55);\n'
+     '      tl.fromTo("#bA-l", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out", immediateRender: false }, 37.8);\n'
+     '      tl.fromTo("#bB", { scaleY: 0 }, { scaleY: 1, duration: 0.5, ease: "power3.out", immediateRender: false }, 39.59);\n'
+     '      countUp("#bB-n", 304, 39.59, 0.5);\n'
+     '      tl.fromTo("#bB-l", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out", immediateRender: false }, 39.75);\n'
+     '      tl.fromTo("#lvl", { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power2.inOut", immediateRender: false }, 42.61);\n'
+     '      tl.fromTo("#bA-part", { opacity: 0 }, { opacity: 0.55, duration: 0.3, ease: "power1.out", immediateRender: false }, 42.85);\n'
+     '      slam("#pct", 42.95, { fromScale: 1.35, dur: 0.2 });\n'
+     '      tl.to("#bB", { scale: 1.06, duration: 0.22, yoyo: true, repeat: 1, ease: "sine.inOut" }, 44.47);\n'
+     '      leave("#bars", 46.75, { y: 30, dur: 0.2 });')
 m.hide(37.60, 39.10)
 m.hide(39.52, 40.35)
 m.punch(37.63, 38.50)
