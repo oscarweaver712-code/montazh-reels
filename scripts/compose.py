@@ -223,7 +223,7 @@ def caption_chunks(words: list, director: dict, duration: float, mode: str = "wo
         i += len(group)
         chunk = {"t0": round(group[0]["start"], 3), "end": group[-1]["end"],
                  "text": " ".join(t["text"] for t in group),
-                 "accent": any(part in accents for t in group for part in t["text"].lower().split())}
+                 "accent": any(edge(part) in accents for t in group for part in t["text"].lower().split())}
         if mode == "karaoke":
             chunk["words"] = [{"text": t["text"], "t0": round(t["start"], 3)} for t in group]
         chunks.append(chunk)

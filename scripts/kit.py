@@ -11,6 +11,7 @@
 Горизонталь, квадрат и 4:5 получают ту же разметку, пересчитанную под свой размер.
 """
 import functools as _functools
+import math as _math
 import json as _json
 import re as _re
 import sys as _sys
@@ -620,6 +621,12 @@ def _page(d, width, height, fmt, title, style_css, extra_css, plate, behind, cut
 '''
 
 
+def _frame_time(t: float) -> str:
+    """Время для beats: две цифры после запятой, а склейке между сотыми — сколько нужно (25.4666, не 25.47)."""
+    s = f"{t:.4f}".rstrip("0")
+    return s if len(s.split(".")[1]) >= 2 else f"{t:.2f}"
+
+
 class Take:
     """Шкала дубля: секунды и номера слов исходника → дубль, с учётом вырезов (drop).
 
@@ -651,6 +658,7 @@ class Take:
         # склейки на шкале дубля: здесь кончается один кусок и начинается следующий. Склейки по вырезанным паузам
         # (prep, cut_pauses) — jumps: на них смена плана со смазом (framing), а вспышка splice — только на вырезах дублей
         self.jumps = [round(float(j), 3) for j in meta.get("jumps") or []]
+        self.fps = float(meta.get("fps") or 30)
         # стыки сборки (scripts/pack.py, aroll.json → scenes): там меняется сцена — это не склейка дубля, её не прячут
         self.scenes = [round(float(j), 3) for j in meta.get("scenes") or []]
         acc, self.splices = 0.0, []
@@ -716,17 +724,21 @@ class Take:
         Возвращает (наезды для director.json, строки beats со whip() на входе в крупный и на каждой такой склейке).
         """
         tight = round(self.base_zoom + 0.12, 2)
+        # склейка стоит на кадре (25,4667 с), а в aroll.json — округлённой вверх (25.467): граница крупного и смаз — на
+        # её кадр, вниз до 0,1 мс (IMG_9665, 22.10.2026: whip(25.47) и конец крупного 25.467 меняли план кадром позже реза)
+        fps = getattr(self, "fps", 30)
+        jumps = [_math.floor(round(j * fps) / fps * 10000) / 10000 for j in self.jumps]
         edges, last = [], 0.0
         for a, b in zip(self.words, self.words[1:]):
             gap = b["start"] - a["end"]
             edge = round(a["end"] + min(gap, 0.12) / 2, 2) if gap > 0 else round(b["start"], 2)
-            if any(abs(edge - j) < 0.8 for j in self.jumps):
+            if any(abs(edge - j) < 0.8 for j in jumps):
                 continue                                 # у склейки по паузе граница своя — ровно на ней
             natural = gap >= 0.08 or a["word"][-1:] in ",.?!—:"
             if ((natural and edge - last >= 1.6) or edge - last >= every) and edge < self.duration - 3.0:
                 edges.append(edge)
                 last = edge
-        edges = sorted(edges + [round(j, 3) for j in self.jumps])
+        edges = sorted(edges + jumps)
         punches = []
         for a, b in zip(edges[0::2], edges[1::2]):
             for j in self.splices:
@@ -735,27 +747,26 @@ class Take:
             for c0, c1 in keep_wide:
                 if a < c1 and b > c0:
                     a, b = (a, c0) if c0 - a >= b - c1 else (c1, b)
-            if b - a >= 1.2 or (b - a >= 0.5 and any(abs(x - j) < 0.02 for j in self.jumps for x in (a, b))):
+            if b - a >= 1.2 or (b - a >= 0.5 and any(abs(x - j) < 0.02 for j in jumps for x in (a, b))):
                 punches.append([a, b, tight, 0.0, 0.0])
-        for j in self.jumps:                             # план на склейке не сменился — сменить
+        for j in jumps:                                  # план на склейке не сменился — сменить
             if any(abs(x - j) < 0.02 for p in punches for x in p[:2]):
                 continue
             host = next((p for p in punches if p[0] < j < p[1]), None)
             if host:
-                host[1] = round(j, 3)                    # склейка внутри крупного — крупный кончается на ней
+                host[1] = j                              # склейка внутри крупного — крупный кончается на ней
                 continue
             later = [p for p in punches if p[0] > j]
             nxt = min(later)[0] if later else self.duration
             if nxt - j >= 0.95:                          # наезд, как на вырезе дубля (splice_punches)
-                punches.append([round(j, 3), round(min(j + 0.9, nxt - 0.65), 2), round(self.base_zoom + 0.16, 2), 0.0, 0.6])
+                punches.append([j, round(min(j + 0.9, nxt - 0.65), 2), round(self.base_zoom + 0.16, 2), 0.0, 0.6])
             elif later:
-                min(later)[0] = round(j, 3)              # крупный и так рядом — начинается прямо на склейке
+                min(later)[0] = j                        # крупный и так рядом — начинается прямо на склейке
             else:
-                punches.append([round(j, 3), round(self.duration, 3), tight, 0.0, 0.0])
+                punches.append([j, round(self.duration, 3), tight, 0.0, 0.0])
         punches.sort()
-        whips = sorted({round(a, 2) for a, *_ in punches if all(abs(a - j) > 1.0 for j in self.splices)}
-                       | {round(j, 2) for j in self.jumps})
-        return punches, "\n".join(f"      whip({a:.2f});" for a in whips) + "\n"
+        whips = sorted({round(a, 4) for a, *_ in punches if all(abs(a - j) > 1.0 for j in self.splices)} | set(jumps))
+        return punches, "\n".join(f"      whip({_frame_time(a)});" for a in whips) + "\n"
 
     def fixes(self, by_src: dict) -> dict:
         """text_fixes по номерам исходника → по номерам дубля."""

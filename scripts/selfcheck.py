@@ -752,6 +752,16 @@ def check_pauses(report: Report):
     hidden = [j for j in tk.jumps if any(abs(x - j) < 0.02 for x in bounds) and f"whip({j:.2f})" in whips]
     report.check(hidden == tk.jumps, "склейка по паузе спрятана сменой плана со смазом",
                  f"спрятано {hidden} из {tk.jumps}; крупные {[(p[0], p[1]) for p in punches]}")
+    # склейка не на ровной сотой (22.10.2026, IMG_9665: кадр 764 = 25,4667 с, в aroll.json — 25.467): whip(25.47) смазывал
+    # кадр через 3 мс после реза, а крупный кончался на 25.467 — план менялся кадром позже реза, двойной рывок
+    tk.duration, tk.jumps = 40.0, [round(764 / 30, 3)]
+    punches, whips = tk.framing()
+    cut = 764 / 30
+    near = min((float(x) for x in re.findall(r"whip\(([\d.]+)\)", whips)), key=lambda x: abs(x - cut))
+    edge = min((x for p in punches for x in p[:2]), key=lambda x: abs(x - cut))
+    report.check(near <= cut + 1e-6 and math.ceil(edge * 30 - 1e-6) == 764,
+                 "склейка между сотыми: смаз и смена крупности — на её кадре, а не кадром позже",
+                 f"рез {cut:.4f} с (кадр 764), смаз whip({near}), граница крупного {edge} → кадр {math.ceil(edge * 30 - 1e-6)}")
 
     # трек автора (keep_audio, «Настюха» 21.10.2026: «Настя уже подложила музыку, нам надо визуал подбить только»):
     # края — ровно trim (хвост трека после последнего слова цел), паузы не режутся, звук без чистки голоса
@@ -4361,6 +4371,12 @@ def check_style_captions(report: Report, tmp: Path):
         ok_modes.append(not short and karaoke_ok and chunks)
     report.check(all(ok_modes), "режимы субтитров: без вспышек короче 0.15 с, караоке внутри своих фраз",
                  ", ".join(m for m, ok in zip(("караоке", "фразы", "предложения"), ok_modes) if not ok) or "чисто")
+    # регистр «как сказано» (natural) держит и точку: «равенства,» не совпадало с ключевым «равенства», и подсветка молча
+    # пропадала (IMG_9665, 22.10.2026: из шестнадцати ключевых слов горели три)
+    lit = [c["text"] for c in caption_chunks(words, {"accent_words": ["равенства", "Нет"]}, 5.0, "words", "natural")
+           if c["accent"]]
+    report.check(len(lit) == 2, "ключевое слово подсвечивается и в регистре «как сказано», со знаком на конце",
+                 f"подсвечено {lit} из «равенства,» и «Нет.»")
 
     project = tmp / "style-page"
     (project / "assets").mkdir(parents=True)
