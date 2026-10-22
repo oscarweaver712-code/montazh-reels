@@ -4420,7 +4420,18 @@ def check_studio_page(report: Report, tmp: Path):
                  icons: document.querySelectorAll("#pmenu-pop svg.ico").length, moves: document.querySelectorAll("#move-list [data-to]").length,
                  packZones: placeKind() };
       } catch (e) { window.__errs.push("меню проектов: " + e); }
-      const out = { errors: window.__errs, menu,
+      let heads = {};
+      try {   // заголовок ИИ-панели: ручной экспорт в очереди — это не «ИИ монтирует» (22.10.2026)
+        const head = () => ($("ai-start").querySelector("h3") || {}).textContent;
+        S.videos = [{ stem: "IMG_0001", project: "p", steps: { page: true }, outputs: [], brief: {} }];
+        S.stem = "IMG_0001"; S.brief = {}; S.brainRuns = []; S.brainBusy = false; S.starting = null;
+        S.queue = { current: { job: "IMG_0001-render-v2", elapsed: 5, log: [] }, pending: [] };
+        renderAiStart(); heads.exp = head();
+        S.brainRuns = [{ thread: "t", stem: "IMG_0001", elapsed: 3, at: Date.now(), actions: 0 }];
+        renderAiStart(); heads.ai = head();
+        S.brainRuns = []; S.queue = { current: null, pending: [] }; S.videos = []; S.stem = null;
+      } catch (e) { window.__errs.push("ИИ-панель: " + e); }
+      const out = { errors: window.__errs, menu, heads,
       gone: ["tab-props", "zones-btn", "ask-ai"].filter((id) => document.getElementById(id)),
       missing: ["insp-card", "rsplit", "csplit", "del-dialog"].filter((id) => !document.getElementById(id)),
       tabs: [...document.querySelectorAll("#rtabs [data-tab]")].map((b) => b.dataset.tab),
@@ -4444,6 +4455,11 @@ def check_studio_page(report: Report, tmp: Path):
                  and menu.get("packZones") == "pack",
                  "меню проектов: дерево с разделом, тип раздела, правила раздела и проекта, свои иконки, перенос",
                  json.dumps(menu, ensure_ascii=False)[:200])
+    heads = out.get("heads") or {}
+    report.check("ИИ" not in (heads.get("exp") or "ИИ") and "Сборка" in heads.get("exp", "")
+                 and heads.get("ai") == "ИИ монтирует…",
+                 "ручной экспорт в очереди подписан сборкой, «ИИ монтирует» — только когда идёт ход ИИ",
+                 json.dumps(heads, ensure_ascii=False))
     report.check(not out.get("gone") and not out.get("missing") and out.get("tabs") == ["ai"] and out.get("trash"),
                  "справа один ИИ-монтаж: свойства — над чатом у выделенного, панель и поле ввода тянутся, у видео — корзина",
                  f"лишнее: {out.get('gone')}, нет: {out.get('missing')}, вкладки: {out.get('tabs')}")

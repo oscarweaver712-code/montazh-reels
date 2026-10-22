@@ -2549,9 +2549,11 @@ function renderAiStart() {
       <button type="button" class="btn rec big" data-setup="${esc(proj.name)}">Настроить проект</button></div>`;
     return;
   }
-  const head = busy ? "ИИ монтирует…" : v.outputs.length ? "Ролик готов" : done ? "Смонтирован — осталось собрать" : "Видео ещё не смонтировано";
   const style = `«${esc(styleName(b.style || ""))}»${(b.formats || []).length ? `, ${b.formats.join(", ")}` : ""}`;
   const q = S.queue || {}, job = q.current && q.current.job && q.current.job.includes(v.stem) ? q.current : null;
+  // «ИИ монтирует» — только когда идёт ход ИИ: ручной экспорт тоже занимает ролик в очереди, но это не ИИ
+  const head = run ? "ИИ монтирует…" : job ? `${jobName(job.job, job.title)}…` : busy ? "Ждёт своей очереди…"
+    : v.outputs.length ? "Ролик готов" : done ? "Смонтирован — осталось собрать" : "Видео ещё не смонтировано";
   const pct = S.renderPct && job && S.renderPct.job === job.job ? S.renderPct.pct : null;
   const live = run || job ? `<div class="ai-run" role="status"><span class="spin"></span>
         <b>${run ? (run.starting ? "Запускаю ИИ-монтаж…" : "ИИ монтирует") : esc(jobName(job.job, job.title))}<span class="t" ${run ? `data-t0="${runT0(run)}"` : ""}>${run ? mmss((Date.now() - runT0(run)) / 1000) : mmss(job.elapsed)}</span></b>
