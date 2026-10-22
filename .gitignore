@@ -54,6 +54,8 @@ work/*/materials/*.webm
 work/*/materials/yt-*
 # Mixkit (mx-*, Stock Music Free License, 20.10.2026) — тоже не раздаём отдельно от роликов
 work/*/materials/mx-*
+# звуки Mixkit (sfx-mixkit-*, Sound Effects Free License, 22.10.2026): не mx-, иначе проверки сочтут их музыкой; тоже не раздаём
+work/*/materials/sfx-mixkit-*
 projects/*/music/*
 !projects/*/music/.gitkeep
 !work/*/manim/
