@@ -100,3 +100,7 @@ studio/*/package.json
 # галерея приёмов fx — собирается scripts/fx_gallery.py из IMG_1799
 studio/_fx_gallery/
 studio/_bp_gallery/
+
+# шрифты заказчицы «СлаваМонтаж» (22.10.2026): не OFL — не раздаём, кладёт projects/slavamontazh/make_fonts.py
+presets/fonts/NicolettaScript.ttf
+presets/fonts/SF-Pro-Display-*.otf

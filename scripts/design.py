@@ -29,6 +29,9 @@ FONT_DIR = ROOT / "presets" / "fonts"
 FILE = "DESIGN.md"
 MARK = "reels-design"
 COLORS = ("text", "plate", "pen", "accent", "on-accent", "flash", "shade")
+# необязательный: свой цвет рукописи (роль hand), если он не совпадает с основным текстом — у «СлаваМонтаж» Nicoletta
+# кремово-жёлтая, а SF Pro белая (ТЗ заказчицы 22.10.2026: «цвет можно такой же оставить»). Нет его — рукопись цвета text
+OPTIONAL_COLORS = ("hand",)
 ROLES = ("caption", "whisper", "headline", "number", "hand", "variable")
 W = 1080
 _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -84,6 +87,14 @@ class Design:
         self.colors = {}
         for name in COLORS:
             value = colors.get(name)
+            if not isinstance(value, str) or not _HEX.match(value):
+                errs.append(f"colors.{name}: нужен цвет вида \"#RRGGBB\", а не {value!r}")
+            else:
+                self.colors[name] = value.upper()
+        for name in OPTIONAL_COLORS:
+            value = colors.get(name)
+            if value is None:
+                continue
             if not isinstance(value, str) or not _HEX.match(value):
                 errs.append(f"colors.{name}: нужен цвет вида \"#RRGGBB\", а не {value!r}")
             else:
@@ -242,7 +253,8 @@ class Design:
         rules = [
             f"      /* дизайн-система проекта ({self.project}/{FILE}, scripts/design.py): поверх kit — цвета, шрифты ролей, приёмы */",
             f"      :root {{ --cream: {c['text']}; --red: {c['pen']}; --ink: {c['plate']}; --ds-text: {c['text']}; "
-            f"--ds-plate: {c['plate']}; --ds-pen: {c['pen']}; --ds-acc: {c['accent']}; --ds-on-acc: {c['on-accent']}; "
+            f"--ds-hand: {c.get('hand', c['text'])}; --ds-plate: {c['plate']}; --ds-pen: {c['pen']}; "
+            f"--ds-acc: {c['accent']}; --ds-on-acc: {c['on-accent']}; "
             f"--ds-grad: {self.gradient}; --ds-label-font: {fam('hand')}; --ds-label-weight: {wt('hand')}; "
             f"--ds-label-size: 64px; --ds-label-track: 0; --ds-label-case: none; }}",
             f"      #root {{ font-family: {fam('caption')}, sans-serif; }}",
@@ -264,7 +276,7 @@ class Design:
             # приёмы системы (score.py: word дымом, hand, number, promise, strike; маркер субтитров — kit.caption_js)
             f"      .ds-ch {{ display: inline-block; padding: 0 {LETTER_PAD}em; margin: 0 -{LETTER_PAD}em; }}",
             f"      .ds-hand {{ left: 0; width: {W}px; text-align: center; white-space: nowrap; font-family: {fam('hand')}; "
-            f"font-weight: {wt('hand')}; line-height: 1.1; color: var(--ds-text); text-shadow: 0 4px 18px {shade}; }}",
+            f"font-weight: {wt('hand')}; line-height: 1.1; color: var(--ds-hand); text-shadow: 0 4px 18px {shade}; }}",
             "      .ds-uline { position: absolute; overflow: visible; }",
             "      .ds-uline path { fill: none; stroke: url(#ds-grad); stroke-width: 10; stroke-linecap: round; "
             "stroke-dasharray: 1; stroke-dashoffset: 1; }",

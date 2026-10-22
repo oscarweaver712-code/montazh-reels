@@ -1799,7 +1799,8 @@ def check_design(report: Report, tmp: Path):
               "нет роли": (src.replace("  hand:\n    fontFamily: Caveat", "  scrawl:\n    fontFamily: Caveat", 1), "typography.hand"),
               "нет файла": (src.replace("src: Caveat-Bold.ttf", "src: Nope-Bold.ttf"), "Nope-Bold.ttf"),
               "отскок": (src.replace("enter: expo.out", "enter: back.out(1.7)"), "отскоки"),
-              "без шапки": (src.split("---", 2)[2], "нет шапки")}
+              "без шапки": (src.split("---", 2)[2], "нет шапки"),
+              "рукопись словом": (src.replace('  text: "#F2EBDD"', '  hand: "жёлтый"\n  text: "#F2EBDD"', 1), "colors.hand")}
     caught = []
     for what, (text, want) in broken.items():
         path = tmp / "ds-broken" / what / "DESIGN.md"
@@ -1811,7 +1812,16 @@ def check_design(report: Report, tmp: Path):
             if want in str(e):
                 caught.append(what)
     report.check(len(caught) == len(broken), "битый DESIGN.md — громкая ошибка с местом: цвет словом, нет роли, нет файла "
-                 "шрифта, отскок, нет шапки", f"поймано {len(caught)} из {len(broken)}: {', '.join(caught)}")
+                 "шрифта, отскок, нет шапки, цвет рукописи словом", f"поймано {len(caught)} из {len(broken)}: {', '.join(caught)}")
+    # свой цвет рукописи (colors.hand, «СлаваМонтаж» 22.10.2026): пометка рукой — им, и verify_page его пропускает;
+    # без него рукопись — цветом текста, как у Антишколы
+    path = tmp / "ds-hand" / "DESIGN.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(src.replace('  text: "#F2EBDD"', '  hand: "#F6EAB0"\n  text: "#F2EBDD"', 1), encoding="utf-8")
+    own = design.Design(path, "hand")
+    report.check("--ds-hand: #F6EAB0" in own.css() and [246, 234, 176] in own.allowed()["colors"]
+                 and f"--ds-hand: {system.colors['text']}" in system.css() and "color: var(--ds-hand)" in system.css(),
+                 "свой цвет рукописи из DESIGN.md: пометка рукой им, verify_page его пропускает; нет его — цвет текста")
 
     # партитура: приёмы системы — с проверкой формы до сборки
     words = [{"word": f"слово{i}", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(40)]
