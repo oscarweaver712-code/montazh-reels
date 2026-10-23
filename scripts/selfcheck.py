@@ -1931,7 +1931,7 @@ def check_taste(report: Report, tmp: Path):
             text = "\n".join(taste.lines(made["main"]))
         finally:
             shutil.rmtree(work, ignore_errors=True)
-    ok = (not silent and "РОЛИК_Т2 — БРАК: «стоки мутные»" in text and "мотив «конверт из рук в руки»" in text
+    ok = (not silent and "РОЛИК_Т2 — БРАК: стоки мутные" in text and "мотив «конверт из рук в руки»" in text
           and text.index("РОЛИК_Т2") < text.index("РОЛИК_Т1"))
     report.check(ok, "вкус автора: принятое и брак с причиной — в файл проекта и аналитику, брак без причины — отказ",
                  text.replace("\n", " | ")[:200] or "пусто")

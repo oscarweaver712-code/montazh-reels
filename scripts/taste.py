@@ -78,7 +78,7 @@ def lines(project, show: int = SHOW) -> list:
     for e in reversed(last):
         idea = (e.get("concept") or {}).get("motif") or (e.get("concept") or {}).get("idea") or ""
         kinds = ", ".join(f"{k} {n}" for k, n in sorted((e.get("kinds") or {}).items(), key=lambda kv: -kv[1])[:5])
-        out.append(f"- {e['stem']} — {e['verdict'].upper()}" + (f": «{e['why']}»" if e.get("why") else "")
+        out.append(f"- {e['stem']} — {e['verdict'].upper()}" + (f": {e['why']}" if e.get("why") else "")
                    + (f"; мотив «{idea}»" if idea else "") + (f"; приёмы {kinds}" if kinds else ""))
     return out + [""]
 
