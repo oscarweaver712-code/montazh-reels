@@ -3034,6 +3034,27 @@ def check_portable(report: Report, tmp: Path):
                  "упавший шаг останавливает задачу — следующие не идут", f"код {code_bad}")
     leftover.unlink(missing_ok=True)
 
+    # 23.10.2026: файл идущей задачи убрали руками (остановка всей очереди) — обработчик падал на move и бросал очередь
+    saved = (jobqueue.QUEUE, jobqueue.LOCK, jobqueue.CURRENT, jobqueue.STOP)
+    q = WORK_DIR / f".selfcheck_queue_{os.getpid()}"
+    try:
+        jobqueue.QUEUE, jobqueue.LOCK, jobqueue.CURRENT, jobqueue.STOP = q, q / "runner.lock", q / "current.json", q / "stop"
+        jobqueue.write_job("10-selfcheck-gone", [["python", "-c", f"import os; os.remove(r'{q / '10-selfcheck-gone.json'}')"]],
+                                  queue=q)
+        jobqueue.write_job("11-selfcheck-next", [["python", "-c", "pass"]], queue=q)
+        try:
+            jobqueue.serve(idle=0.5)
+            survived = True
+        except Exception as e:                                  # noqa: BLE001 — падение обработчика и есть провал
+            survived = f"{type(e).__name__}: {e}"
+        done = {f.stem for f in (q / "done").glob("*.json")}
+        report.check(survived is True and {"10-selfcheck-gone", "11-selfcheck-next"} <= done,
+                     "файл идущей задачи убрали — обработчик пишет итог по снимку и идёт к следующей",
+                     f"обработчик: {'жив' if survived is True else survived}, готово: {sorted(done)}")
+    finally:
+        jobqueue.QUEUE, jobqueue.LOCK, jobqueue.CURRENT, jobqueue.STOP = saved
+        shutil.rmtree(q, ignore_errors=True)
+
 
 def check_batch(report: Report, tmp: Path):
     """Пачка: каждый ролик — в своей новой сессии мозга, а после очереди студия продолжает сама.

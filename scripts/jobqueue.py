@@ -352,6 +352,10 @@ def serve(idle: float) -> None:
         except OSError:
             pass
         running = QUEUE / "logs" / f"{name}.log"
+        try:                                   # снимок задачи: её файл могут убрать, пока она идёт
+            snapshot = job.read_text(encoding="utf-8")
+        except OSError:
+            continue
         started = time.time()
         print(f"▶ {name}", flush=True)
         CURRENT.write_text(json.dumps({"job": name, "started": started, "pid": os.getpid()}),
@@ -363,7 +367,13 @@ def serve(idle: float) -> None:
             CURRENT.unlink(missing_ok=True)
         spent = time.time() - started
         target = QUEUE / ("done" if code == 0 else "failed") / job.name
-        shutil.move(str(job), target)
+        # 23.10.2026: файл идущей задачи убрали руками (остановка всей очереди) — обработчик падал на move и
+        # бросал очередь; теперь итог пишется по снимку, а обработчик идёт дальше
+        try:
+            shutil.move(str(job), target)
+        except FileNotFoundError:
+            target.write_text(snapshot, encoding="utf-8")
+            print(f"· {name}: файл задачи убрали, пока она шла — итог записан по снимку", flush=True)
         if code == 0:
             print(f"✓ {name} за {spent:.0f} с", flush=True)
         else:
