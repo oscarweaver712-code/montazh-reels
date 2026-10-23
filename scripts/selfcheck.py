@@ -391,6 +391,50 @@ def check_hdr(report: Report, preset: dict, tmp: Path):
                  f"насыщенность {saturation:.0%} от исходной, отклонение {deviation:.0f}, цвет на выходе {tags}")
 
 
+def check_fps_source(report: Report, preset: dict, tmp: Path):
+    """Исходник 60 к/с (айфон по умолчанию) режется в ролик 30 к/с кадр в кадр с планом и звуком.
+
+    23.10.2026 у IMG_0930 (iPhone, 60 к/с) каждый кусок дубля выходил на два кадра длиннее звука:
+    «-r 30» на выходе добивал кусок до длины последнего кадра 60 к/с. Склейка оставила в звуке дыры
+    на стыках, рендер страницы их схлопнул — пропало последнее слово ролика, губы к концу отстали от
+    голоса на 0,3 с. Синтетика основной проверки — 30 к/с, на ней этого не видно.
+
+    Вторая дыра — от loudnorm: в динамическом режиме на дорожке не кратной 0,1 с он сбивает метки
+    за 3 с до конца (у каждого дубля 1–2 кадра). Поэтому звук здесь пиковый (тихий тон и щелчки —
+    линейный режим невозможен, как у живой речи), а длина плана — 5,767 с, не кратная 0,1.
+    """
+    from render import render
+
+    print("\nИсходник 60 к/с")
+    fps = preset["video"]["fps"]
+    src, out = tmp / "fps60_src.mov", tmp / "fps60_out.mp4"
+    subprocess.run([
+        ffmpeg_bin(), "-y", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc2=size=1080x1920:rate=60:duration=8",
+        "-f", "lavfi", "-i", "aevalsrc=0.03*sin(2*PI*300*t)+0.9*between(mod(t\\,2)\\,1\\,1.002):d=8:s=48000",
+        *source_codec(), "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest",
+        str(src),
+    ], check=True, capture_output=True)
+    segments = snap_segments([(0.4, 2.3), (3.1, 4.9), (5.5, 7.567)], fps)
+    want = sum(round((e - s) * fps) for s, e in segments)
+    try:
+        render(src, out, segments, {**preset, "look": {"enabled": False}})
+        error = ""
+    except RuntimeError as e:
+        error = str(e).splitlines()[0]
+    frames = int(probe_value(out, "stream=nb_frames", "v:0") or 0) if not error else 0
+    plan = want / fps
+    # звук берём, как рендер страницы: «-t длина» по меткам, дыры при декодировании схлопываются —
+    # каждая дыра в метках съедает столько же хвоста
+    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-t", f"{plan:.6f}", "-i", str(out), "-vn", "-ac", "1",
+                          "-ar", "48000", "-f", "s16le", "-"], capture_output=True).stdout if not error else b""
+    heard = len(raw) / 2 / 48000
+    report.check(not error and frames == want and abs(heard - plan) < 0.005,
+                 "исходник 60 к/с: кадров и звука ровно по плану, хвост звука цел",
+                 error or f"кадров {frames} из {want}, звука до конца плана {heard:.3f} с из {plan:.3f}")
+
+
 def check_face_exposure(report: Report, tmp: Path):
     """Засвет лица ловится в готовом ролике (verify_render).
 
@@ -5108,6 +5152,7 @@ def main():
         section(report, check_cut_keeps_speech, preset, tmp)
         section(report, check_voice, preset, tmp)
         section(report, check_hdr, preset, tmp)
+        section(report, check_fps_source, preset, tmp)
         section(report, check_face_exposure, tmp)
         section(report, check_look, preset, tmp)
         section(report, check_face_memory, tmp)

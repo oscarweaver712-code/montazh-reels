@@ -22,7 +22,7 @@ import subprocess
 from pathlib import Path
 
 import host
-from common import FONT_DIR, WORK_DIR, decode_threads, ffmpeg_bin, plural, probe, snap_segments
+from common import FONT_DIR, WORK_DIR, decode_threads, ffmpeg_bin, ffprobe_bin, plural, probe, snap_segments
 from look import hdr_to_sdr, look_filter
 
 FADE = 0.012
@@ -111,7 +111,10 @@ def audio_chain(audio_cfg: dict, noise_floor: float | None = None,
 
     chain = voice_chain(audio_cfg, noise_floor)
     if audio_cfg.get("normalize", True):
-        chain.append(loudnorm_filter(audio_cfg, measured))
+        # loudnorm в динамическом режиме (живая речь почти всегда в нём: пики не дают линейный) на конце
+        # дорожки не кратной 0,1 с оставляет дыру в метках за 3 с до конца — рендер страницы, режущий звук
+        # по меткам, терял хвост последнего слова. Метки — заново по счёту сэмплов (23.10.2026, IMG_0930)
+        chain += [loudnorm_filter(audio_cfg, measured), "asetpts=N/SR/TB"]
     return chain
 
 
@@ -213,6 +216,12 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
     Длину куска задаёт trim/atrim, а не -t: -t, кратный кадру, отдаёт лишний кадр видео
     и при этом режет звук по-своему. trim даёт ровно N кадров и ровно столько же звука,
     иначе к концу ролика набегает сдвиг и субтитры уезжают от речи.
+
+    Частота ролика ставится в графе (fps после trim), а не только «-r» на выходе. Айфон снимает
+    60 к/с, и «-r 30 -fps_mode cfr» добивал кусок до длины последнего кадра 60 к/с — два лишних
+    кадра видео на кусок при точном звуке. Склейка concat-демуксером оставляла в звуке дыры на
+    стыках, и рендер страницы (звук по меткам, дыры схлопнуты) терял хвост ролика и уводил губы
+    от голоса: 23.10.2026 у IMG_0930 пропало последнее слово «Директ», губы отстали на 0,3 с.
     """
     width, height = video_cfg["width"], video_cfg["height"]
     fps = video_cfg.get("fps", 30)
@@ -244,7 +253,7 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
             *decode_threads(info),
             "-ss", f"{start:.6f}", "-t", f"{duration + 1.0:.6f}", "-i", src,
             "-filter_complex",
-            (f"[0:v]trim=0:{duration:.6f},setpts=PTS-STARTPTS,"
+            (f"[0:v]trim=0:{duration:.6f},setpts=PTS-STARTPTS,fps={fps},"
              f"scale={zw}:{zh}:force_original_aspect_ratio=increase:out_range=tv,"
              f"{hdr}format=yuv420p,crop={width}:{height},setsar=1{grade}[v];"
              f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,"
@@ -263,6 +272,24 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
             print(f"     {i + 1}/{total}", flush=True)
 
     return seg_files
+
+
+def check_frames(path: Path, segments: list, fps: int) -> None:
+    """Кадров в склейке ровно столько, сколько в плане: лишний кадр — это рассинхрон, а не мелочь.
+
+    Звук режется точно, а видео с чужой частотой или кривыми метками отдаёт лишние кадры —
+    и всё, что считано от плана (слова, субтитры, графика), к концу ролика уезжает от губ.
+    """
+    want = sum(max(1, round((end - start) * fps)) for start, end in segments)
+    found = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=nb_frames", "-of", "csv=p=0", str(path)],
+                           capture_output=True, encoding="utf-8", errors="replace").stdout.strip()
+    if not found.isdigit():
+        raise RuntimeError(f"не удалось посчитать кадры собранного ролика {path.name}: ffprobe ответил «{found}»")
+    if int(found) != want:
+        raise RuntimeError(f"в собранном ролике {found} кадров, а по плану {want} ({int(found) - want:+d}) — "
+                           f"видео разошлось со звуком и субтитрами, ролик не отдаю. Исходник с другой частотой "
+                           f"кадров или кривыми метками времени: смотри render.cut_segments")
 
 
 def render(video: Path, out_path: Path, segments: list, preset: dict,
@@ -328,6 +355,7 @@ def render(video: Path, out_path: Path, segments: list, preset: dict,
         ]
         print("  → склеиваю, накладываю субтитры и чищу голос", flush=True)
         ffmpeg_run(cmd, WORK_DIR, "финальной сборке")
+        check_frames(part, segments, fps)
         part.replace(out_path)
     finally:
         # временные куски весят прилично — убираем даже если упали посередине
