@@ -91,7 +91,7 @@ def plan(stem: str, final: str) -> dict:
                        for key, items in groups.items()}}
 
 
-def apply(stem: str, final: str, remove: list) -> dict:
+def apply(stem: str, final: str, remove: list, why: str = "") -> dict:
     """Записывает апрув и удаляет выбранные группы. Неизвестная группа — громкая ошибка."""
     unknown = [g for g in remove if g not in GROUPS]
     if unknown:
@@ -111,6 +111,11 @@ def apply(stem: str, final: str, remove: list) -> dict:
     (WORK_DIR / stem).mkdir(parents=True, exist_ok=True)
     (WORK_DIR / stem / "approved.json").write_text(json.dumps(record, ensure_ascii=False, indent=1),
                                                  encoding="utf-8")
+    import taste
+    try:                                       # принятое — во вкус проекта: аналитик увидит, что у автора сработало
+        taste.record(stem, "принят", why, p["file"])
+    except (ValueError, projects.ProjectError) as e:
+        print(f"· вкус проекта не записан: {e}")
     return {"approved": p["file"], "removed": removed, "freed": freed}
 
 

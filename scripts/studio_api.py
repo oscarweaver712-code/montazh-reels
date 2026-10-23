@@ -936,9 +936,21 @@ def approve_plan(stem: str, file: str):
 def approve_apply(stem: str, data: dict = Body(...)):
     """Апрув конечного варианта: запись в work/<имя>/approved.json и уборка отмеченных копий."""
     try:
-        return approve.apply(safe_stem(stem), data.get("file", ""), list(data.get("remove") or []))
+        return approve.apply(safe_stem(stem), data.get("file", ""), list(data.get("remove") or []), str(data.get("why") or ""))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@router.post("/api/studio/reject/{stem}")
+def reject(stem: str, data: dict = Body(...)):
+    """Брак версии с причиной — во вкус проекта (taste.py): аналитик следующих роликов увидит, чего не делать.
+    Файл не удаляется: брак — решение, а не уборка."""
+    import taste
+    try:
+        entry = taste.record(safe_stem(stem), "брак", str(data.get("why") or ""), str(data.get("file") or ""))
+    except (ValueError, projects.ProjectError) as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "entry": entry}
 
 
 # ---------------------------------------------------------------- файлы для просмотра

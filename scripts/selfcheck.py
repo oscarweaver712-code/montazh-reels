@@ -1907,6 +1907,36 @@ def check_studio_js(report: Report, tmp: Path):
     report.check(kept, "бриф хранит референсы с «что брать» после сохранения", str(saved.get("refs")))
 
 
+def check_taste(report: Report, tmp: Path):
+    """Вкус автора (24.10.2026): апрув и брак с причиной пишутся в projects/<проект>/taste.jsonl с идеей и приёмами
+    партитуры; брак без причины — громкий отказ; аналитик получает выжимку, свежие решения — первыми."""
+    import json as _json
+    import taste
+    print("\nВкус автора")
+    with temp_projects(tmp / "taste_projects", "main") as made:
+        for stem in ("РОЛИК_Т1", "РОЛИК_Т2"):
+            (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
+        work = WORK_DIR / "РОЛИК_Т1"
+        try:
+            work.mkdir(parents=True, exist_ok=True)
+            (work / "score.json").write_text(_json.dumps({"concept": {"motif": "конверт из рук в руки"},
+                                                          "items": [{"kind": "count"}, {"kind": "scene"}]}), encoding="utf-8")
+            taste.record("РОЛИК_Т1", "принят", "хук цепляет")
+            try:
+                taste.record("РОЛИК_Т2", "брак")
+                silent = True
+            except ValueError:
+                silent = False
+            taste.record("РОЛИК_Т2", "брак", "стоки мутные")
+            text = "\n".join(taste.lines(made["main"]))
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    ok = (not silent and "РОЛИК_Т2 — БРАК: «стоки мутные»" in text and "мотив «конверт из рук в руки»" in text
+          and text.index("РОЛИК_Т2") < text.index("РОЛИК_Т1"))
+    report.check(ok, "вкус автора: принятое и брак с причиной — в файл проекта и аналитику, брак без причины — отказ",
+                 text.replace("\n", " | ")[:200] or "пусто")
+
+
 def check_score(report: Report):
     """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
     каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
@@ -5507,6 +5537,7 @@ def main():
         section(report, check_keys, tmp)
         section(report, check_stock_auto, tmp)
         section(report, check_studio_js, tmp)
+        section(report, check_taste, tmp)
         section(report, check_fx, tmp)
         section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)

@@ -830,9 +830,21 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
   <h3 id="approve-title">Апрув</h3>
   <div class="say" id="approve-keep"></div>
   <div id="approve-groups"></div>
+  <label class="pick" style="display:block;margin-top:10px">Что понравилось — по желанию, ИИ учтёт в следующих роликах проекта:
+    <textarea id="approve-why" rows="2" style="width:100%" placeholder="Например: хук цепляет, графика крупная, музыка в тему"></textarea></label>
   <div class="row">
     <button type="button" class="btn" id="approve-cancel">Отмена</button>
     <button type="button" class="btn rec" id="approve-go">Апрув и удалить отмеченное</button>
+  </div>
+</dialog>
+
+<dialog class="modal" id="reject" aria-labelledby="reject-title">
+  <h3 id="reject-title">Брак</h3>
+  <div class="say">Почему не годится — словами. Файл не удаляется; ИИ следующих роликов проекта увидит, чего не делать.</div>
+  <textarea id="reject-why" rows="3" style="width:100%" placeholder="Например: стоки мутные, графика мелкая, хук скучный"></textarea>
+  <div class="row">
+    <button type="button" class="btn" id="reject-cancel">Отмена</button>
+    <button type="button" class="btn rec" id="reject-go">Записать брак</button>
   </div>
 </dialog>
 
@@ -1328,7 +1340,7 @@ function renderVersions() {
     const opts = (on ? "" : `<option value="" selected disabled>готовые · ${v.outputs.length}</option>`)
       + v.outputs.map((o) => `<option value="${esc(o.name)}"${on === o ? " selected" : ""}>${esc(label(o))}</option>`).join("");
     parts.push(`<span class="ver" aria-pressed="${!!on}" title="${on ? esc(`${on.name} · ${on.size_mb} МБ`) : "Готовые версии — новые сверху"}"><select id="ver-pick" aria-label="Готовая версия">${opts}</select>${on ? `
-      ${on.approved ? `<span class="ok" title="Принят как финал">✓ финал</span>` : `<button type="button" data-approve="${esc(on.name)}" title="Принять как финал: черновые версии этого ролика удалятся">✓ принять</button>`}
+      ${on.approved ? `<span class="ok" title="Принят как финал">✓ финал</span>` : `<button type="button" data-approve="${esc(on.name)}" title="Принять как финал: черновые версии этого ролика удалятся">✓ принять</button><button type="button" data-reject="${esc(on.name)}" title="Брак с причиной — ИИ учтёт в следующих роликах проекта">✗ брак</button>`}
       <a href="/api/studio/file/output/${encodeURIComponent(on.name)}" download="${esc(on.name)}" title="Скачать ${esc(on.name)}" style="color:inherit;text-decoration:none;padding:0 4px">⬇</a>
       ${on.sheet ? `<button type="button" data-sheet="${esc(on.name)}" title="Сетка кадров">кадры</button>` : ""}
       <button type="button" data-reveal="output|${esc(on.name)}" title="Показать в Finder">⌕</button>` : ""}</span>`);
@@ -1342,6 +1354,7 @@ $("versions").addEventListener("change", (e) => {
 });
 $("versions").addEventListener("click", async (e) => {
   const a = e.target.closest("[data-approve]"); if (a) { e.stopPropagation(); openApprove(a.dataset.approve); return; }
+  const rj = e.target.closest("[data-reject]"); if (rj) { e.stopPropagation(); rejecting = rj.dataset.reject; $("reject-why").value = ""; $("reject-title").textContent = `Брак: ${rejecting}`; $("reject").showModal(); return; }
   const sh = e.target.closest("[data-sheet]"); if (sh) { e.stopPropagation(); window.open(`/api/studio/sheet/${encodeURIComponent(sh.dataset.sheet)}`, "_blank"); return; }
   const r = e.target.closest("[data-reveal]");
   if (r) { e.stopPropagation(); const [folder, name] = r.dataset.reveal.split("|"); try { await api("/api/studio/reveal", { method: "POST", json: { folder, name } }); } catch (err) { toast(err.message, true); } return; }
@@ -2422,11 +2435,22 @@ async function openApprove(name) {
   } catch (e) { toast(e.message, true); }
 }
 $("approve-cancel").addEventListener("click", () => $("approve").close());
+let rejecting = null;
+$("reject-cancel").addEventListener("click", () => $("reject").close());
+$("reject-go").addEventListener("click", async () => {
+  const why = $("reject-why").value.trim();
+  if (!why) { toast("Напиши, что не так, — без причины ИИ нечему учиться", true); return; }
+  try {
+    await api(`/api/studio/reject/${encodeURIComponent(S.stem)}`, { method: "POST", json: { file: rejecting, why } });
+    $("reject").close(); say("brain-say", `Брак ${rejecting} записан во вкус проекта — ИИ учтёт в следующих роликах.`);
+  } catch (e) { toast(e.message, true); }
+});
 $("approve-go").addEventListener("click", async () => {
   if (!approving) return;
   const remove = [...document.querySelectorAll("#approve-groups [data-group]:checked")].map((x) => x.dataset.group);
   try {
-    const r = await api(`/api/studio/approve/${encodeURIComponent(approving.stem)}`, { method: "POST", json: { file: approving.file, remove } });
+    const r = await api(`/api/studio/approve/${encodeURIComponent(approving.stem)}`, { method: "POST", json: { file: approving.file, remove, why: $("approve-why").value.trim() } });
+    $("approve-why").value = "";
     $("approve").close();
     say("brain-say", `Апрув: ${r.approved}. ${r.removed.length ? `Удалено файлов: ${r.removed.length}, освобождено ${mb(r.freed)}.` : "Ничего не удалял."}`);
     await poll(); renderVersions();

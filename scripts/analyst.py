@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import score as sc  # noqa: E402
+import taste  # noqa: E402
 from common import WORK_DIR  # noqa: E402
 
 MODEL = "claude-opus-5-5"
@@ -217,6 +218,7 @@ def material(stem: str) -> str:
         *ds_brief,
         "",
         *recent_lines(stem),
+        *taste.lines(project),
         "",
         "Ответь партитурой (JSON).",
     ])
