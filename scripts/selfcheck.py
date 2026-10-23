@@ -1792,9 +1792,10 @@ def check_order(report: Report, tmp: Path):
 
 
 def check_keys(report: Report, tmp: Path):
-    """Ключ Pexels — обязательный шаг установки (Валера, 23.10.2026: «ключ как обязалово при настройке репо другим
-    человеком»): обе установки его спрашивают, ключ лежит мимо git, без ключа сток — громкий отказ с тем, где взять; в CI
-    не спрашивается. Из файлов Pexels берётся самый лёгкий, что даёт 1080p во весь кадр, а мутнее 720p — никакой."""
+    """Ключ стоков — обязательный шаг установки (Валера, 23.10.2026: «ключ как обязалово при настройке репо другим
+    человеком»): обе установки его спрашивают, Pixabay обязателен, Pexels — по желанию (новые ключи у них на паузе), ключи
+    мимо git, без ключа сток — громкий отказ с тем, где взять; в CI не спрашивается. Из файлов берётся самый лёгкий, что
+    даёт 1080p во весь кадр (у Pixabay — 4K, а не горизонтальный 1080p), а мутнее 720p — никакой."""
     import keys
     import stock
     print("\nКлючи сервисов")
@@ -1802,17 +1803,19 @@ def check_keys(report: Report, tmp: Path):
     win = (ROOT / "scripts" / "install_windows.ps1").read_text(encoding="utf-8-sig")
     ignored = "/.keys/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
     report.check("keys.py setup" in mac and "keys.py setup" in win and ignored,
-                 "ключ Pexels спрашивают обе установки, а .keys/ не попадает в git",
+                 "ключи стоков спрашивают обе установки, а .keys/ не попадает в git",
                  f"Mac: {'да' if 'keys.py setup' in mac else 'нет'}, Windows: {'да' if 'keys.py setup' in win else 'нет'}, "
                  f".gitignore: {'да' if ignored else 'нет'}")
     old_keys, old_env, old_ci = keys.KEYS, os.environ.pop("PEXELS_API_KEY", None), os.environ.get("CI")
     try:
         keys.KEYS = tmp / "keys"
+        os.environ.pop("PIXABAY_API_KEY", None)
         try:
-            keys.require("pexels")
+            keys.require("pixabay")
             loud = False
         except keys.KeyMissing as e:
-            loud = "pexels.com/api" in str(e)
+            loud = "pixabay.com/api/docs" in str(e)
+        loud = loud and keys.SERVICES["pixabay"]["required"] and not keys.SERVICES["pexels"]["required"]
         keys.save("pexels", "abc123")
         from_file = keys.get("pexels") == "abc123"
         os.environ["CI"] = "true"
@@ -1829,9 +1832,14 @@ def check_keys(report: Report, tmp: Path):
              {"width": 2160, "height": 3840, "link": "4k"}, {"width": 1920, "height": 1080, "link": "wide"}]
     pick = stock.pexels_pick(files)
     none = stock.pexels_pick([{"width": 1280, "height": 720, "link": "x"}, {"width": 540, "height": 960, "link": "y"}])
-    report.check(loud and from_file and ci_ok and pick and pick["link"] == "fhd" and none is None,
-                 "без ключа — отказ с тем, где взять; ключ из .keys/; в CI не спрашивается; из Pexels — лёгкий 1080p, мыло — нет",
-                 f"отказ: {loud}, из файла: {from_file}, CI: {ci_ok}, выбран: {pick and pick['link']}, мыло: {none}")
+    hit = {"videos": {"large": {"url": "4k", "width": 3840, "height": 2160}, "medium": {"url": "fhd", "width": 1920, "height": 1080}}}
+    wide = stock.pexels_pick(stock.pixabay_files(hit))
+    report.check(loud and from_file and ci_ok and pick and pick["link"] == "fhd" and none is None
+                 and wide and wide["link"] == "4k",
+                 "без ключа Pixabay — отказ с тем, где взять; Pexels по желанию; в CI не спрашивается; файл — лёгкий 1080p "
+                 "во весь кадр (у Pixabay — 4K), мыло — нет",
+                 f"отказ: {loud}, из файла: {from_file}, CI: {ci_ok}, выбран: {pick and pick['link']}, мыло: {none}, "
+                 f"Pixabay: {wide and wide['link']}")
 
 
 def check_score(report: Report):

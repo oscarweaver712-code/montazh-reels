@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Ключи внешних сервисов этой машины — в .keys/ папки проекта, мимо git (.gitignore), или в переменной окружения.
 
-Pexels — обязателен (Валера, 23.10.2026: «добавь ключ как обязалово при настройке репо другим человеком под себя»):
-вертикальные стоки в 1080p и 4K есть почти только там, а у Mixkit и Coverr — горизонталь, которая во весь вертикальный
-кадр выходит мутнее 720p (common.sharpness). Ключ у каждого свой и бесплатный: лимит — на ключ, условия — на человека.
+Ключ стоков обязателен (Валера, 23.10.2026: «добавь ключ как обязалово при настройке репо другим человеком под себя»):
+у Mixkit и Coverr почти всё горизонтальное и не 4K — во весь вертикальный кадр мутнее 720p (common.sharpness). Pixabay
+отдаёт 4K (из него — 1080p во весь кадр), ключ виден сразу после входа — он обязателен. Pexels (вертикальные 1080p/4K) —
+по желанию: 23.10.2026 новые ключи у них на паузе. Ключ у каждого свой и бесплатный: лимит — на ключ, условия — на человека.
 
   .venv/bin/python scripts/keys.py setup     # спросить недостающие ключи и проверить их запросом (установка зовёт сама)
   .venv/bin/python scripts/keys.py status    # что есть на этой машине
@@ -26,12 +27,20 @@ from common import ROOT  # noqa: E402
 
 KEYS = ROOT / ".keys"
 SERVICES = {
+    "pixabay": {
+        "env": "PIXABAY_API_KEY",
+        "required": True,
+        "what": "Pixabay — стоки 4K без водяных знаков",
+        "how": ("1) зарегистрируйся или войди на https://pixabay.com (можно через Google);\n"
+                "  2) открой https://pixabay.com/api/docs/ — в разделе «Parameters» у поля key виден твой ключ;\n"
+                "  3) скопируй его и вставь сюда"),
+    },
     "pexels": {
         "env": "PEXELS_API_KEY",
+        "required": False,
         "what": "Pexels — вертикальные стоки 1080p/4K без водяных знаков",
-        "how": ("1) открой https://www.pexels.com/api/ и нажми «Get Started» (вход — можно через Google);\n"
-                "  2) заполни форму: зачем ключ — «монтаж своих роликов», сайт — можно ссылку на свой профиль;\n"
-                "  3) скопируй ключ со страницы https://www.pexels.com/api/key/ и вставь сюда"),
+        "how": ("https://www.pexels.com/api/ → «Get Started» → ключ на https://www.pexels.com/api/key/ (23.10.2026 новые ключи\n"
+                "  у Pexels на паузе — тогда просто Enter, без него всё работает)"),
     },
 }
 
@@ -75,7 +84,22 @@ def check_pexels(key: str) -> tuple:
         return False, f"нет связи с Pexels: {e}"
 
 
-CHECKS = {"pexels": check_pexels}
+def check_pixabay(key: str) -> tuple:
+    """(годен, почему) — один запрос поиска видео: 200 — ключ живой (у Pixabay ключ — параметр адреса, так устроен API)."""
+    import urllib.parse
+    url = "https://pixabay.com/api/videos/?" + urllib.parse.urlencode({"key": key, "q": "ocean", "per_page": 3})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "reels-montage"}), timeout=30) as resp:
+            json.loads(resp.read())
+            return True, f"ключ работает, осталось запросов: {resp.headers.get('X-RateLimit-Remaining', '?')}"
+    except urllib.error.HTTPError as e:
+        return False, ("Pixabay не принял ключ — скопируй его заново" if e.code in (400, 401, 403)
+                       else f"Pixabay ответил {e.code}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        return False, f"нет связи с Pixabay: {e}"
+
+
+CHECKS = {"pexels": check_pexels, "pixabay": check_pixabay}
 
 
 def save(name: str, key: str) -> Path:
@@ -103,13 +127,18 @@ def setup() -> int:
             if ok:
                 continue
         if not sys.stdin.isatty():
-            print(f"✗ нет ключа: {service['what']}. Запусти в терминале: .venv/bin/python scripts/keys.py setup")
-            missing += 1
+            print(f"{'✗' if service.get('required', True) else '·'} нет ключа: {service['what']}. "
+                  f"Запусти в терминале: .venv/bin/python scripts/keys.py setup")
+            missing += int(service.get("required", True))
             continue
-        print(f"\nНужен ключ: {service['what']}. Бесплатно, минуты три:\n  {service['how']}")
+        need = service.get("required", True)
+        print(f"\n{'Нужен' if need else 'По желанию'} ключ: {service['what']}. Бесплатно, минуты три:\n  {service['how']}")
         for _ in range(3):
-            key = getpass.getpass("Ключ (не виден при вводе, Enter — вставить): ").strip()
+            key = getpass.getpass("Ключ (не виден при вводе" + ("" if need else "; Enter — пропустить") + "): ").strip()
             if not key:
+                if not need:
+                    print(f"· без ключа: {service['what']} — пропущено, можно добавить потом: keys.py setup")
+                    break
                 continue
             ok, why = CHECKS[name](key)
             print(f"{'✓' if ok else '✗'} {why}")
@@ -117,8 +146,9 @@ def setup() -> int:
                 print(f"✓ сохранён: {save(name, key).relative_to(ROOT)} (не в git)")
                 break
         else:
-            print(f"✗ без ключа {service['what']} установка не закончена — запусти её снова, когда будет ключ")
-            missing += 1
+            if service.get("required", True):
+                print(f"✗ без ключа {service['what']} установка не закончена — запусти её снова, когда будет ключ")
+                missing += 1
     return 1 if missing else 0
 
 

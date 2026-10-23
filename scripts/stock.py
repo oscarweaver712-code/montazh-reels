@@ -9,6 +9,8 @@ original.mp4, часто 4K) и Mixkit (Stock Video Free License, https://mixkit
   .venv/bin/python scripts/stock.py sheet IMG_9665 coverr "worried woman phone" "autumn leaves"
                                                      → work/IMG_9665/broll/cv_<запрос>.jpg и .txt (номер → slug)
   .venv/bin/python scripts/stock.py sheet IMG_9665 mixkit "hourglass"     → mx_<запрос>.jpg (номер → id)
+  .venv/bin/python scripts/stock.py sheet IMG_9665 pixabay "graduation"    → pi_<запрос>.jpg: только те, у которых есть
+                                                     файл не мутнее 720p во весь кадр (4K → 1080p; ключ — scripts/keys.py)
   .venv/bin/python scripts/stock.py sheet IMG_9665 pexels "graduation dress"  → pe_<запрос>.jpg: только вертикальные,
                                                      не мутнее 720p во весь кадр (ключ — scripts/keys.py, у каждого свой)
   .venv/bin/python scripts/stock.py get IMG_9665 pexels 3195394 gown       → самый лёгкий файл, который даёт 1080p
@@ -44,7 +46,34 @@ LICENSE = {
     "pexels": ("Pexels License (https://www.pexels.com/license/): бесплатно, в том числе коммерческое, без указания автора; "
                "нельзя продавать без изменений и показывать узнаваемых людей в дурном свете"),
 }
+LICENSE["pixabay"] = ("Pixabay Content License (https://pixabay.com/service/license-summary/): бесплатно, в том числе "
+                      "коммерческое, без указания автора; нельзя продавать без изменений и показывать людей в дурном свете")
 PEXELS = "https://api.pexels.com/videos"
+
+
+def pixabay_api(params: dict) -> dict:
+    """Поиск видео Pixabay со своим ключом (scripts/keys.py); ключ у них — параметр адреса, так устроен их API."""
+    import json
+    import urllib.error
+    import keys
+    try:
+        key = keys.require("pixabay")
+    except keys.KeyMissing as e:
+        raise StockError(str(e)) from None
+    url = "https://pixabay.com/api/videos/?" + urllib.parse.urlencode({"key": key, **params})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise StockError({400: "Pixabay не принял запрос или ключ — keys.py setup заново",
+                          429: "лимит Pixabay кончился (100 запросов в минуту) — подожди минуту"}.get(
+                              e.code, f"Pixabay ответил {e.code}")) from None
+
+
+def pixabay_files(hit: dict) -> list:
+    """Варианты файла ролика Pixabay (large ≈ 4K, medium ≈ 1080p, …) в виде файлов Pexels — для pexels_pick."""
+    return [{"width": v.get("width"), "height": v.get("height"), "link": v.get("url"), "file_type": "video/mp4"}
+            for v in (hit.get("videos") or {}).values() if v.get("url")]
 
 
 class StockError(Exception):
@@ -94,6 +123,14 @@ def pexels_pick(files: list) -> dict | None:
 
 def search(source: str, query: str) -> list:
     """[(ключ, адрес превью)] по запросу: ключ — slug Coverr, id Mixkit или id Pexels."""
+    if source == "pixabay":                     # только те, у которых есть файл не мутнее 720p во весь кадр
+        data = pixabay_api({"q": query, "per_page": 40, "safesearch": "true"})
+        out = []
+        for hit in data.get("hits", []):
+            thumb = next((v.get("thumbnail") for v in (hit.get("videos") or {}).values() if v.get("thumbnail")), None)
+            if thumb and pexels_pick(pixabay_files(hit)):
+                out.append((str(hit["id"]), thumb))
+        return out[:24]
     if source == "pexels":                      # только вертикальные и не меньше Full HD — мыло не показываем вовсе
         data = pexels_api("search?" + urllib.parse.urlencode({"query": query, "orientation": "portrait",
                                                                "size": "medium", "per_page": 24}))
@@ -136,7 +173,14 @@ def sheet(stem: str, source: str, query: str) -> Path:
 
 
 def get(stem: str, source: str, key: str, name: str) -> Path:
-    if source == "pexels":
+    if source == "pixabay":
+        hits = pixabay_api({"id": int(key)}).get("hits") or []
+        best = pexels_pick(pixabay_files(hits[0])) if hits else None
+        if not best:
+            raise StockError(f"pixabay {key}: нет такого ролика или файла не мутнее {QUALITY_FLOOR}p во весь кадр")
+        urls = [(f"{best['width']}×{best['height']}", best["link"])]
+        page = hits[0].get("pageURL") or f"https://pixabay.com/videos/id-{key}/"
+    elif source == "pexels":
         video = pexels_api(f"videos/{int(key)}")
         best = pexels_pick(video.get("video_files") or [])
         if not best:
@@ -244,7 +288,7 @@ def main():
     g = sub.add_parser("get")
     g.add_argument("stem")
     g.add_argument("source", choices=list(LICENSE))
-    g.add_argument("key", help="slug Coverr, id Mixkit или id Pexels — из листа превью (.txt рядом)")
+    g.add_argument("key", help="slug Coverr, id Mixkit, Pexels или Pixabay — из листа превью (.txt рядом)")
     g.add_argument("name")
     f = sub.add_parser("fit")
     f.add_argument("stem")
