@@ -54,6 +54,8 @@ DEFAULTS = {
 # ни одного акцента и ни одного наезда на склейке (Валера: «склейки не спрятаны»). Теперь это отказ.
 MIN_PUNCH = 0.04
 PUSH_CAP = 0.06        # медленный наезд набирает не больше этого и сбрасывается на пике акцента
+CUT_JUMP = 0.1         # на склейке крупность меняется хотя бы на столько (verify_page.SPLICE_JUMP)
+CUT_HOLD, CUT_OUT = 0.9, 0.6   # добавочный наезд на такой склейке: держится и отпускает, как Take.splice_punches
 
 
 # ---------------------------------------------------------------- поиск лиц
@@ -247,7 +249,15 @@ def solve_camera(faces: dict, cfg: dict | None = None, punches: list | None = No
             plan = zoom_plan(len(camera) - prev, faces["fps"], cfg["base_zoom"], punches, prev / faces["fps"], push=cfg["push"])
             lead = min(PUSH_CAP, float(plan[-1]) - cfg["base_zoom"])
         prev = a
-        camera += _solve_piece(piece, cfg, punches, offset=a / faces["fps"], lead=lead)
+        part = _solve_piece(piece, cfg, punches, offset=a / faces["fps"], lead=lead)
+        # склейка без смены плана: после реза камере самой пришлось приблизить почти до того же, что было до него
+        # (человек у края — «нужный» зум 1,26 после крупного 1,24: IMG_3684, 53,47 с) — рез виден. Тогда на склейке
+        # наезд от прежнего зума, как у Take.splice_punches
+        if camera and part and abs(part[0][0] - camera[-1][0]) < CUT_JUMP:
+            t0 = a / faces["fps"]
+            extra = [[t0, t0 + CUT_HOLD, round(camera[-1][0] + CUT_JUMP + 0.02, 3), 0.0, CUT_OUT]]
+            part = _solve_piece(piece, cfg, list(punches or []) + extra, offset=t0, lead=lead)
+        camera += part
     bad = coverage_violations(camera, faces["width"], faces["height"], window=cfg.get("window"))
     if bad:
         raise RuntimeError(

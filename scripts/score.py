@@ -111,6 +111,8 @@ LIST_TOP = 1262        # px: верх списка и мифа на груди �
 SUB_MAX, LABEL_MAX = 30, 14                             # подпись под записью или у клипа; метка маршрута и оси
 WORD_MIN = 96          # px: меньше кегль слова над головой не читается — тогда слово на груди
 CTA_TAIL = 2.8          # с: от призыва до конца речи — субтитры спрятаны с призыва − 0,2 с (verify_page: не дольше 3 с)
+SHEET_START = 0.35     # с: лист сплита и во весь кадр — не раньше: его вспышка входа (−0,28 с) до начала ролика не
+                       # играется и залипает (verify_page: #flash «0.00 вместо 0.55», IMG_3684, 24.10.2026)
 MIN_SHOW = 0.9          # с: короче окно приёма сборка продлевает — «Чертёж» не успеть прочесть быстрее 0,8 с
 # px: ширина строки над головой — поле без боковых обрезов Instagram (x 102–978) с запасом; было 0,9 кадра (972 px), и
 # «РУКОПОЖАТИЙ» и «100 000 000» уходили под обрез (IMG_3651, 21.10.2026)
@@ -530,6 +532,8 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
             elif kind in FX_KINDS:
                 _fx(m, pid, item, a, b, start)
             else:
+                if a is not None and (item.get("layout") or where_of(item)) in ("split", "full"):
+                    a = max(a, SHEET_START)
                 piece = _piece(kind, pid, item, a, b, start, end)
                 if piece.layout == "behind" and not m.matte_need()[0]:
                     raise ValueError(f"раскладка behind — человек поверх, а маски у ролика не будет: "
@@ -790,13 +794,21 @@ def _count(m, pid: str, item: dict, a: float, b: float, start, end) -> None:
 def _scene(m, pid: str, item: dict, a: float, b: float, start, end) -> None:
     """Своя сцена режиссёра: его html, css и js с $id → своим id и {w:N}/{e:N} → секундами слов. За человеком
     ("layer": "behind") — человек поверх (окно вырезки), если не "fg": false."""
-    def fill(text: str) -> str:
-        text = re.sub(r"\{w:(\d+)\}", lambda g: f"{start(int(g.group(1))):.2f}", text)
-        text = re.sub(r"\{e:(\d+)\}", lambda g: f"{end(int(g.group(1))):.2f}", text)
-        return text.replace("$id", pid)
     layer = item.get("layer", "front")
+    # нулевой кадр рендер не проигрывает (tl.set ровно в 0 — «0.00 вместо 1.00»), лист сплита — не раньше SHEET_START
+    floor = SHEET_START if layer in ("split", "full") else 0.1
+
+    def fill(text: str) -> str:
+        text = re.sub(r"\{w:(\d+)\}", lambda g: f"{max(floor, start(int(g.group(1)))):.2f}", text)
+        text = re.sub(r"\{e:(\d+)\}", lambda g: f"{max(floor, end(int(g.group(1)))):.2f}", text)
+        return text.replace("$id", pid)
     html_ = "        " + fill(item["html"]).strip()
     js = "\n".join("      " + line.strip() for line in fill(item["js"]).splitlines() if line.strip()) if item.get("js") else ""
+    # уход сцены — гарантия сборки, а не надежда на js аналитика: 24.10.2026 у IMG_3684 сцены s0, s2, s7 без ухода висели
+    # до конца ролика поверх лица (s0 — с 0 до 54 с)
+    js += f'\n      tl.set("#{pid}", {{ opacity: 0 }}, {b + 0.35:.2f});'
+    if layer in ("split", "full"):
+        a = max(a, SHEET_START)
     if item.get("css"):
         m.css(fill(item["css"]))
     if layer in ("split", "full"):

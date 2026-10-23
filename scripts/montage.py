@@ -369,6 +369,9 @@ class Montage:
         switch, whips = [], ""
         if framing:
             keep = list(self.wide_windows) + list(self.cutaways) + list(self.fg_windows) + [tuple(x) for x in tk.bloopers]
+            # наезд приёма (число, штамп) — сам «крупнее»: крупный план смены кадра на него не заходит, иначе на склейке
+            # крупный сменялся почти таким же крупным (1,24 → 1,26) и рез был виден (IMG_3684, 53,47 с, 23–24.10.2026)
+            keep += [(p[0] - 0.35, p[1]) for p in self.punches]
             if hook is not None:
                 keep.append((hook - 0.3, hook + HOOK_PULL + 0.3))
             switch, whips = tk.framing(keep_wide=keep)
