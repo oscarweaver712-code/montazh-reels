@@ -222,6 +222,10 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
     кадра видео на кусок при точном звуке. Склейка concat-демуксером оставляла в звуке дыры на
     стыках, и рендер страницы (звук по меткам, дыры схлопнуты) терял хвост ролика и уводил губы
     от голоса: 23.10.2026 у IMG_0930 пропало последнее слово «Директ», губы отстали на 0,3 с.
+
+    Обрезка видео — по числу кадров уже после fps, а не по времени до него: у айфона 29,97 к/с частота
+    переменная, и если перед концом куска пропали кадры, fps дотягивал последний «длинный» кадр за конец
+    куска (IMG_3656: кусок 40 с — 1197 кадров вместо 1196, склейка не прошла check_frames).
     """
     width, height = video_cfg["width"], video_cfg["height"]
     fps = video_cfg.get("fps", 30)
@@ -253,7 +257,7 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
             *decode_threads(info),
             "-ss", f"{start:.6f}", "-t", f"{duration + 1.0:.6f}", "-i", src,
             "-filter_complex",
-            (f"[0:v]trim=0:{duration:.6f},setpts=PTS-STARTPTS,fps={fps},"
+            (f"[0:v]setpts=PTS-STARTPTS,fps={fps},trim=end_frame={frames},setpts=PTS-STARTPTS,"
              f"scale={zw}:{zh}:force_original_aspect_ratio=increase:out_range=tv,"
              f"{hdr}format=yuv420p,crop={width}:{height},setsar=1{grade}[v];"
              f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,"

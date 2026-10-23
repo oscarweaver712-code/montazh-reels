@@ -177,7 +177,8 @@ def coverage_violations(camera: list, width: int, height: int, eps: float = 1e-6
     return bad
 
 
-def zoom_plan(n: int, fps: float, base: float, punches: list, offset: float = 0.0, push: float = 0.0) -> np.ndarray:
+def zoom_plan(n: int, fps: float, base: float, punches: list, offset: float = 0.0, push: float = 0.0,
+              lead: float = 0.0) -> np.ndarray:
     """Базовое приближение плюс акценты режиссёра: [начало, конец, зум, въезд, выезд].
 
     Въезд 0 — мгновенный скачок крупности (так прячут склейку), выезд по умолчанию равен
@@ -185,6 +186,7 @@ def zoom_plan(n: int, fps: float, base: float, punches: list, offset: float = 0.
     push — медленный наезд через мысль (зум в секунду): база ползёт вверх до PUSH_CAP и
     сбрасывается на пике следующего акцента — там зум задан самим акцентом, и сброса не видно.
     Наезд не выше базы хотя бы на MIN_PUNCH — громкая ошибка: он молча ничего бы не делал.
+    lead — на сколько выше базы стояла камера в последнем кадре прошлого куска (склейка в начале этого куска).
     """
     parsed = []
     for punch in punches or []:
@@ -204,6 +206,14 @@ def zoom_plan(n: int, fps: float, base: float, punches: list, offset: float = 0.
         for r in resets:
             last[t >= r] = r
         floor += np.minimum(PUSH_CAP, push * (t - last))
+    # мгновенный скачок (так прячут склейку) — от того, куда камера уже доехала, а не от базы: наезд успевает набрать
+    # до PUSH_CAP, и «база + 0.12» на резе меняла крупность на 0.09 (IMG_3661, 23.10.2026). Склейка в начале куска —
+    # от последнего кадра прошлого (lead): камера решается по кускам, и скачок стоит в первом кадре нового
+    for k, (start, end, level, ease_in, ease_out) in enumerate(parsed):
+        i = int(round(start * fps))
+        if ease_in == 0 and 0 <= i < n:
+            before = floor[i - 1] - base if i > 0 else lead
+            parsed[k] = (start, end, level + max(0.0, before), ease_in, ease_out)
     zoom = floor.copy()
     for start, end, level, ease_in, ease_out in parsed:
         for i in range(max(0, int(round(start * fps))), min(n, int(np.ceil(end * fps)))):
@@ -228,10 +238,16 @@ def solve_camera(faces: dict, cfg: dict | None = None, punches: list | None = No
     cfg = dict(DEFAULTS, **(cfg or {}))
     frames = faces["frames"]
     bounds = [0] + sorted(c for c in (cuts or []) if 0 < c < len(frames)) + [len(frames)]
-    camera = []
+    camera, prev = [], 0
     for a, b in zip(bounds, bounds[1:]):
         piece = dict(faces, frames=frames[a:b])
-        camera += _solve_piece(piece, cfg, punches, offset=a / faces["fps"])
+        # докуда доехал медленный наезд прошлого куска — по плану, а не по камере (в той ещё приближение под лицо)
+        lead = 0.0
+        if camera and cfg.get("push", 0.0) > 0:
+            plan = zoom_plan(len(camera) - prev, faces["fps"], cfg["base_zoom"], punches, prev / faces["fps"], push=cfg["push"])
+            lead = min(PUSH_CAP, float(plan[-1]) - cfg["base_zoom"])
+        prev = a
+        camera += _solve_piece(piece, cfg, punches, offset=a / faces["fps"], lead=lead)
     bad = coverage_violations(camera, faces["width"], faces["height"], window=cfg.get("window"))
     if bad:
         raise RuntimeError(
@@ -240,7 +256,7 @@ def solve_camera(faces: dict, cfg: dict | None = None, punches: list | None = No
     return camera
 
 
-def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float) -> list:
+def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float, lead: float = 0.0) -> list:
     """Камера на одном куске без склеек."""
     width, height, fps = faces["width"], faces["height"], faces["fps"]
     win_w, win_h = cfg.get("window") or (width, height)
@@ -279,7 +295,7 @@ def _solve_piece(faces: dict, cfg: dict, punches: list | None, offset: float) ->
     else:
         fy = 0.38
 
-    zoom = zoom_plan(n, fps, cfg["base_zoom"], punches, offset, push=cfg.get("push", 0.0))
+    zoom = zoom_plan(n, fps, cfg["base_zoom"], punches, offset, push=cfg.get("push", 0.0), lead=lead)
 
     # Сколько надо приблизить, чтобы лицо встало в цель и окно не вылезло. Лицо стоит
     # на доле f окна шириной S/z: левый край окна = лицо − f·S/z ≥ 0, правый ≤ размер.

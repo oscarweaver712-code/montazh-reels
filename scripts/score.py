@@ -476,7 +476,12 @@ def _strike(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
     """Миф на груди, красная ручка зачёркивает его на «at» — единственное место красного в системе. Субтитры этих слов
     спрятаны: слово на экране и есть речь."""
     text = item["text"]
-    size = int(min(110, 0.9 * 700 / max(bp._em(text, "InterDisplay-800"), 1e-3)))
+    em = max(bp._em(text, "InterDisplay-800"), 1e-3)
+    size = int(min(110, 0.9 * 700 / em))
+    # по центру кадра, а на этой высоте справа — кнопки площадок: слово с чертой (шире на 12%) — в полосу между ними
+    # (23.10.2026: «просто мем», «нужна сумма S» заезжали под кнопки YouTube в трёх роликах подряд, аналитик не видел почему)
+    lo, hi = bp._band(LIST_TOP, LIST_TOP + size * 1.1)
+    size = int(min(size, 2 * min(bp.W / 2 - lo, hi - bp.W / 2) / (1.12 * em)))
     at = max(at, a + 0.35)                      # слово успевают прочесть до черты
     leave = max(b, at + 0.7)
     m.front(f'        <div id="{pid}" class="g ds-strike-w" data-safe="слово на груди ниже подбородка" data-safe-zones="низ" '

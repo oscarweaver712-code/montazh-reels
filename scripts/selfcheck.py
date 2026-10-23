@@ -392,47 +392,58 @@ def check_hdr(report: Report, preset: dict, tmp: Path):
 
 
 def check_fps_source(report: Report, preset: dict, tmp: Path):
-    """Исходник 60 к/с (айфон по умолчанию) режется в ролик 30 к/с кадр в кадр с планом и звуком.
+    """Исходник 60 к/с (айфон по умолчанию) и 29,97 к/с режется в ролик 30 к/с кадр в кадр с планом и звуком.
 
     23.10.2026 у IMG_0930 (iPhone, 60 к/с) каждый кусок дубля выходил на два кадра длиннее звука:
     «-r 30» на выходе добивал кусок до длины последнего кадра 60 к/с. Склейка оставила в звуке дыры
     на стыках, рендер страницы их схлопнул — пропало последнее слово ролика, губы к концу отстали от
     голоса на 0,3 с. Синтетика основной проверки — 30 к/с, на ней этого не видно.
 
+    В тот же день починка (fps после trim) на исходнике 29,97 к/с (IMG_3656, IMG_3662) отдавала кусок на кадр
+    длиннее плана: у айфона частота переменная, перед концом куска пропали кадры, и fps дотягивал последний,
+    «длинный» кадр за конец куска. Поэтому второй исходник — 29,97 с пропуском кадров у конца куска.
+
     Вторая дыра — от loudnorm: в динамическом режиме на дорожке не кратной 0,1 с он сбивает метки
     за 3 с до конца (у каждого дубля 1–2 кадра). Поэтому звук здесь пиковый (тихий тон и щелчки —
-    линейный режим невозможен, как у живой речи), а длина плана — 5,767 с, не кратная 0,1.
+    линейный режим невозможен, как у живой речи), а длина плана не кратна 0,1 с.
     """
     from render import render
 
-    print("\nИсходник 60 к/с")
     fps = preset["video"]["fps"]
-    src, out = tmp / "fps60_src.mov", tmp / "fps60_out.mp4"
-    subprocess.run([
-        ffmpeg_bin(), "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", "testsrc2=size=1080x1920:rate=60:duration=8",
-        "-f", "lavfi", "-i", "aevalsrc=0.03*sin(2*PI*300*t)+0.9*between(mod(t\\,2)\\,1\\,1.002):d=8:s=48000",
-        *source_codec(), "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest",
-        str(src),
-    ], check=True, capture_output=True)
-    segments = snap_segments([(0.4, 2.3), (3.1, 4.9), (5.5, 7.567)], fps)
-    want = sum(round((e - s) * fps) for s, e in segments)
-    try:
-        render(src, out, segments, {**preset, "look": {"enabled": False}})
-        error = ""
-    except RuntimeError as e:
-        error = str(e).splitlines()[0]
-    frames = int(probe_value(out, "stream=nb_frames", "v:0") or 0) if not error else 0
-    plan = want / fps
-    # звук берём, как рендер страницы: «-t длина» по меткам, дыры при декодировании схлопываются —
-    # каждая дыра в метках съедает столько же хвоста
-    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-t", f"{plan:.6f}", "-i", str(out), "-vn", "-ac", "1",
-                          "-ar", "48000", "-f", "s16le", "-"], capture_output=True).stdout if not error else b""
-    heard = len(raw) / 2 / 48000
-    report.check(not error and frames == want and abs(heard - plan) < 0.005,
-                 "исходник 60 к/с: кадров и звука ровно по плану, хвост звука цел",
-                 error or f"кадров {frames} из {want}, звука до конца плана {heard:.3f} с из {plan:.3f}")
+    # айфон 29,97 к/с с переменной частотой: перед концом куска пропало несколько кадров (метки на сетке 1/600),
+    # последний оставшийся кадр «длинный» — fps дотягивал его за конец куска лишним кадром
+    vfr = ["-vf", "select='not(between(t\\,4.30\\,4.45))'", "-fps_mode", "vfr", "-video_track_timescale", "600"]
+    cases = (("60", "60 к/с", 8, [(0.4, 2.3), (3.1, 4.9), (5.5, 7.567)], []),
+             ("30000/1001", "29,97 к/с, пропуски кадров", 8, [(0.567, 4.433), (4.733, 7.2)], vfr))
+    for rate, name, seconds, cuts, extra in cases:
+        print(f"\nИсходник {name}")
+        tag = rate.replace("/", "_")
+        src, out = tmp / f"fps{tag}_src.mov", tmp / f"fps{tag}_out.mp4"
+        subprocess.run([
+            ffmpeg_bin(), "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"testsrc2=size=1080x1920:rate={rate}:duration={seconds}",
+            "-f", "lavfi", "-i", f"aevalsrc=0.03*sin(2*PI*300*t)+0.9*between(mod(t\\,2)\\,1\\,1.002):d={seconds}:s=48000",
+            *extra, *source_codec(), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest",
+            str(src),
+        ], check=True, capture_output=True)
+        segments = snap_segments(cuts, fps)
+        want = sum(round((e - s) * fps) for s, e in segments)
+        try:
+            render(src, out, segments, {**preset, "look": {"enabled": False}})
+            error = ""
+        except RuntimeError as e:
+            error = str(e).splitlines()[0]
+        frames = int(probe_value(out, "stream=nb_frames", "v:0") or 0) if not error else 0
+        plan = want / fps
+        # звук берём, как рендер страницы: «-t длина» по меткам, дыры при декодировании схлопываются —
+        # каждая дыра в метках съедает столько же хвоста
+        raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-t", f"{plan:.6f}", "-i", str(out), "-vn", "-ac", "1",
+                              "-ar", "48000", "-f", "s16le", "-"], capture_output=True).stdout if not error else b""
+        heard = len(raw) / 2 / 48000
+        report.check(not error and frames == want and abs(heard - plan) < 0.005,
+                     f"исходник {name}: кадров и звука ровно по плану, хвост звука цел",
+                     error or f"кадров {frames} из {want}, звука до конца плана {heard:.3f} с из {plan:.3f}")
 
 
 def check_face_exposure(report: Report, tmp: Path):
@@ -645,6 +656,15 @@ def check_cuts(report: Report):
     report.check(pushed[0] == 1.2 and 1.25 < pushed[int(11.9 * fps)] <= 1.2601 and after < 1.215 and steps < 0.001,
                  "медленный наезд через мысль идёт и сбрасывается на пике акцента",
                  f"{pushed[0]:.3f} → {pushed[int(11.9 * fps)]:.3f}, после акцента {after:.3f}, шаг {steps:.4f}")
+    # 23.10.2026, IMG_3661: склейка по паузе — мгновенный крупный «база + 0.12», а медленный наезд к ней набрал +0.03,
+    # и крупность на резе сменилась на 0.09 — verify_page не пустил страницу, аналитик крутил ходы впустую
+    # Камера решается по кускам между склейками — скачок стоит в первом кадре нового куска, наезд набран в прошлом
+    k = int(round(9.0 * fps))
+    cut = solve_camera(synthetic_faces([540.0] * 600, [480.0] * 600, fps=fps), cfg={"base_zoom": 1.2, "push": 0.006},
+                       cuts=[k], punches=[[9.0, 10.0, 1.32, 0.0, 0.0]])
+    report.check(cut[k][0] - cut[k - 1][0] >= 0.12 - 1e-6,
+                 "мгновенный скачок на склейке — от докуда доехал наезд, а не от базы",
+                 f"{cut[k - 1][0]:.3f} → {cut[k][0]:.3f}")
 
     pieces = split_by_drops(0.0, 60.0, [[41.86, 48.98]])
     report.check(pieces == [(0.0, 41.86), (48.98, 60.0)], "вырезанный дубль не попадает в ролик",
