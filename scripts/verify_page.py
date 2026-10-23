@@ -1309,16 +1309,16 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending:
         raise FileNotFoundError(f"Нет страницы {page_path}")
     failed = []
 
-    def check(ok: bool, title: str, details: list = ()):
+    def check(ok: bool, title: str, lines: list = ()):
         print(f"  {'✓' if ok else '✗'} {title}")
-        for line in list(details)[:8]:
+        for line in list(lines)[:8]:
             print(f"      {line}")
-        if len(details) > 8:
-            print(f"      … и ещё {len(details) - 8}")
+        if len(lines) > 8:
+            print(f"      … и ещё {len(lines) - 8}")
         if not ok:
             failed.append(title)
             if out is not None:
-                out.setdefault("details", {})[title] = [str(d) for d in details]
+                out.setdefault("details", {})[title] = [str(d) for d in lines]
 
     print(f"Страница {project.name}")
     page_text = page_path.read_text(encoding="utf-8")

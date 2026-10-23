@@ -31,8 +31,17 @@ page.py — программу с нуля. Партитура — только 
       {"kind": "number",  "w": [30, 34], "at": 32, "text": "2/3", "sub": "шанс, что другая быстрее"},
       {"kind": "promise", "w": [40, 70], "title": "3 причины",                         # список-обещание на груди
        "rows": [{"text": "вероятность", "w": 45}, {"text": "память", "w": 58}, {"text": "теория очередей", "w": 66}]},
-      {"kind": "strike",  "w": [80, 82], "at": 82, "text": "проклят"}               # красная ручка по мифу
-    ]
+      {"kind": "strike",  "w": [80, 82], "at": 82, "text": "проклят"},              # красная ручка по мифу
+      # 21.10.2026 — арсенал шире «Чертежа» (Валера: «визуал скучный… каждый раз что-то выдумываем»):
+      {"kind": "count",   "w": [113, 140], "sub": "знакомых",                         # число растёт шагами на словах
+       "steps": [{"text": "100", "w": 113}, {"text": "10 000", "w": 121}, {"text": "1 млн", "w": 125}]},
+      {"kind": "scene",   "w": [60, 70], "layer": "front", "html": "<div id=\"$id\" class=\"g\">…</div>",
+       "css": "#$id { … }", "js": "enter('#$id', {w:60}); leave('#$id', {e:70});"},       # своя сцена режиссёра
+      {"kind": "wall",    "w": [30, 40], "notes": [{"text": "1929 — Каринти", "w": 31}]},   # заметки к стене за спиной
+      {"kind": "paper",   "w": [5, 7], "text": "МАСК"},                               # коллаж: слово из вырезанных букв
+      {"kind": "vertigo" | "frame" | "doodle" | "zoom", "w": [i, j]}               # движения кадра (zoom — на w[0])
+    ],
+    "concept": {"idea": "…", "motif": "…", "hook": "…"}   # идея ролика: своя, не как у прошлых (novelty)
   }
 
   .venv/bin/python scripts/score.py IMG_3292 --variant montage           # страница studio/IMG_3292--montage
@@ -76,18 +85,39 @@ KINDS = {
     "number": ({"w", "text"}, {"at", "sub", "hide"}),
     "promise": ({"w", "title", "rows"}, set()),
     "strike": ({"w", "text"}, {"at"}),
+    # 21.10.2026: свои сцены режиссёра и приёмы fx.py — в цветах и шрифтах дизайн-системы (fx.use_design)
+    "count": ({"w", "steps"}, {"sub", "hide"}),
+    "scene": ({"w", "html"}, {"js", "css", "layer", "fg", "hide"}),
+    # orbit, phone, glass, cover из fx.py — нет: они рассчитаны на голову ниже (над ней ≥ 300 px), а у говорящей головы
+    # в кадре проекта над головой 60–100 px — закрывают лицо или прячут текст за головой (проба IMG_3651, 21.10.2026).
+    # Карточки по кругу или телефон под эту раскладку режиссёр рисует своей сценой ("scene") со своей геометрией.
+    "wall": ({"w", "notes"}, set()),
+    "paper": ({"w", "text"}, {"hide"}),
+    "vertigo": ({"w"}, set()),
+    "frame": ({"w"}, set()),
+    "doodle": ({"w"}, set()),
+    "zoom": ({"w"}, set()),
 }
+FX_KINDS = {"wall", "paper", "vertigo", "frame", "doodle", "zoom"}
+SCENE_MAX = 6000           # знаков в html+css+js одной сцены: сцена — один момент, а не вторая страница
 DESIGN_KINDS = {"hand", "number", "promise", "strike"}
-TOP = {"title", "hook", "cta", "accent", "text_fixes", "keep_case", "hide", "items", "_note"}
+TOP = {"title", "hook", "cta", "accent", "text_fixes", "keep_case", "hide", "items", "concept", "_note"}
 SAME_RUN = 2           # приёмов подряд в одной раскладке — больше однообразно
 TEXT_MAX = {"word": 12, "stamp": 14, "write": 18,      # знаков в одну строку: крупное слово, штамп, запись,
-            "hand": 26, "number": 7, "strike": 14, "promise": 22}   # пометка, число, миф, заголовок списка
+            "hand": 26, "number": 7, "strike": 14, "promise": 22,   # пометка, число, миф, заголовок списка
+            "paper": 10}                                             # слово из вырезанных букв
 ROW_MAX, ROWS = 24, (2, 4)                             # строка списка-обещания; строк в нём
 LIST_TOP = 1262        # px: верх списка и мифа на груди — под линией субтитров (1150), над рукой с микрофоном
 SUB_MAX, LABEL_MAX = 30, 14                             # подпись под записью или у клипа; метка маршрута и оси
 WORD_MIN = 96          # px: меньше кегль слова над головой не читается — тогда слово на груди
 CTA_TAIL = 2.8          # с: от призыва до конца речи — субтитры спрятаны с призыва − 0,2 с (verify_page: не дольше 3 с)
 MIN_SHOW = 0.9          # с: короче окно приёма сборка продлевает — «Чертёж» не успеть прочесть быстрее 0,8 с
+# px: ширина строки над головой — поле без боковых обрезов Instagram (x 102–978) с запасом; было 0,9 кадра (972 px), и
+# «РУКОПОЖАТИЙ» и «100 000 000» уходили под обрез (IMG_3651, 21.10.2026)
+SAFE_W = 840
+# px: строка по центру на груди — справа там кнопки YouTube с x 834 (formats.SAFE_TEXT_WIDTH 590): было 0,9 × 700–760,
+# и «100 млн», «10 млрд» на груди заезжали под кнопки (IMG_3651, 21.10.2026)
+CHEST_W = 570
 
 
 class ScoreError(ValueError):
@@ -189,6 +219,7 @@ def check(score: dict, words: list) -> list:
                     not (isinstance(item.get("fix"), int) and sats[2] <= item["fix"] <= win[1]):
                 errs.append(f"{where}: нужно w[0] ≤ sats по порядку ≤ fix ≤ w[1] — а не w {win}, sats {sats}, "
                             f"fix {item.get('fix')}")
+        _check_new(kind, item, where, errs, word)
         # надпись — одна строка без переноса: предложение в подписи уходит за кадр (19.10.2026, аналитик IMG_3303:
         # «плоскости теряют даже плотно уложенные круги» вылезла на 785 px). Длиннее — короче или в субтитры
         texts = [("text", item.get("text"), TEXT_MAX.get(kind, 18)), ("sub", item.get("sub"), SUB_MAX),
@@ -270,10 +301,179 @@ def photo_problems(folder: Path, files: list) -> list:
     return out
 
 
+def _steps(item: dict, key: str, where: str, errs: list, word, fields: tuple, limit: int, lo: int = 1, hi: int = 8):
+    """Шаги приёма по словам (count.steps, wall.notes): по порядку речи и внутри окна."""
+    rows, prev = item.get(key), None
+    if not isinstance(rows, list) or not lo <= len(rows) <= hi:
+        errs.append(f"{where}.{key}: {lo}–{hi} шагов [{{{', '.join(f'\"{f}\": …' for f in fields)}, \"w\": номер слова}}, …]")
+        return
+    win = item.get("w") if isinstance(item.get("w"), list) and len(item["w"]) == 2 else None
+    for j, r in enumerate(rows):
+        if not isinstance(r, dict) or "w" not in r or any(not isinstance(r.get(f), str) for f in fields):
+            errs.append(f"{where}.{key}[{j}]: нужны {', '.join(fields)} и «w»")
+            continue
+        if not word(r["w"], f"{where}.{key}[{j}]"):
+            continue
+        if win and all(isinstance(x, int) for x in win) and not win[0] <= r["w"] <= win[1]:
+            errs.append(f"{where}.{key}[{j}]: слово {r['w']} вне окна {win}")
+        if prev is not None and r["w"] <= prev:
+            errs.append(f"{where}.{key}[{j}]: по порядку речи — слово {r['w']} не позже {prev}")
+        prev = r["w"]
+        for f in fields:
+            if f != "from" and len(r[f]) > limit:
+                errs.append(f"{where}.{key}[{j}].{f}: «{r[f]}» — {len(r[f])} знаков, влезает {limit}")
+
+
+def _check_new(kind: str, item: dict, where: str, errs: list, word) -> None:
+    """Форма видов, пришедших 21.10.2026: счётчик, своя сцена, приёмы fx."""
+    if kind == "count":
+        _steps(item, "steps", where, errs, word, ("text",), 11, 2, 6)
+    elif kind == "wall":
+        _steps(item, "notes", where, errs, word, ("text",), 28, 1, 5)
+    elif kind == "scene":
+        _check_scene(item, where, errs, word)
+
+
+SCENE_LAYERS = {"split": "человек в окне внизу, сцена над ним (главные сцены)", "full": "во весь кадр, без человека",
+                "behind": "за человеком на весь фон (видны края и верх)", "front": "поверх человека, мимо лица (мелочь на груди)"}
+SCENE_ID = re.compile(r"""\bid=["']([^"']*)["']""")       # кавычки любые: ИИ пишет и так, и так
+
+
+def _check_scene(item: dict, where: str, errs: list, word) -> None:
+    """Своя сцена режиссёра: корень <div id="$id" class="g …">, все id — от $id, стили — только своих элементов,
+    время в js — словами {w:N} (начало) и {e:N} (конец), цвета и шрифты — переменными и классами системы
+    (verify_page проверит то, что получится на экране)."""
+    html_, css, js = item.get("html", ""), item.get("css", ""), item.get("js", "")
+    if not all(isinstance(x, str) for x in (html_, css, js)):
+        errs.append(f"{where}: html, css, js — строки")
+        return
+    if len(html_) + len(css) + len(js) > SCENE_MAX:
+        errs.append(f"{where}: сцена {len(html_) + len(css) + len(js)} знаков — больше {SCENE_MAX}: это один момент, упрости")
+    if not re.match(r"""\s*<div\s+id=["']\$id["']\s+class=["']g\b""", html_):
+        errs.append(f'{where}.html: начинается с <div id="$id" class="g …"> — корень сцены')
+    bad = [i for i in SCENE_ID.findall(html_) if not (i == "$id" or i.startswith("$id-"))]
+    if bad:
+        errs.append(f"{where}.html: id {', '.join(bad[:3])} — только $id и $id-что-то (иначе столкнётся с чужими)")
+    if re.search(r"<\s*/?\s*(script|style|iframe|link|img)\b", html_ + css + js, re.I):
+        errs.append(f"{where}: без <script>, <style>, <iframe>, <link>, <img> — стили в css, движение в js")
+    if re.search(r"https?://|url\(", html_ + css):
+        errs.append(f"{where}: без ссылок и url(): всё рисуется здесь (svg, css), сеть при рендере не нужна")
+    for sel in re.findall(r"([^{}]+)\{", re.sub(r"@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "", css)):
+        for one in sel.split(","):
+            if one.strip() and not one.strip().startswith("#$id"):
+                errs.append(f"{where}.css: селектор «{one.strip()[:40]}» — только #$id и его потомки")
+                break
+    for n in re.findall(r"\{[we]:(-?\d+)\}", js + css + html_):
+        word(int(n), f"{where}: {{w:{n}}}")
+    if re.search(r"\b(setTimeout|setInterval|requestAnimationFrame|Date\.now|Math\.random|fetch)\b", js):
+        errs.append(f"{where}.js: только таймлайн tl и помощники страницы — без своих часов и случайности "
+                    "(рендер шагает по кадрам: один кадр — одна картинка)")
+    if item.get("layer", "front") not in SCENE_LAYERS:
+        errs.append(f"{where}.layer: " + ", ".join(f"\"{k}\" — {v}" for k, v in SCENE_LAYERS.items()))
+
+
+# ---------------------------------------------------------------- каждый ролик — своя идея (21.10.2026)
+# Валера после IMG_3651: «тупо скопировал стиль прошлого удачного видео — вообще не ок… в правила общие всей системы
+# заложи, что мы не берём одинаковые вещи, мы каждый раз что-то выдумываем». Все партитуры до этого — в основном
+# «write» (число текстом на груди): у IMG_3651 9 из 18. Проверка сверяет идею, хук и набор приёмов с прошлыми роликами
+# проекта (и его разделов) и не пускает однообразие внутри ролика.
+RECENT = 4             # с последними сколькими роликами проекта сверять
+MOTIF_SAME = 0.5       # доля общих слов мотива (Жаккар) — с этой и выше мотив тот же
+KINDS_SAME = 0.8       # косинус составов приёмов — с этого и выше «в основном те же приёмы»
+ONE_KIND = 0.35        # один вид — не больше этой доли вставок ролика (от 6 вставок)
+CONCEPT = ("idea", "motif", "hook")
+STOP = set("и в во на с со по к а не но за из от до для как что это то же ли или у о об при над под".split())
+
+
+def _words(text: str) -> set:
+    return {w[:6] for w in re.findall(r"[\wё]+", str(text).lower()) if len(w) > 2 and w not in STOP}
+
+
+def _profile(items: list) -> dict:
+    out = {}
+    for it in items:
+        if isinstance(it, dict) and it.get("kind") in KINDS:
+            out[it["kind"]] = out.get(it["kind"], 0) + 1
+    return out
+
+
+def _cos(a: dict, b: dict) -> float:
+    dot = sum(a.get(k, 0) * b.get(k, 0) for k in set(a) | set(b))
+    na, nb = sum(v * v for v in a.values()) ** 0.5, sum(v * v for v in b.values()) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _opening(items: list) -> str:
+    """Чем открыт ролик: вид первой вставки по времени."""
+    firsts = [(it["w"][0], it["kind"]) for it in items if isinstance(it, dict) and isinstance(it.get("w"), list)
+              and it["w"] and isinstance(it["w"][0], int)]
+    return min(firsts)[1] if firsts else ""
+
+
+def recent_scores(stem: str, limit: int = RECENT) -> list:
+    """[(имя ролика, партитура)] последних роликов того же проекта (с разделами), свежие первыми; без этого ролика.
+    У ролика с вариантами берётся самая свежая партитура."""
+    import projects
+    try:
+        home = projects.of_or_default(stem).home
+    except projects.ProjectError:
+        return []
+    found = []
+    for other, (project, _) in projects.index().items():
+        if other == stem or project.home != home:
+            continue
+        files = sorted((WORK_DIR / other).glob("score*.json"), key=lambda f: -f.stat().st_mtime)
+        if files:
+            try:
+                found.append((files[0].stat().st_mtime, other, json.loads(files[0].read_text(encoding="utf-8"))))
+            except (json.JSONDecodeError, OSError):
+                continue
+    return [(name, sc) for _, name, sc in sorted(found, key=lambda x: -x[0])[:limit]]
+
+
+def novelty(stem: str, score: dict, variant: str | None = None) -> list:
+    """Провалы «одинакового»: нет идеи ролика, один приём на весь ролик, своей сцены нет, идея, хук или набор приёмов
+    как у недавнего ролика проекта. Пусто — ролик свой."""
+    errs, items = [], [it for it in score.get("items") or [] if isinstance(it, dict)]
+    concept = score.get("concept")
+    if not (isinstance(concept, dict) and all(isinstance(concept.get(k), str) and len(concept[k].strip()) >= 8 for k in CONCEPT)):
+        errs.append("concept: идея ролика — {\"idea\": \"о чём и как показываем\", \"motif\": \"визуальный мотив именно этой "
+                    "истории\", \"hook\": \"чем бьёт первая секунда\"} — каждое не короче 8 знаков; придумай своё, не как в "
+                    "прошлых роликах")
+        concept = {}
+    prof = _profile(items)
+    total = sum(prof.values())
+    if total >= 6:
+        kind, n = max(prof.items(), key=lambda kv: kv[1])
+        if n / total > ONE_KIND:
+            errs.append(f"однообразно: «{kind}» — {n} из {total} вставок (больше {ONE_KIND:.0%}). Каждый момент — своим "
+                        f"самым сильным приёмом: число растёт — count, люди, связи, переписка — своя сцена, путь — route…")
+    if not any(it.get("kind") == "scene" for it in items):
+        errs.append("нет ни одной своей сцены (kind \"scene\"): готовые приёмы — опора, а главный момент ролика придумай "
+                    "сам — html/css/js под эту историю")
+    for name, old in recent_scores(stem):
+        old_items = [it for it in old.get("items") or [] if isinstance(it, dict)]
+        old_concept = old.get("concept") or {}
+        if concept and old_concept:
+            a, b = _words(concept.get("motif", "")), _words(old_concept.get("motif", ""))
+            if a and b and len(a & b) / len(a | b) >= MOTIF_SAME:
+                errs.append(f"мотив «{concept['motif']}» — как у {name} («{old_concept.get('motif')}»): придумай свой под эту историю")
+        sim = _cos(prof, _profile(old_items))
+        if total >= 4 and sim >= KINDS_SAME:
+            errs.append(f"набор приёмов как у {name} (сходство {sim:.2f}: {dict(sorted(_profile(old_items).items()))}) — "
+                        f"в основном те же приёмы; возьми другие под моменты этой истории")
+        if _opening(items) and _opening(items) == _opening(old_items) and name == (recent_scores(stem, 1) or [("", {})])[0][0]:
+            errs.append(f"хук открыт тем же приёмом «{_opening(items)}», что и прошлый ролик {name} — реши первую секунду иначе")
+    return errs
+
+
 def where_of(item: dict) -> str:
     """Где приём на экране: раскладка «Чертежа», а для своих видов — их место."""
     fixed = {"word": "behind", "stamp": "chest", "clip": "full", "photo": "full", "stock": "full", "hand": "behind", "number": "behind",
-             "promise": "chest", "strike": "chest"}
+             "promise": "chest", "strike": "chest", "count": "behind", "wall": "wall", "paper": "full",
+             "vertigo": "camera", "frame": "frame", "doodle": "doodle", "zoom": "camera"}
+    if item.get("kind") == "scene":
+        return f"scene-{item.get('layer', 'front')}"
     defaults = {"write": "split", "route": "behind", "timeline": "split", "compass": "behind", "hexes": "behind",
                 "cuboid": "split", "plot": "split", "trilat": "split"}
     return fixed.get(item.get("kind")) or item.get("layout") or defaults.get(item.get("kind"), "?")
@@ -291,6 +491,8 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
     start = lambda i: round(words[i]["start"], 2)      # noqa: E731
     end = lambda i: round(words[i]["end"], 2)          # noqa: E731
 
+    import fx
+    fx.use_for(stem)                    # приёмы fx — в цветах и шрифтах системы проекта (или его темы)
     for k, item in enumerate(score.get("items") or []):
         kind, pid = item["kind"], f"s{k}-{item['kind']}"
         a, b = (start(item["w"][0]), end(item["w"][1])) if "w" in item else (None, None)
@@ -321,6 +523,12 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
                     raise ValueError("; ".join(bad))
                 each = round((b - a) / len(item["files"]), 2)
                 m.slides(pid, list(item["files"]), a, [each] * len(item["files"]), label=item.get("label", ""))
+            elif kind == "count":
+                _count(m, pid, item, a, b, start, end)
+            elif kind == "scene":
+                _scene(m, pid, item, a, b, start, end)
+            elif kind in FX_KINDS:
+                _fx(m, pid, item, a, b, start)
             else:
                 piece = _piece(kind, pid, item, a, b, start, end)
                 if piece.layout == "behind" and not m.matte_need()[0]:
@@ -377,7 +585,7 @@ def _word(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
     # строка не должна уходить за голову больше чем на 0,2 своей площади (проверка допускает треть)
     top, head_w = y0 - 0.2 * (y1 - y0) - 25, (x1 - x0) * 1.3
     em = max(bp._em(text.upper(), "Oswald", -0.01), 1)
-    wide = int(min(170, 0.9 * bp.W / em))
+    wide = int(min(170, SAFE_W / em))
 
     def hidden(px: int) -> float:
         line = 0.92 * px
@@ -427,7 +635,7 @@ def _over_head(m, text: str, family: str, a: float, b: float, top: float, line: 
     x0, y0, x1, y1 = m._face(a, b)
     head_top, head_w = y0 - 0.2 * (y1 - y0) - 25, (x1 - x0) * 1.3
     em = max(bp._em(text, family), 1e-3)
-    wide = int(min(biggest, 0.9 * bp.W / em))
+    wide = int(min(biggest, SAFE_W / em))
 
     def hidden(px: int) -> float:
         h = line * px
@@ -479,7 +687,7 @@ def _number(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
                  f'<span class="ds-num" style="font-size: {size}px;">{html.escape(text)}</span></div>')
         m.fg(a0 - 0.3, leave + 0.25)
     else:
-        size = int(min(180, 0.9 * 700 / max(bp._em(text, "Unbounded"), 1e-3)))
+        size = int(min(180, CHEST_W / max(bp._em(text, "Unbounded"), 1e-3)))
         # на груди подпись — в колонке под кнопками ленты (formats.GREY_ZONES: справа с x 834–865 от y 727)
         cap = cap.replace('class="ds-numcap"', 'class="ds-numcap" style="font-size: 44px;"')
         m.front(f'        <div id="{pid}" class="g ds-num-wrap" data-safe="число на груди: над головой нет места" '
@@ -535,6 +743,130 @@ def _strike(m, pid: str, item: dict, a: float, b: float, at: float) -> None:
          f'      dsPen("#{pid} .ds-strike path", {at:.2f});\n'
          f'      leave("#{pid}", {leave:.2f}, {{ y: -30, dur: 0.22 }});')
     m.hide(a - 0.05, leave + 0.05)
+
+
+def _count(m, pid: str, item: dict, a: float, b: float, start, end) -> None:
+    """Число растёт шагами на своих словах (100 → 10 000 → 1 млн): каждый шаг выбивает прежний и бьёт из крупного,
+    на шагах — тихий тик, на последнем — удар камеры. Над головой, если строка встаёт; иначе — на груди. Субтитры окна
+    спрятаны: число на экране и есть речь ("hide": false — если число не повторяет сказанное)."""
+    steps, sub = item["steps"], item.get("sub", "")
+    times = [start(s["w"]) for s in steps]
+    leave = max(b, times[-1] + 0.9)
+    longest = max((s["text"] for s in steps), key=lambda t: bp._em(t, "Unbounded"))
+    top = bp.TOP_LINE + 2
+    size = _over_head(m, longest, "Unbounded", a, leave, top + (70 if sub else 0), 1.0, 230, 110)
+    chest = not size
+    if chest:
+        size = int(min(170, CHEST_W / max(bp._em(longest, "Unbounded"), 1e-3)))
+        top = LIST_TOP - 12
+    layer = m.front if chest else m.behind
+    safe = ' data-safe="счётчик на груди: над головой нет места" data-safe-zones="низ"' if chest else ""
+    num_cls = "ds-num" if m.design else "big"
+    if sub:
+        layer(f'        <div id="{pid}-cap" class="g ds-num-wrap"{safe} style="top: {top}px;">'
+              f'<span class="ds-numcap">{html.escape(sub)}</span></div>')
+    for j, s_ in enumerate(steps):
+        layer(f'        <div id="{pid}-{j}" class="g ds-num-wrap"{safe} style="top: {top + (70 if sub else 0)}px;">'
+              f'<span class="{num_cls}" style="font-size: {size}px;">{html.escape(s_["text"])}</span></div>')
+    js = [f'      enter("#{pid}-cap", {times[0] - 0.1:.2f}, {{ fromY: 20, dur: 0.25 }});'] if sub else []
+    for j, t in enumerate(times):
+        js.append(f'      slam("#{pid}-{j}", {t:.2f}, {{ fromScale: {1.6 if j else 1.35} }});')
+        nxt = times[j + 1] - 0.02 if j + 1 < len(times) else leave
+        js.append(f'      leave("#{pid}-{j}", {nxt:.2f}, {{ y: {-70 if j + 1 < len(times) else -50}, dur: 0.14 }});')
+        m.soft(t, "stamp" if j == len(times) - 1 else "line")
+    if sub:
+        js.append(f'      leave("#{pid}-cap", {leave:.2f}, {{ y: -40, dur: 0.2 }});')
+    m.js("\n".join(js))
+    if not chest:
+        m.fg(a - 0.3, leave + 0.25)
+    else:
+        m.notes.append(f"счётчик «{longest}» — на груди: над головой не встаёт и в 110 px")
+    if item.get("hide", True):                  # прячутся слова самих чисел: окно целиком — дольше 3 с без субтитров
+        for s_, t in zip(steps, times):
+            m.hide(t - 0.05, end(s_["w"]) + 0.3)
+    m.punch(times[-1], leave)
+
+
+def _scene(m, pid: str, item: dict, a: float, b: float, start, end) -> None:
+    """Своя сцена режиссёра: его html, css и js с $id → своим id и {w:N}/{e:N} → секундами слов. За человеком
+    ("layer": "behind") — человек поверх (окно вырезки), если не "fg": false."""
+    def fill(text: str) -> str:
+        text = re.sub(r"\{w:(\d+)\}", lambda g: f"{start(int(g.group(1))):.2f}", text)
+        text = re.sub(r"\{e:(\d+)\}", lambda g: f"{end(int(g.group(1))):.2f}", text)
+        return text.replace("$id", pid)
+    layer = item.get("layer", "front")
+    html_ = "        " + fill(item["html"]).strip()
+    js = "\n".join("      " + line.strip() for line in fill(item["js"]).splitlines() if line.strip()) if item.get("js") else ""
+    if item.get("css"):
+        m.css(fill(item["css"]))
+    if layer in ("split", "full"):
+        # сцена на чистом листе: «split» — человек в окне внизу, сцена над ним; «full» — во весь кадр (перебивка)
+        piece = bp.Piece(pid, layer, a, b, html_, js + "\n")
+        piece["plain"] = True
+        m.blueprint(piece)
+        if item.get("hide"):
+            m.hide(a - 0.05, b + 0.05)
+        return
+    (m.behind if layer == "behind" else m.front)(html_)
+    if js:
+        m.js(js)
+    if layer == "behind" and item.get("fg", True):
+        m.fg(a - 0.3, b + 0.25)
+    if item.get("hide"):
+        m.hide(a - 0.05, b + 0.05)
+
+
+def _doodle_marks(m, a: float, b: float) -> list:
+    """Значки doodle — в свободных углах у головы в этом окне (голова как у verify_page: лицо, 0,2 высоты на волосы,
+    по 0,15 ширины с боков), мимо серых зон: в fx.doodle они стоят в жёстких точках и у IMG_3651 задели лицо."""
+    import fx
+    x0, y0, x1, y1 = m._face(a, b)
+    hx0, hx1, top = x0 - 0.15 * (x1 - x0), x1 + 0.15 * (x1 - x0), y0 - 0.2 * (y1 - y0)
+    size, colors = 160, fx.T("MARKS")
+    spots = []
+    if hx0 - 112 >= size:                                        # слева от головы
+        spots += [(112, max(270, top)), (112, min(1370 - size, y1 - size))]
+    if 860 - hx1 >= size:                                        # справа — до кнопок площадок (x 865 ниже y 727)
+        spots += [(round(hx1) + 4, max(270, top))]
+    elif 970 - hx1 >= size and top + size <= 727:                # выше кнопок — до бокового обреза
+        spots += [(round(hx1) + 4, max(270, top))]
+    if y1 + 20 + size <= 1150:                                   # под подбородком, до субтитров
+        spots += [(round((x0 + x1) / 2 - size / 2), round(y1 + 20))]
+    names = ["spark", "star", "heart", "clapper"]
+    return [(names[k % len(names)], x, y, colors[k % len(colors)]) for k, (x, y) in enumerate(spots[:4])] or \
+        [("spark", 112, 270, colors[0])]
+
+
+def _fx(m, pid: str, item: dict, a: float, b: float, start) -> None:
+    """Приём fx.py по словам партитуры; тема — дизайн-система проекта (fx.use_for в build)."""
+    import fx
+    kind = item["kind"]
+    if kind == "wall":
+        part = fx.wall(pid, [r["text"] for r in item["notes"]], [start(r["w"]) for r in item["notes"]], b)
+    elif kind == "paper":
+        part = fx.paper_cut(pid, a, b, item["text"])
+    elif kind == "vertigo":
+        part = fx.vertigo(a, b, amount=max(0.86, round(1 / m.tk.base_zoom + 0.02, 2)) if getattr(m.tk, "base_zoom", 0) else 0.86)
+    elif kind == "frame":
+        part = fx.frame_break(pid, a, b)
+    elif kind == "doodle":
+        part = fx.doodle(pid, a, b, marks=_doodle_marks(m, a, b))
+    else:                               # zoom: пролёт сквозь камеру на начале окна
+        part = fx.zoom_through(a)
+    if part.behind:
+        m.behind(part.behind)
+    if part.front:
+        m.front(part.front)
+    if part.js:
+        m.js(part.js)
+    m.css(part.css)
+    for w in part.windows:
+        m.fg(*w)
+    if part["stage"]:
+        m.stage_fx = True
+    m.soft(a, "text")
+    if item.get("hide"):
+        m.hide(a - 0.05, b + 0.05)
 
 
 def _piece(kind: str, pid: str, item: dict, a, b, start, end):

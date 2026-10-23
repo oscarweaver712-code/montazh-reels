@@ -273,6 +273,11 @@ class Design:
             f"--ds-grad: {self.gradient}; --ds-label-font: {fam('hand')}; --ds-label-weight: {wt('hand')}; "
             f"--ds-label-size: 64px; --ds-label-track: 0; --ds-label-case: none; }}",
             f"      #root {{ font-family: {fam('caption')}, sans-serif; }}",
+            # шрифты ролей и лак текста классами — ими пишет свои сцены аналитик (score.py, kind "scene")
+            *[f"      .ds-f-{role} {{ font-family: {fam(role)}; font-weight: {wt(role)}; font-style: {f[role]['style']}; }}"
+              for role in ROLES],
+            f"      .ds-lac {{ {grad_text} }}",
+            f"      .ds-halo {{ text-shadow: {halo}; }}",
             f"      .lead, .pill, .label, .cta-small {{ font-family: {fam('caption')}; font-weight: {wt('caption')}; }}",
             f"      .cta {{ background: {_rgba(c['plate'], 0.86)}; border-color: {_rgba(c['text'], 0.16)}; }}",
             "      .stamp { color: var(--ds-acc); border-color: var(--ds-acc); }",

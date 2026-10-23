@@ -102,6 +102,7 @@ class Montage:
         self.splits, self._bp, self._fig = [], False, 0
         self.hook_at, self.hook_why = "auto", ""
         self._matte = None
+        self.stage_fx = False           # приём fx двигает всю картинку (#stage): пролёт, отъезд
 
     def matte_need(self) -> tuple:
         """(нужна ли ролику маска, почему) — matte.need: стиль и место над головой. Нет — за спину не ставить."""
@@ -434,7 +435,7 @@ class Montage:
         if self.design:
             mark += "\n    " + self.design.meta()
         page = page.replace('<meta name="reels-sfx-norm"', mark + '\n    <meta name="reels-sfx-norm"', 1)
-        if self.splits:
+        if self.splits or self.stage_fx:
             import fx
             page = fx.FX(stage=True).finalize(page)          # сцена в обёртке #stage — её двигает сплит
         out = ROOT / f"studio/{tk.project}/index.html"
