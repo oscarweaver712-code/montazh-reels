@@ -469,6 +469,22 @@ def novelty(stem: str, score: dict, variant: str | None = None) -> list:
     return errs
 
 
+def fix_mechanics(score: dict, words: list) -> list:
+    """Механику партитуры правит машина, а не ход ИИ (24.10.2026: у IMG_3684 первый ход за $0,84 провалился на призыве,
+    поставленном на 0,2 с раньше). Сейчас: призыв, после которого речи дольше CTA_TAIL, — на первое слово, после
+    которого не дольше. Возвращает, что поправлено (пусто — ничего)."""
+    done = []
+    cta = score.get("cta")
+    if isinstance(cta, dict) and isinstance(cta.get("w"), int) and 0 <= cta["w"] < len(words) and words:
+        last = words[-1]["end"]
+        if last - words[cta["w"]]["start"] > CTA_TAIL:
+            fit = [i for i, w in enumerate(words) if last - w["start"] <= CTA_TAIL and i > cta["w"]]
+            if fit:
+                done.append(f"призыв: слово {cta['w']} → {fit[0]} (до конца речи не больше {CTA_TAIL:g} с)")
+                cta["w"] = fit[0]
+    return done
+
+
 def where_of(item: dict) -> str:
     """Где приём на экране: раскладка «Чертежа», а для своих видов — их место."""
     fixed = {"word": "behind", "stamp": "chest", "clip": "full", "photo": "full", "stock": "full", "hand": "behind", "number": "behind",

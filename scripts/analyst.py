@@ -554,6 +554,9 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES, resume: boo
                 _log(log, entry)
                 raise Skipped(f"аналитик: дубль не годится — {score['skip']}")
             from kit import Take
+            fixed = sc.fix_mechanics(score, Take(stem, variant).words)    # механика — машиной, до сборки
+            if fixed:
+                entry["fixed"] = fixed
             path = sc.path_of(stem, variant)
             path.write_text(json.dumps(score, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
             stock_failed = resolve_stock(stem, score)       # сток — до сборки: страница ставит его как clip

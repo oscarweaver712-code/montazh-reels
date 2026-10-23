@@ -1979,6 +1979,11 @@ def check_score(report: Report):
     report.check(not errs_good and not missed, "партитура: годная проходит, ошибки аналитика ловятся до сборки",
                  f"годная: {'; '.join(errs_good) or 'чисто'}; не поймано: {', '.join(missed) or 'ничего'}")
 
+    early = {"cta": {"w": 33}, "items": []}
+    fixed_cta = sc.fix_mechanics(early, words)
+    report.check(fixed_cta and not [e for e in sc.check(early, words) if "cta" in e],
+                 "призыв на 0,2 с раньше правит машина, а не ход ИИ", f"{fixed_cta} → cta {early['cta']}")
+
     # провалы проверки — аналитику словами партитуры, механику правит машина, сборку — не ИИ (23.10.2026: 0 чистых
     # ходов из 15 — аналитик получал одно название проверки и правил вслепую, а баг вёрстки переписывал 6 раз)
     import analyst
