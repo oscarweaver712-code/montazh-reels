@@ -67,6 +67,8 @@ KINDS = {
     "plot": ({"w", "ys"}, {"layout", "mark", "xlabel", "ylabel", "label", "hide"}),
     "trilat": ({"w", "sats", "fix"}, {"layout", "roam", "sphere", "label", "hide"}),
     "clip": ({"w", "name"}, {"label"}),
+    # фото человека из «Материалов» (work/<имя>/materials/) во весь кадр, несколько — серией (kit.slides)
+    "photo": ({"w", "files"}, {"label"}),
     # дизайн-система проекта (DESIGN.md): пометка рукой, число отливом, список-обещание, красная ручка по мифу
     "hand": ({"w", "text"}, {"line", "hide"}),
     "number": ({"w", "text"}, {"at", "sub", "hide"}),
@@ -238,9 +240,34 @@ def check(score: dict, words: list) -> list:
     return errs
 
 
+def photo_problems(folder: Path, files: list) -> list:
+    """Чего не хватает фото из материалов для показа во весь кадр: файла нет, это не картинка или она мутнее 720p
+    по месту в кадре (common.sharpness, 23.10.2026). Пусто — годится."""
+    from PIL import Image
+    from common import QUALITY_FLOOR, sharpness
+    out = []
+    if not isinstance(files, list) or not files:
+        return ["files — список имён фото из материалов"]
+    for name in files:
+        path = folder / str(name)
+        if not path.is_file():
+            out.append(f"фото «{name}» в материалах ролика нет")
+            continue
+        try:
+            with Image.open(path) as im:
+                w, h = im.size
+        except OSError:
+            out.append(f"«{name}» — не картинка")
+            continue
+        p = sharpness(w, h, 1080, 1920)
+        if p < QUALITY_FLOOR:
+            out.append(f"фото «{name}» {w}×{h} во весь кадр — {p}p, ниже {QUALITY_FLOOR}p: не ставь его")
+    return out
+
+
 def where_of(item: dict) -> str:
     """Где приём на экране: раскладка «Чертежа», а для своих видов — их место."""
-    fixed = {"word": "behind", "stamp": "chest", "clip": "full", "hand": "behind", "number": "behind",
+    fixed = {"word": "behind", "stamp": "chest", "clip": "full", "photo": "full", "hand": "behind", "number": "behind",
              "promise": "chest", "strike": "chest"}
     defaults = {"write": "split", "route": "behind", "timeline": "split", "compass": "behind", "hexes": "behind",
                 "cuboid": "split", "plot": "split", "trilat": "split"}
@@ -281,6 +308,12 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
                 _strike(m, pid, item, a, b, start(item.get("at", item["w"][1])))
             elif kind == "clip":
                 m.footage(pid, item["name"], a, round(b - a, 2), label=item.get("label", ""))
+            elif kind == "photo":
+                bad = photo_problems(WORK_DIR / stem / "materials", item["files"])
+                if bad:
+                    raise ValueError("; ".join(bad))
+                each = round((b - a) / len(item["files"]), 2)
+                m.slides(pid, list(item["files"]), a, [each] * len(item["files"]), label=item.get("label", ""))
             else:
                 piece = _piece(kind, pid, item, a, b, start, end)
                 if piece.layout == "behind" and not m.matte_need()[0]:

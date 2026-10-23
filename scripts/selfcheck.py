@@ -1758,6 +1758,39 @@ def check_sharpness(report: Report, tmp: Path):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def check_order(report: Report, tmp: Path):
+    """Заказ автора — во вход аналитика (23.10.2026, Валера: «результат — тем, чем задумывал его автор»): просьба из
+    брифа, фото из материалов с оценкой чёткости (мутное — «не ставь»), референс — только то, что велено из него брать,
+    с цифрами замера; цвет и шрифты референса аналитику не идут (это сборка). Фото во весь кадр мутнее 720p — отказ."""
+    import json as _json
+    import types
+    from PIL import Image
+    import analyst
+    import score as sc
+    print("\nЗаказ автора")
+    stem, ref = "_selfcheck_order", "_selfcheck_ref"
+    work, measured = WORK_DIR / stem, WORK_DIR / "_refs" / f"{ref}.json"
+    try:
+        (work / "materials").mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (1200, 2000), "#777").save(work / "materials" / "good.jpg")
+        Image.new("RGB", (400, 300), "#777").save(work / "materials" / "small.jpg")
+        (work / "brief.json").write_text(_json.dumps({"notes": "покажи фото с выпускного", "refs": [
+            {"ref": ref, "take": ["темп", "шрифты"]}]}, ensure_ascii=False), encoding="utf-8")
+        measured.parent.mkdir(exist_ok=True)
+        measured.write_text(_json.dumps({"cuts_per_min": 42, "avg_shot": 1.4, "wpm": 170}), encoding="utf-8")
+        text = "\n".join(analyst.order(stem, types.SimpleNamespace(references=None)))
+        want = {"просьба": "покажи фото с выпускного" in text, "фото годное": "good.jpg: 1200×2000, во весь кадр 1080p" in text,
+                "мутное — не ставь": "small.jpg" in text and "не ставь" in text,
+                "темп с цифрами": "склеек 42/мин" in text, "шрифты не аналитику": "- шрифты" not in text}
+        bad = sc.photo_problems(work / "materials", ["good.jpg", "small.jpg", "нет.jpg"])
+        report.check(all(want.values()) and len(bad) == 2 and "ниже 720p" in bad[0],
+                     "заказ автора у аналитика: просьба, фото с чёткостью, из референса — только велено; мутное фото — отказ",
+                     ", ".join(k for k, v in want.items() if not v) or f"отказы: {bad}")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        measured.unlink(missing_ok=True)
+
+
 def check_score(report: Report):
     """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
     каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
@@ -5237,6 +5270,7 @@ def main():
         section(report, check_gen_image, tmp)
         section(report, check_footage, tmp)
         section(report, check_sharpness, tmp)
+        section(report, check_order, tmp)
         section(report, check_fx, tmp)
         section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)

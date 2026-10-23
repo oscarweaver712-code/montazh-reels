@@ -92,6 +92,8 @@ SYSTEM = """Ты — режиссёр вертикальных роликов-у
    чертят окружности расстояний, на «fix» остаётся одна красная точка; "roam" — точка обегает первую окружность («где
    угодно»), "sphere" — окружности становятся сферами («стереометрия»). Окно начинай с первого спутника.
 - {"kind": "clip", "w": [от, до], "name": "имя из списка принятых", "label": "место, век"} — клип (ИИ или сток) во весь кадр.
+- {"kind": "photo", "w": [от, до], "files": ["имя из МАТЕРИАЛОВ"], "label": "…"} — фото, которое автор сам положил к
+   ролику, во весь кадр (несколько — серией). Автор положил — значит, хочет его видеть: найди ему место по смыслу.
 Любой приём кроме word/stamp/clip может взять "hide": true.
 
 ФОРМАТ ОТВЕТА
@@ -144,6 +146,7 @@ def material(stem: str) -> str:
                      f"под фразу «{about.group(1) if about else '?'}»; "
                      f"в кадре: {shot.group(1)[:160] if shot else '?'}")
     head = head_room(stem)
+    wish = order(stem, project)
     events = WORK_DIR / stem / "events.json"
     ev = json.loads(events.read_text(encoding="utf-8")) if events.exists() else {}
     cfg = project.config
@@ -165,6 +168,7 @@ def material(stem: str) -> str:
         "Кандидаты конца хука (сборка ставит вспышку на лучший): " + (", ".join(
             f"«{h['word']}» {h['t']:.2f} с" for h in (ev.get("hook") or [])[:3]) or "нет"),
         "",
+        *wish,
         "ПРИНЯТЫЕ КЛИПЫ — ИИ или сток (kind clip — только эти имена, клип не длиннее своей длины):",
         *(clips or ["- нет: kind clip не используй"]),
         *([f"(не годятся — мутнее {QUALITY_FLOOR}p во весь кадр, не предлагай: {', '.join(muddy)})"] if muddy else []),
@@ -176,6 +180,76 @@ def material(stem: str) -> str:
         "",
         "Ответь партитурой (JSON).",
     ])
+
+
+# что из референса может взять режиссёр партитуры; цвет, шрифты и звук — дело сборки и DESIGN.md проекта
+REF_ASPECTS = {
+    "темп": lambda r: (f"склеек {r.get('cuts_per_min', 0):g}/мин, средний план {r.get('avg_shot', 0):g} с, "
+                       f"речь {r.get('wpm') or '?'} слов/мин"),
+    "текст": lambda r: (f"текст в кадре {round((r.get('text') or {}).get('share', 0) * 100)}% времени, "
+                        f"субтитры: {(r.get('traits') or {}).get('captions', '?')}, "
+                        f"где: {(r.get('traits') or {}).get('position', '?')}"),
+    "структура": lambda r: f"длина {r.get('duration', 0):g} с, самый долгий план {r.get('longest_shot', 0):g} с",
+}
+REF_BUILD = {"шрифты", "цвет", "звук", "музыка", "переходы", "субтитры"}
+
+
+def order(stem: str, project) -> list:
+    """Заказ автора к ролику (23.10.2026, Валера: «результат — тем, чем задумывал его автор»): бриф (заметки, цели,
+    смелость), материалы, которые он сам положил, и референсы с тем, ЧТО из них брать. Раньше аналитик не видел ни
+    брифа, ни материалов, ни референсов — угадывал замысел по одному транскрипту."""
+    import styles
+    from common import QUALITY_FLOOR, sharpness
+    lines = []
+    try:
+        brief = styles.load_brief(stem)
+    except styles.StyleError as e:
+        brief = {}
+        lines.append(f"(бриф не прочитан: {e})")
+    if brief.get("exists") or brief.get("notes"):
+        goals = ", ".join(f"{k} {v}" for k, v in sorted((brief.get("goals") or {}).items(), key=lambda kv: -kv[1]))
+        lines += ["ЗАКАЗ АВТОРА К РОЛИКУ (главнее твоих догадок):",
+                  f"- что просит: {brief.get('notes').strip()}" if (brief.get("notes") or "").strip() else "- просьб словами нет",
+                  f"- цели (0–5): {goals}" if goals else "",
+                  f"- смелость монтажа {brief.get('boldness', 0.3):g} из 1 (0 — спокойно, 1 — на грани)"]
+    folder = WORK_DIR / stem / "materials"
+    photos, other = [], []
+    for f in sorted(folder.glob("*")) if folder.is_dir() else []:
+        if f.name.startswith(".") or f.name == "materials.json" or f.name.startswith("mx-") or f.name.startswith("yt-"):
+            continue                                   # фонотеку (mx-, yt-) ставит сборка, это не материал автора
+        if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+            try:
+                from PIL import Image
+                with Image.open(f) as im:
+                    w, h = im.size
+            except OSError:
+                continue
+            p = sharpness(w, h, 1080, 1920)
+            photos.append(f"- {f.name}: {w}×{h}, во весь кадр {p}p" + (f" — мутнее {QUALITY_FLOOR}p, не ставь" if p < QUALITY_FLOOR else ""))
+        elif f.suffix.lower() in (".mp4", ".mov", ".m4v", ".webm", ".mp3", ".wav", ".m4a"):
+            other.append(f.name)
+    if photos or other:
+        lines += ["МАТЕРИАЛЫ АВТОРА (сам положил к ролику — kind photo, только эти имена):", *photos]
+        if other:
+            lines.append(f"- видео и звук ({', '.join(other)}) партитура пока не ставит — скажи об этом в title, не молчи")
+    refs = list(brief.get("refs") or [])
+    take_file = project.references / "take.json" if getattr(project, "references", None) else None
+    if take_file and take_file.exists():
+        try:
+            refs += json.loads(take_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            lines.append(f"(references/take.json битый: {e})")
+    for ref in refs:
+        name, take = str(ref.get("ref") or ref.get("url") or "?"), [str(t).lower() for t in ref.get("take") or []]
+        measured = WORK_DIR / "_refs" / f"{name}.json"
+        data = json.loads(measured.read_text(encoding="utf-8")) if measured.exists() else {}
+        mine = [f"{t}: {REF_ASPECTS[t](data)}" if data and t in REF_ASPECTS else t for t in take if t not in REF_BUILD]
+        lines += [f"РЕФЕРЕНС {name} — брать ТОЛЬКО: {', '.join(take) or 'настроение'}"
+                  + (f" ({ref['note']})" if ref.get("note") else ""),
+                  *(f"- {x}" for x in mine)]
+        if not data and any(t in REF_ASPECTS for t in take):
+            lines.append(f"- (не измерен: analyze_reference.py — цифр нет, бери по описанию)")
+    return [x for x in lines if x] + ([""] if lines else [])
 
 
 def head_room(stem: str) -> str:

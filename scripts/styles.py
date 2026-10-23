@@ -203,7 +203,7 @@ def brief_path(stem: str) -> Path:
 
 BRIEF_TYPES = {"style": (str, "строкой"), "formats": (list, "списком"), "variants": (list, "списком"),
                "goals": (dict, "объектом"), "boldness": ((int, float), "числом"),
-               "overrides": (dict, "объектом"), "notes": (str, "строкой")}
+               "overrides": (dict, "объектом"), "notes": (str, "строкой"), "refs": (list, "списком")}
 
 
 def check_brief(brief, where: str) -> dict:
