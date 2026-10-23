@@ -407,6 +407,12 @@ class Montage:
         if cfg_cta and cta_at is not None and not any(a <= cta_at and b >= dur - 0.05 for a, b in self.hidden):
             self.hidden.append([round(cta_at - 0.2, 2), round(dur, 2)])     # плашка в конце сама говорит «переходи»
         captions = tk.captions
+        if not captions and self.design:
+            # ролик без brief.json в проекте по умолчанию: Take субтитров стиля не даёт, и страница брала старые
+            # субтитры kit (Manrope, красный) мимо DESIGN.md — verify_page не пускал (IMG_3666, IMG_3675, 23.10.2026)
+            import styles
+            brief = styles.load_brief(self.stem)
+            captions = styles.kit_captions(styles.effective(styles.load_style(brief["style"]), brief.get("overrides")))
         if captions and self.cfg.get("caption_accent_scale"):         # ключевые слова крупнее (project.json)
             captions = {**captions, "accent_scale": float(self.cfg["caption_accent_scale"])}
         if captions and self.design:                                  # шрифт, крем и маркер — из DESIGN.md
