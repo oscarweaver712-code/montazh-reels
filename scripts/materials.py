@@ -193,8 +193,11 @@ def origin(stem: str, area: str, name: str) -> dict:
         note = WORK_DIR / stem / "footage" / f"{Path(name).stem}.md"
         lines = ([x.strip() for x in note.read_text(encoding="utf-8", errors="replace").splitlines() if x.strip()]
                  if note.exists() else [])
-        return {"code": "gen", "label": "сгенерировано (Google Flow)",
-                "detail": next((x for x in lines if x.startswith("Фраза:")), "")[:200]}
+        detail = next((x for x in lines if x.startswith("Фраза:")), "")[:200]
+        if any(x.startswith("Сток") for x in lines):            # stock.py take — сток на месте клипа Flow
+            return {"code": "found", "label": "сток · " + next(x for x in lines if x.startswith("Сток"))[:160],
+                    "detail": detail}
+        return {"code": "gen", "label": "сгенерировано (Google Flow)", "detail": detail}
     return {"code": "other", "label": area}
 
 
