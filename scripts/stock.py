@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host  # noqa: E402
-from common import WORK_DIR, ffmpeg_bin, probe, require_queue  # noqa: E402
+from common import QUALITY_FLOOR, QUALITY_GOOD, WORK_DIR, ffmpeg_bin, probe, require_queue, sharpness, vertical_crop  # noqa: E402
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/126 Safari/537.36"}
 LICENSE = {
@@ -111,6 +111,12 @@ def get(stem: str, source: str, key: str, name: str) -> Path:
         raise StockError(f"не скачалось видео {key} с {source}")
     out = folder(stem) / f"{name}.mp4"
     out.write_bytes(data)
+    info = probe(out)
+    p = sharpness(*vertical_crop(info["width"], info["height"]), 1080, 1920)
+    if p < QUALITY_FLOOR:                   # не складывать мыло: во весь вертикальный кадр его всё равно не взять
+        out.unlink()
+        raise StockError(f"{source} {key}: лучшее, что отдают, — {info['width']}×{info['height']}; во весь вертикальный "
+                         f"кадр это {p}p, ниже {QUALITY_FLOOR}p — не берём. Нужен вертикальный исходник или 4K")
     out.with_suffix(".md").write_text(f"{source}, {key} ({res}): {page} — {LICENSE[source]}.\n", encoding="utf-8")
     return out
 
@@ -124,7 +130,13 @@ def fit(stem: str, name: str, start: float, dur: float, cx: float) -> Path:
     w, h = info["width"], info["height"]
     if start + dur > info["duration"] + 0.01:
         raise StockError(f"{name}: клип {info['duration']:.1f} с, а взять {start}–{start + dur:.1f} с")
-    cw = min(w, int(round(h * 9 / 16 / 2)) * 2)
+    cw = vertical_crop(w, h)[0]
+    p = sharpness(cw, h, 1080, 1920)
+    if p < QUALITY_FLOOR:
+        raise StockError(f"{name}: {w}×{h} во весь вертикальный кадр — {p}p (из {cw} px ширины растянуто до 1080), ниже "
+                         f"{QUALITY_FLOOR}p — не берём. Нужен вертикальный исходник или 4K")
+    if p < QUALITY_GOOD:
+        print(f"  · {name}: во весь кадр {p}p — ниже {QUALITY_GOOD}p, держи коротко и с наездом", flush=True)
     x = max(0, min(w - cw, int(round(w * cx - cw / 2))))
     out = WORK_DIR / stem / "materials" / f"broll-{name}.mp4"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +147,11 @@ def fit(stem: str, name: str, start: float, dur: float, cx: float) -> Path:
                     "-c:v", host.video_encoder(None, ffmpeg), "-b:v", "16M", "-threads", str(host.encoder_threads()),
                     str(out)], check=True)
     return out
+
+
+def source_size(stem: str, name: str) -> tuple:
+    info = probe(folder(stem) / f"{name}.mp4")
+    return info["width"], info["height"]
 
 
 def take(stem: str, name: str, start: float, dur: float, cx: float, say: str, shot: str) -> dict:
@@ -157,7 +174,8 @@ def take(stem: str, name: str, start: float, dur: float, cx: float, say: str, sh
     data = footage.takes(stem)
     data[name] = {"from": start, "to": round(start + dur, 3), "speed": 1.0, "frames": frames,
                   "duration": round(frames / footage.FPS, 3), "source": "stock", "credits": 0,
-                  "source_name": f"broll/{name}.mp4", "taken": time.strftime("%Y-%m-%d %H:%M"), "need": dur}
+                  "source_name": f"broll/{name}.mp4", "sharp": sharpness(*vertical_crop(*source_size(stem, name)), 1080, 1920),
+                  "taken": time.strftime("%Y-%m-%d %H:%M"), "need": dur}
     footage._save_takes(stem, data)
     (footage.folder(stem) / f"{name}.md").write_text(
         f"# {name}.mp4\n\nСток, не ИИ и не съёмка: {licence.read_text(encoding='utf-8').strip()}\nФраза: {say}\n"

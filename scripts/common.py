@@ -306,3 +306,25 @@ def ass_color(hex_rgb: str, alpha: int = 0) -> str:
     hex_rgb = hex_rgb.lstrip("#")
     r, g, b = hex_rgb[0:2], hex_rgb[2:4], hex_rgb[4:6]
     return f"&H{alpha:02X}{b}{g}{r}&"
+
+
+# Чёткость вставок (Валера 23.10.2026: «всё что ниже 720p идёт лесом автоматом железно, а лучше не ниже 1080p»).
+# Мерится не по ярлыку файла, а по месту в кадре: горизонтальный 1080p во весь вертикальный кадр — это 608 px ширины,
+# растянутые до 1080, то есть «608p». Один счёт для стоков, клипов, фото, мемов и материалов человека.
+QUALITY_FLOOR = 720     # ниже — вставка не идёт никуда
+QUALITY_GOOD = 1080     # во весь кадр — так; между полом и этим — можно, но сказать
+
+
+def sharpness(src_w: float, src_h: float, shown_w: float, shown_h: float, fit: str = "cover") -> int:
+    """«p» вставки: кусок исходника src_w×src_h показан местом shown_w×shown_h кадра 1080 px шириной. Пиксель в пиксель
+    и крупнее — 1080, растянутый в k раз — 1080/k. fit — object-fit: contain вписывает (растяжение по меньшему)."""
+    if src_w <= 0 or src_h <= 0:
+        return 0
+    kx, ky = shown_w / src_w, shown_h / src_h
+    k = min(kx, ky) if fit == "contain" else max(kx, ky)
+    return int(round(QUALITY_GOOD / max(k, 1.0)))
+
+
+def vertical_crop(width: int, height: int, aspect: float = 9 / 16) -> tuple:
+    """Сколько пикселей исходника войдёт в вертикальный кадр при обрезке по высоте (stock.fit): (ширина, высота)."""
+    return min(width, int(round(height * aspect / 2)) * 2), height

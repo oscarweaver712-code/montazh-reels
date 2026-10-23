@@ -807,6 +807,34 @@ CHECK_JS = r"""
       }
     }
 
+    // ---- чёткость вставок (Валера 23.10.2026: «всё что ниже 720p идёт лесом автоматом железно»): самый крупный
+    // показ каждой картинки и видео (с наездами и масштабом обёрток). Сколько в нём пикселей исходника — считает
+    // Python по файлу (media_sharpness): src видео разбор страницы вырезает. Камера дубля — не вставка.
+    res.media = [];
+    const media = [...document.querySelectorAll("img[src], video[id]")].filter((el) => !el.closest(".cam"));
+    if (media.length) {
+      const big = new Map();
+      const shown = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.15) return false;
+        }
+        return true;
+      };
+      for (let t = 0; t <= duration; t += 0.5) {
+        tl.totalTime(0, false); tl.totalTime(t, false);
+        for (const el of media) {
+          if (!shown(el)) continue;
+          const r = el.getBoundingClientRect();
+          const prev = big.get(el);
+          if (r.width >= 8 && (!prev || r.width * r.height > prev.w * prev.h))
+            big.set(el, { w: Math.round(r.width), h: Math.round(r.height), t });
+        }
+      }
+      for (const [el, b] of big) res.media.push({ tag: el.tagName.toLowerCase(), id: el.id || "",
+        src: el.getAttribute("src") || "", fit: getComputedStyle(el).objectFit, ...b });
+    }
+
     document.querySelectorAll(".g").forEach((el) => {
       const i = els.indexOf(el);
       const peak = i < 0 ? parseFloat(getComputedStyle(el).opacity) : Math.max(...real.map((f) => f[i]));
@@ -1086,6 +1114,50 @@ def run_timeline(page_path: Path, fps: int = FPS, timeout: float = 180, zones: l
         raise RuntimeError(f"Chrome не вернул разбор страницы {page_path.parent.name}:\n"
                            f"{result.stderr.strip()[-600:]}")
     return json.loads(html.unescape(found.group(1)))
+
+
+def media_sharpness(project: Path, page: str, media: list) -> list:
+    """[(элемент, файл, «p», размер исходника, место в кадре)] — чёткость каждой картинки и видео в самом крупном показе
+    (common.sharpness). Футаж (stock.take, footage.py) уже растянут до 1080×1920 — его «p» считается по исходнику
+    из takes.json, а не по готовому файлу: иначе 720p сток прошёл бы как 1080."""
+    from common import sharpness
+    takes_file = take_dir(project) / "footage" / "takes.json"
+    takes = json.loads(takes_file.read_text(encoding="utf-8")) if takes_file.exists() else {}
+    out = []
+    for m in media:
+        src = m.get("src") or ""
+        if m["tag"] == "video":
+            tag = re.search(rf'<video\b[^>]*\bid="{re.escape(m["id"])}"[^>]*>', page)
+            found = re.search(r'\bsrc="([^"]+)"', tag.group(0)) if tag else None
+            src = found.group(1) if found else ""
+        if not src or src.startswith(("data:", "http")) or src.endswith(".svg"):
+            continue
+        label = f"#{m['id']}" if m["id"] else src
+        footage = re.fullmatch(r"assets/footage/([\w-]+)\.mp4", src)
+        try:
+            if footage and footage.group(1) in takes:
+                import footage as ft
+                base, size = ft.take_sharpness(take_dir(project), takes[footage.group(1)])
+                # клип в 1080×1920 — уже растянут в 1080/base раз; наезд поверх тянет ещё
+                p = sharpness(base, base * 1920 / 1080, m["w"], m["h"])
+            else:
+                w, h = _dims(project / src)
+                p, size = sharpness(w, h, m["w"], m["h"], m.get("fit") or "cover"), f"{w}×{h}"
+        except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+            continue
+        out.append((label, src, p, size, f"{m['w']}×{m['h']}", m.get("t", 0)))
+    return out
+
+
+def _dims(path: Path) -> tuple:
+    """(ширина, высота) картинки или видео по файлу."""
+    if path.suffix.lower() in (".mp4", ".mov", ".m4v", ".webm"):
+        from common import probe
+        info = probe(path)
+        return info["width"], info["height"]
+    from PIL import Image
+    with Image.open(path) as im:
+        return im.size
 
 
 def load_director(project: Path) -> dict | None:
@@ -1386,6 +1458,15 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending:
     check(not early, "графика не видна раньше своего входа", early)
     spills = [f"{s['el']} «{s['text']}» вылезает за край {s['where']} на {s['depth']} px, {s['from']:.2f}–{s['last'] + 0.25:.2f} с"
               for s in res.get("spills", [])]
+    from common import QUALITY_FLOOR, QUALITY_GOOD
+    sharp = media_sharpness(project, page_text, res.get("media", []))
+    muddy = [f"{el} ({src}): {p}p — исходник {size} показан {shown} на {t:.1f} с, ниже {QUALITY_FLOOR}p не берём: "
+             f"вертикальный исходник, 4K или показ мельче (карточкой, а не во весь кадр)"
+             for el, src, p, size, shown, t in sharp if p < QUALITY_FLOOR]
+    check(not muddy, f"вставки не мутнее {QUALITY_FLOOR}p (по месту в кадре, а не по ярлыку файла)", muddy)
+    for el, src, p, size, shown, t in sharp:
+        if QUALITY_FLOOR <= p < QUALITY_GOOD:
+            print(f"  · {el} ({src}): {p}p — ниже {QUALITY_GOOD}p, мягче дубля (исходник {size}, показ {shown})")
     if strict:
         check(not spills, "текст не вылезает за край своей плашки и за кадр", spills)
     elif spills:

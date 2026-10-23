@@ -37,7 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host  # noqa: E402
-from common import ROOT, WORK_DIR, ffmpeg_bin, probe, require_queue  # noqa: E402
+from common import QUALITY_FLOOR, ROOT, WORK_DIR, ffmpeg_bin, probe, require_queue, sharpness  # noqa: E402
 
 FRAME = (1080, 1920)
 FPS = 30
@@ -115,6 +115,20 @@ def validate(brief: dict, stem: str = "?") -> dict:
     if budget is not None and (not isinstance(budget, (int, float)) or budget < 0):
         raise FootageError(f"budget — сколько бонусов Flow одобрено на ролик, число, а не {budget!r}")
     return brief
+
+
+def take_sharpness(work: Path, took: dict) -> tuple:
+    """(«p» во весь кадр 1080×1920, исходник словами) принятого клипа: файл в footage/ уже растянут до кадра, поэтому
+    чёткость — по исходнику (common.sharpness). Записи до 23.10.2026 без "sharp" — досчитываются по исходнику."""
+    from common import vertical_crop
+    if "sharp" in took:
+        return took["sharp"], took.get("source_size") or took.get("source_name", "")
+    if took.get("source") == "stock":
+        info = probe(work / took["source_name"])
+        w, h = vertical_crop(info["width"], info["height"])
+        return sharpness(w, h, *FRAME), f"{w}×{h} из {took['source_name']}"
+    w, h = (int(x) for x in str(took.get("source_size") or "0×0").split("×"))
+    return sharpness(w, h, *FRAME), took.get("source_size")
 
 
 def takes(stem: str) -> dict:
@@ -215,6 +229,10 @@ def normalize(src: Path, out: Path, start: float = 0.0, speed: float = 1.0, end:
     info = probe(src)
     a, b, frames = plan_cut(float(info["duration"]), start, speed, end)
     w, h = FRAME
+    sharp = sharpness(info["width"], info["height"], w, h)
+    if sharp < QUALITY_FLOOR:                   # Валера 23.10.2026: ниже 720p — лесом, автоматом
+        raise FootageError(f"клип {src.name}: {info['width']}×{info['height']} во весь кадр — {sharp}p, ниже "
+                           f"{QUALITY_FLOOR}p — не берём")
     vf = (f"trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{speed},fps={FPS},"
           f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h},setsar=1,format=yuv420p")
     encoder = host.video_encoder("auto", ffmpeg_bin())
@@ -231,7 +249,7 @@ def normalize(src: Path, out: Path, start: float = 0.0, speed: float = 1.0, end:
     finally:
         tmp.unlink(missing_ok=True)                    # инвариант 5: кусок не остаётся даже при падении
     return {"from": a, "to": b, "speed": speed, "frames": frames, "duration": round(frames / FPS, 3),
-            "source_duration": round(float(info["duration"]), 3), "source_size": f"{info.get('width')}×{info.get('height')}"}
+            "source_duration": round(float(info["duration"]), 3), "source_size": f"{info.get('width')}×{info.get('height')}", "sharp": sharp}
 
 
 def take(stem: str, name: str, file: Path | None = None, start: float = 0.0, speed: float = 1.0,

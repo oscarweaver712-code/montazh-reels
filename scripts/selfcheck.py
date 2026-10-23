@@ -1727,6 +1727,37 @@ def check_events(report: Report, tmp: Path):
                  f"громкая — {loud and round(loud[1], 1)} дБ от речи")
 
 
+def check_sharpness(report: Report, tmp: Path):
+    """Чёткость вставок (Валера 23.10.2026: «ниже 720p — лесом автоматом железно, лучше не ниже 1080p»): «p» — по месту
+    в кадре, а не по ярлыку файла. Горизонтальный 1080p во весь вертикальный кадр — 608p; 4K — 1080; вертикальный
+    720×1280 — 720; мелкая карточка из крупной картинки — 1080. Сток 720p не берётся ни при скачивании, ни при нарезке."""
+    from common import QUALITY_FLOOR, sharpness, vertical_crop, ffmpeg_bin
+    import stock
+    print("\nЧёткость вставок")
+    got = {"1080p во весь кадр": sharpness(*vertical_crop(1920, 1080), 1080, 1920),
+           "4K во весь кадр": sharpness(*vertical_crop(3840, 2160), 1080, 1920),
+           "вертикаль 720×1280": sharpness(720, 1280, 1080, 1920),
+           "карточка 300 px из 400": sharpness(400, 400, 300, 300)}
+    want = {"1080p во весь кадр": 608, "4K во весь кадр": 1080, "вертикаль 720×1280": 720, "карточка 300 px из 400": 1080}
+    report.check(got == want, "«p» вставки — по месту в кадре: горизонталь 1080p в вертикали — 608p, 4K — 1080p",
+                 ", ".join(f"{k}: {v}p" for k, v in got.items()))
+    stem = "_selfcheck_sharp"
+    work = WORK_DIR / stem
+    try:
+        (work / "broll").mkdir(parents=True, exist_ok=True)
+        subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=30:duration=1",
+                        "-pix_fmt", "yuv420p", str(work / "broll" / "low.mp4")], check=True)
+        try:
+            stock.fit(stem, "low", 0.0, 0.5, 0.5)
+            refused = ""
+        except stock.StockError as e:
+            refused = str(e)
+        report.check(f"ниже {QUALITY_FLOOR}p" in refused and not (work / "materials" / "broll-low.mp4").exists(),
+                     "сток 720p во весь вертикальный кадр — громкий отказ, а не растянутое мыло", refused[:120] or "взят")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def check_score(report: Report):
     """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
     каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
@@ -1821,6 +1852,11 @@ def check_blueprint(report: Report, tmp: Path):
             html, j = bp.full_sheet(p, p.t0 - 0.25, p.t1 + 0.35); behind.append(html); js.append(j)
         else:
             html, j = bp.split_parts(p, geo); sheets.append(html); front.append(p.html); js.append(j)
+    # картинка 400×225 во весь кадр по ширине (≈400p) — проверка чёткости обязана её поймать по месту в кадре
+    from PIL import Image
+    Image.new("RGB", (400, 225), "#808080").save(project / "assets" / "low.png")
+    behind.append('<img id="sharp-low" class="g" src="assets/low.png" style="left: 0; top: 700px; width: 1080px; height: 608px;">')
+    js.append('      tl.set("#sharp-low", { opacity: 1 }, 5.7); tl.set("#sharp-low", { opacity: 0 }, 6.6);')
     page = build_page("чертёж", 30.0, "\n".join(behind), "\n".join(sheets + front), "\n".join(js), [], windows, cta_at=29.9,
                       extra_css=bp.CSS + bp.SPLIT_CSS, cta=False)
     page = fx.FX(stage=True).finalize(page)
@@ -1834,6 +1870,13 @@ def check_blueprint(report: Report, tmp: Path):
             if g["el"].startswith("#tm")]
     report.check(not edge, "«Чертёж»: подпись оси у правого края стоит внутри кадра, а не за обрезкой Instagram",
                  "; ".join(edge) or "")
+    import verify_page
+    shown = [m for m in res.get("media", []) if m["id"] == "sharp-low"]
+    sharp = verify_page.media_sharpness(project, page, shown)
+    report.check(bool(shown) and shown[0]["w"] >= 1070 and sharp and sharp[0][2] < 720,
+                 "чёткость вставки — по самому крупному показу в кадре: 400×225 во всю ширину ловится как ≈400p",
+                 f"показ {shown[0]['w']}×{shown[0]['h'] if shown else '—'}, «p» {sharp[0][2] if sharp else '—'}"
+                 if shown else "картинку разбор страницы не увидел")
     split_hits = [h["el"] for h in res.get("faceHits", []) if h["el"].startswith(("#tm", "#cb", "#tri"))]
     hidden = [o["el"] for o in res.get("occluded", [])]
     share = res.get("cutawayShare", 0)
@@ -5193,6 +5236,7 @@ def main():
         section(report, check_skill_links, tmp)
         section(report, check_gen_image, tmp)
         section(report, check_footage, tmp)
+        section(report, check_sharpness, tmp)
         section(report, check_fx, tmp)
         section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)

@@ -126,7 +126,17 @@ def material(stem: str) -> str:
                for s in tk.splices if any(w["start"] >= s for w in tk.words)]
     clips = []
     takes = WORK_DIR / stem / "footage" / "takes.json"
+    import footage as ft
+    from common import QUALITY_FLOOR
+    muddy = []
     for name, took in (json.loads(takes.read_text(encoding="utf-8")) if takes.exists() else {}).items():
+        try:
+            sharp = ft.take_sharpness(WORK_DIR / stem, took)[0]
+        except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+            sharp = 0
+        if sharp < QUALITY_FLOOR:                   # мыло аналитик не видит вовсе — verify_page всё равно не пустит
+            muddy.append(f"{name} ({sharp}p)")
+            continue
         note = WORK_DIR / stem / "footage" / f"{name}.md"
         about = re.search(r"Фраза:\s*(.+)", note.read_text(encoding="utf-8")) if note.exists() else None
         shot = re.search(r"Кадр:\s*(.+)", note.read_text(encoding="utf-8")) if note.exists() else None
@@ -157,6 +167,7 @@ def material(stem: str) -> str:
         "",
         "ПРИНЯТЫЕ КЛИПЫ — ИИ или сток (kind clip — только эти имена, клип не длиннее своей длины):",
         *(clips or ["- нет: kind clip не используй"]),
+        *([f"(не годятся — мутнее {QUALITY_FLOOR}p во весь кадр, не предлагай: {', '.join(muddy)})"] if muddy else []),
         "",
         f"ПРАВИЛА ПРОЕКТА ({', '.join(projects.rel(r) for r in project.rule_files())} — главнее общих; раздел уточняет "
         "проект; что про сборку и инфраструктуру — не твоё):",
