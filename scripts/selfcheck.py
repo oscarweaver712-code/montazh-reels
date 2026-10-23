@@ -1842,6 +1842,48 @@ def check_keys(report: Report, tmp: Path):
                  f"Pixabay: {wide and wide['link']}")
 
 
+def check_stock_auto(report: Report, tmp: Path):
+    """Сток для автопилота (24.10.2026): аналитик пишет запросы (kind stock), машина находит годный и ставит его как clip;
+    уже найденный не ищется заново, не нашлось — приём уходит из сборки, а аналитик получает причину. Кривой запрос
+    (по-русски, пустой) — ошибка партитуры. Сеть не трогается: очередь подменена."""
+    import json as _json
+    import analyst
+    import jobqueue
+    import score as sc
+    print("\nСток для автопилота")
+    words = [{"word": f"слово{i}", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(20)]
+    bad = sc.check({"items": [{"kind": "stock", "w": [2, 6], "q": ["выпускной"]}]}, words)
+    good = sc.check({"items": [{"kind": "stock", "w": [2, 6], "q": ["graduation party"]}]}, words)
+    stem = "_selfcheck_stock"
+    work = WORK_DIR / stem
+    saved = (jobqueue.write_job, jobqueue.wake, jobqueue.wait)
+    queued = []
+    try:
+        (work / "footage").mkdir(parents=True, exist_ok=True)
+        (work / "broll").mkdir(parents=True, exist_ok=True)
+        found = analyst.stock_name("graduation party", 0)
+        (work / "footage" / "takes.json").write_text(_json.dumps({found: {"duration": 5.0, "source": "stock"}}), encoding="utf-8")
+        missing = analyst.stock_name("prom dance", 1)
+        (work / "broll" / f"{missing}.none").write_text("годного стока нет: mixkit «vertical prom dance»: годного нет\n",
+                                                        encoding="utf-8")
+        jobqueue.write_job = lambda name, steps, **kw: queued.append(steps) or Path(name)
+        jobqueue.wake = lambda: None
+        jobqueue.wait = lambda name, timeout: 0
+        score = {"items": [{"kind": "stock", "w": [2, 6], "q": ["graduation party"], "label": "выпускной"},
+                           {"kind": "stock", "w": [10, 14], "q": ["prom dance"]}]}
+        failed = analyst.resolve_stock(stem, score, words=words)
+    finally:
+        jobqueue.write_job, jobqueue.wake, jobqueue.wait = saved
+        shutil.rmtree(work, ignore_errors=True)
+    ok = (score["items"] == [{"kind": "clip", "w": [2, 6], "name": found, "label": "выпускной"}]
+          and len(queued) == 1 and len(queued[0]) == 1 and missing in queued[0][0]
+          and len(failed) == 1 and "items[1] (stock)" in failed[0] and "годного стока нет" in failed[0])
+    report.check(bool(bad) and not good and ok,
+                 "сток по запросам: найденный ставится как clip без нового поиска, ненайденный — провал с причиной; "
+                 "запрос по-русски — ошибка партитуры",
+                 f"кривой запрос: {'пойман' if bad else 'нет'}; партитура: {score['items']}; в очередь: {queued}; провалы: {failed}")
+
+
 def check_score(report: Report):
     """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
     каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
@@ -5344,6 +5386,7 @@ def main():
         section(report, check_sharpness, tmp)
         section(report, check_order, tmp)
         section(report, check_keys, tmp)
+        section(report, check_stock_auto, tmp)
         section(report, check_fx, tmp)
         section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)

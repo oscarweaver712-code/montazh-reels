@@ -92,6 +92,9 @@ SYSTEM = """Ты — режиссёр вертикальных роликов-у
    чертят окружности расстояний, на «fix» остаётся одна красная точка; "roam" — точка обегает первую окружность («где
    угодно»), "sphere" — окружности становятся сферами («стереометрия»). Окно начинай с первого спутника.
 - {"kind": "clip", "w": [от, до], "name": "имя из списка принятых", "label": "место, век"} — клип (ИИ или сток) во весь кадр.
+- {"kind": "stock", "w": [от, до], "q": ["graduation party", "prom dance"], "label": "…"} — живой клип со стока во весь
+   кадр: 1–3 запроса по-английски, что именно в кадре (предмет, действие), от лучшего. Найдёт и проверит чёткость машина;
+   не нашлось — вернётся провалом. Клипов (clip + stock) — не больше 2 на ролик, окно 1,5–4 с.
 - {"kind": "photo", "w": [от, до], "files": ["имя из МАТЕРИАЛОВ"], "label": "…"} — фото, которое автор сам положил к
    ролику, во весь кадр (несколько — серией). Автор положил — значит, хочет его видеть: найди ему место по смыслу.
 Любой приём кроме word/stamp/clip может взять "hide": true.
@@ -366,6 +369,54 @@ def assemble(stem: str, variant: str | None, score: dict, info: dict | None = No
         return verify_page.verify(name, matte_pending=True, out=info)
 
 
+def stock_name(query: str, k: int) -> str:
+    """Имя файла стока по запросу: латиница, цифры и «_» (stock.take), номер приёма — чтобы два одинаковых не слиплись."""
+    return f"st{k}_" + (re.sub(r"[^a-z0-9]+", "_", query.lower()).strip("_")[:24] or "clip")
+
+
+def resolve_stock(stem: str, score: dict, wait: float = 1200, words: list | None = None) -> list:
+    """Приёмы stock → clip: найти годный сток очередью (stock.py auto: чёткость ≥ 720p во весь кадр, длина ≥ окна).
+    Уже найденный (тот же файл в takes.json, не короче окна) не ищется заново. Не нашлось — приём убирается из
+    партитуры на эту сборку, а аналитик получает провал с причиной. Возвращает провалы.
+    Раньше автопилот брал только принятые клипы, и сток подбирала руками длинная сессия (23.10.2026: $36 за вечер)."""
+    import jobqueue
+    from kit import Take
+    items = score.get("items") or []
+    todo = [(k, it) for k, it in enumerate(items) if isinstance(it, dict) and it.get("kind") == "stock"]
+    if not todo:
+        return []
+    words = words if words is not None else Take(stem).words
+    takes_file = WORK_DIR / stem / "footage" / "takes.json"
+    took = lambda: json.loads(takes_file.read_text(encoding="utf-8")) if takes_file.exists() else {}   # noqa: E731
+    steps, plan = [], []
+    for k, it in todo:
+        a, b = it["w"]
+        dur = round(max(sc.MIN_SHOW, words[b]["end"] - words[a]["start"]), 2)
+        name = stock_name(it["q"][0], k)
+        say = " ".join(w["word"] for w in words[a:b + 1])[:120]
+        plan.append((k, it, name, dur))
+        if (took().get(name) or {}).get("duration", 0) + 1e-3 < dur:
+            steps.append(["python", "scripts/stock.py", "auto", stem, name, "--dur", f"{dur:g}", "--say", say,
+                          "--q", *it["q"]])
+    if steps:
+        job = f"40-stock-{stem}-{int(time.time()) % 100000}"
+        jobqueue.write_job(job, steps, title=f"сток для {stem}")
+        jobqueue.wake()
+        print(f"  → очередь: {job} (стоков: {len(steps)})", flush=True)
+        jobqueue.wait(job, wait)
+    failed, have = [], took()
+    for k, it, name, dur in plan:
+        if (have.get(name) or {}).get("duration", 0) + 1e-3 >= dur:
+            items[k] = {"kind": "clip", "w": it["w"], "name": name, **({"label": it["label"]} if it.get("label") else {})}
+        else:
+            none = WORK_DIR / stem / "broll" / f"{name}.none"
+            why = none.read_text(encoding="utf-8").strip() if none.exists() else "поиск стока не отработал"
+            failed.append(f"items[{k}] (stock) по запросам {it['q']}: {why[:300]} — другой запрос или другой приём")
+            items[k] = None
+    score["items"] = [it for it in items if it is not None]
+    return failed
+
+
 def triage(failed: list, info: dict) -> list:
     """Провалы — словами партитуры: «items[9] (timeline) «долг = 0» вылезает…». Чего аналитик не исправит — BuildBroken."""
     mine, broken = [], []
@@ -427,6 +478,7 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES) -> Path:
             from kit import Take
             path = sc.path_of(stem, variant)
             path.write_text(json.dumps(score, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            stock_failed = resolve_stock(stem, score)       # сток — до сборки: страница ставит его как clip
             info = {}
             failed = assemble(stem, variant, score, info)
             for _ in range(AUTOFIX):                    # механику правит машина, ИИ — только решения
@@ -436,7 +488,7 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES) -> Path:
                 info = {}
                 failed = assemble(stem, variant, score, info)
             path.write_text(json.dumps(score, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-            failed = triage(failed, info)
+            failed = triage(failed, info) + stock_failed
         except (sc.ScoreError, ValueError) as e:
             failed = [str(e)]
         except BuildBroken as e:
@@ -551,7 +603,8 @@ def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
             backup = dict(score)
             info = {}
             try:
-                failed = triage(assemble(stem, variant, fixed, info), info)
+                stock_failed = resolve_stock(stem, fixed)
+                failed = triage(assemble(stem, variant, fixed, info), info) + stock_failed
             except (sc.ScoreError, ValueError) as e:
                 failed = [str(e)]
             except BuildBroken as e:                    # правка критика ломает сборку — оставить партитуру аналитика

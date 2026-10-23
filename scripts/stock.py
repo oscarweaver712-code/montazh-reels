@@ -37,7 +37,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host  # noqa: E402
-from common import QUALITY_FLOOR, QUALITY_GOOD, WORK_DIR, ffmpeg_bin, probe, require_queue, sharpness, vertical_crop  # noqa: E402
+from common import (QUALITY_FLOOR, QUALITY_GOOD, WORK_DIR, ffmpeg_bin, ffprobe_bin, probe, require_queue,  # noqa: E402
+                    sharpness, vertical_crop)
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/126 Safari/537.36"}
 LICENSE = {
@@ -194,6 +195,12 @@ def get(stem: str, source: str, key: str, name: str) -> Path:
     else:
         urls = [(r, f"https://assets.mixkit.co/videos/{key}/{key}-{r}.mp4") for r in ("2160", "1440", "1080", "720")]
         page = f"https://mixkit.co/free-stock-video/{key}/"
+    return download(stem, source, key, name, urls, page)
+
+
+def download(stem: str, source: str, key: str, name: str, urls: list, page: str) -> Path:
+    """Первый скачавшийся из [(разрешение, адрес)] → broll/<имя>.mp4 и .md с источником и лицензией. Мутнее 720p во весь
+    вертикальный кадр — файл удаляется, громкий отказ."""
     for res, url in urls:
         try:
             data = fetch(url)
@@ -212,6 +219,98 @@ def get(stem: str, source: str, key: str, name: str) -> Path:
                          f"кадр это {p}p, ниже {QUALITY_FLOOR}p — не берём. Нужен вертикальный исходник или 4K")
     out.with_suffix(".md").write_text(f"{source}, {key} ({res}): {page} — {LICENSE[source]}.\n", encoding="utf-8")
     return out
+
+
+def remote_dims(stem: str, url: str) -> tuple | None:
+    """(ширина, высота, длительность) ролика по первым 2 МБ файла — без скачивания целиком; не вышло — None.
+    У Coverr и Mixkit размер в превью не написан, а 4K целиком на пробу — сотни мегабайт."""
+    probe_file = folder(stem) / ".probe.mp4"
+    try:
+        req = urllib.request.Request(url, headers={**UA, "Range": "bytes=0-2000000"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            probe_file.write_bytes(resp.read(2_000_001))
+        out = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                              "stream=width,height:format=duration", "-of", "json", str(probe_file)],
+                             capture_output=True, encoding="utf-8", errors="replace")
+        import json
+        info = json.loads(out.stdout or "{}")
+        stream = (info.get("streams") or [{}])[0]
+        if not stream.get("width"):
+            return None
+        return int(stream["width"]), int(stream["height"]), float((info.get("format") or {}).get("duration") or 0)
+    except Exception:                               # сеть, 403, обрезанный заголовок — просто не этот кандидат
+        return None
+    finally:
+        probe_file.unlink(missing_ok=True)
+
+
+def variants(source: str, key: str) -> tuple:
+    """([(разрешение, адрес)] от лучшего к худшему, страница) клипа источника без ключа."""
+    if source == "coverr":
+        return ([(r, f"https://cdn.coverr.co/videos/{key}/{r}.mp4") for r in ("original", "2160p", "1080p")],
+                f"https://coverr.co/videos/{key}")
+    return ([(r, f"https://assets.mixkit.co/videos/{key}/{key}-{r}.mp4") for r in ("2160", "1440", "1080", "720")],
+            f"https://mixkit.co/free-stock-video/{key}/")
+
+
+AUTO_TRIES = 6           # кандидатов на запрос и источник: дальше выдача обычно уже не про то
+
+
+def auto(stem: str, name: str, queries: list, dur: float, say: str) -> dict | None:
+    """Сток без глаз для автопилота (24.10.2026): по запросам аналитика — первый ролик, который во весь вертикальный кадр
+    даёт 1080p (иначе самый чёткий не мутнее 720p) и не короче окна; скачать, нарезать под кадр, записать в takes.json.
+    Порядок: Pexels и Pixabay (если есть ключи — у них размер виден сразу), потом Mixkit по «vertical …», Coverr, Mixkit.
+    Не нашлось — broll/<имя>.none с причиной и None: аналитик получит это провалом и заменит приём."""
+    import keys
+    need = dur + 0.6
+    tried = []
+    plan = ([("pexels", q) for q in queries] if keys.get("pexels") else []) \
+        + ([("pixabay", q) for q in queries] if keys.get("pixabay") else []) \
+        + [("mixkit", f"vertical {q}") for q in queries] + [("coverr", q) for q in queries] + [("mixkit", q) for q in queries]
+    for source, query in plan:
+        try:
+            found = search(source, query)[:AUTO_TRIES]
+        except (StockError, OSError) as e:
+            tried.append(f"{source} «{query}»: {e}")
+            continue
+        best = None
+        for key, _ in found:
+            if source in ("pexels", "pixabay"):
+                try:
+                    clip = get(stem, source, key, name)
+                except StockError as e:
+                    tried.append(str(e))
+                    continue
+                info = probe(clip)
+                if float(info["duration"]) < need:
+                    clip.unlink(missing_ok=True)
+                    continue
+                best = ("done", key)
+                break
+            urls, page = variants(source, key)
+            for res, url in urls:
+                dims = remote_dims(stem, url)
+                if not dims:
+                    continue
+                w, h, length = dims
+                p = sharpness(*vertical_crop(w, h), 1080, 1920)
+                if p >= QUALITY_FLOOR and (not length or length >= need) and (best is None or p > best[0]):
+                    best = (p, key, res, url, page)
+                break                                   # лучший доступный вариант этого клипа уже измерен
+            if best and best[0] != "done" and best[0] >= QUALITY_GOOD:
+                break
+        if not best:
+            tried.append(f"{source} «{query}»: годного нет")
+            continue
+        if best[0] != "done":
+            _, key, res, url, page = best
+            download(stem, source, key, name, [(res, url)], page)
+        else:
+            key = best[1]
+        (folder(stem) / f"{name}.none").unlink(missing_ok=True)
+        return take(stem, name, 0.3, dur, 0.5, say, f"сток {source} по запросу «{query}»")
+    (folder(stem) / f"{name}.none").write_text("годного стока нет: " + "; ".join(tried)[-600:] + "\n", encoding="utf-8")
+    return None
 
 
 def fit(stem: str, name: str, start: float, dur: float, cx: float) -> Path:
@@ -304,6 +403,12 @@ def main():
     t.add_argument("--x", type=float, default=0.5, help="центр окна 9:16 по ширине исходника, доля")
     t.add_argument("--say", required=True, help="под какую фразу ролика")
     t.add_argument("--shot", required=True, help="что в кадре — словами, для аналитика")
+    u = sub.add_parser("auto", help="сток без глаз для автопилота: по запросам — годный по чёткости и длине, сразу в takes.json")
+    u.add_argument("stem")
+    u.add_argument("name")
+    u.add_argument("--dur", type=float, required=True)
+    u.add_argument("--say", required=True)
+    u.add_argument("--q", nargs="+", required=True, help="запросы по-английски, от лучшего")
     a = ap.parse_args()
     try:
         if a.cmd == "sheet":
@@ -313,6 +418,17 @@ def main():
             print(f"✓ {get(a.stem, a.source, a.key, a.name)}")
         elif a.cmd == "fit":
             print(f"✓ {fit(a.stem, a.name, a.start, a.dur, a.x)}")
+        elif a.cmd == "auto":
+            require_queue("сток для автопилота")
+            try:
+                got = auto(a.stem, a.name, a.q, a.dur, a.say)
+            except Exception as e:              # причина — аналитику (.none), следующие стоки задачи всё равно ищутся
+                (folder(a.stem) / f"{a.name}.none").write_text(f"поиск упал: {type(e).__name__}: {e}"[:600] + "\n",
+                                                               encoding="utf-8")
+                print(f"✗ {a.name}: поиск упал — {type(e).__name__}: {e}")
+                got = None
+            print(f"✓ work/{a.stem}/footage/{a.name}.mp4 — {got['duration']} с, {got.get('sharp')}p" if got
+                  else f"· {a.name}: годного стока нет — work/{a.stem}/broll/{a.name}.none")
         else:
             require_queue("приём стока")
             got = take(a.stem, a.name, a.start, a.dur, a.x, a.say, a.shot)

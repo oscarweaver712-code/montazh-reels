@@ -69,6 +69,8 @@ KINDS = {
     "clip": ({"w", "name"}, {"label"}),
     # фото человека из «Материалов» (work/<имя>/materials/) во весь кадр, несколько — серией (kit.slides)
     "photo": ({"w", "files"}, {"label"}),
+    # сток по запросам (24.10.2026): машина находит годный по чёткости и длине (stock.auto), до сборки он становится clip
+    "stock": ({"w", "q"}, {"label"}),
     # дизайн-система проекта (DESIGN.md): пометка рукой, число отливом, список-обещание, красная ручка по мифу
     "hand": ({"w", "text"}, {"line", "hide"}),
     "number": ({"w", "text"}, {"at", "sub", "hide"}),
@@ -168,6 +170,9 @@ def check(score: dict, words: list) -> list:
             errs.append(f"{where}: нет поля «{key}»")
         for key in set(item) - need - may - {"kind"}:
             errs.append(f"{where}: поле «{key}» у этого приёма не бывает — есть {', '.join(sorted(need | may))}")
+        if kind == "stock" and not (isinstance(item.get("q"), list) and item["q"]
+                                    and all(isinstance(x, str) and re.fullmatch(r"[A-Za-z0-9 '-]{2,40}", x) for x in item["q"])):
+            errs.append(f"{where}: q — 1–3 запроса по-английски, по 2–40 знаков (например [\"graduation party\", \"prom dance\"])")
         if "w" in item:
             span(item["w"], where)
         if "layout" in item and item["layout"] not in LAYOUTS:
@@ -267,7 +272,7 @@ def photo_problems(folder: Path, files: list) -> list:
 
 def where_of(item: dict) -> str:
     """Где приём на экране: раскладка «Чертежа», а для своих видов — их место."""
-    fixed = {"word": "behind", "stamp": "chest", "clip": "full", "photo": "full", "hand": "behind", "number": "behind",
+    fixed = {"word": "behind", "stamp": "chest", "clip": "full", "photo": "full", "stock": "full", "hand": "behind", "number": "behind",
              "promise": "chest", "strike": "chest"}
     defaults = {"write": "split", "route": "behind", "timeline": "split", "compass": "behind", "hexes": "behind",
                 "cuboid": "split", "plot": "split", "trilat": "split"}
@@ -308,6 +313,8 @@ def build(stem: str, variant: str | None = None, score: dict | None = None) -> s
                 _strike(m, pid, item, a, b, start(item.get("at", item["w"][1])))
             elif kind == "clip":
                 m.footage(pid, item["name"], a, round(b - a, 2), label=item.get("label", ""))
+            elif kind == "stock":
+                raise ValueError("сток ещё не найден — analyst.resolve_stock ставит его до сборки")
             elif kind == "photo":
                 bad = photo_problems(WORK_DIR / stem / "materials", item["files"])
                 if bad:
