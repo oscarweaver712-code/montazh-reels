@@ -1791,6 +1791,49 @@ def check_order(report: Report, tmp: Path):
         measured.unlink(missing_ok=True)
 
 
+def check_keys(report: Report, tmp: Path):
+    """Ключ Pexels — обязательный шаг установки (Валера, 23.10.2026: «ключ как обязалово при настройке репо другим
+    человеком»): обе установки его спрашивают, ключ лежит мимо git, без ключа сток — громкий отказ с тем, где взять; в CI
+    не спрашивается. Из файлов Pexels берётся самый лёгкий, что даёт 1080p во весь кадр, а мутнее 720p — никакой."""
+    import keys
+    import stock
+    print("\nКлючи сервисов")
+    mac = (ROOT / "1 Установка — Mac.command").read_text(encoding="utf-8")
+    win = (ROOT / "scripts" / "install_windows.ps1").read_text(encoding="utf-8-sig")
+    ignored = "/.keys/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    report.check("keys.py setup" in mac and "keys.py setup" in win and ignored,
+                 "ключ Pexels спрашивают обе установки, а .keys/ не попадает в git",
+                 f"Mac: {'да' if 'keys.py setup' in mac else 'нет'}, Windows: {'да' if 'keys.py setup' in win else 'нет'}, "
+                 f".gitignore: {'да' if ignored else 'нет'}")
+    old_keys, old_env, old_ci = keys.KEYS, os.environ.pop("PEXELS_API_KEY", None), os.environ.get("CI")
+    try:
+        keys.KEYS = tmp / "keys"
+        try:
+            keys.require("pexels")
+            loud = False
+        except keys.KeyMissing as e:
+            loud = "pexels.com/api" in str(e)
+        keys.save("pexels", "abc123")
+        from_file = keys.get("pexels") == "abc123"
+        os.environ["CI"] = "true"
+        ci_ok = keys.setup() == 0
+    finally:
+        keys.KEYS = old_keys
+        if old_env is not None:
+            os.environ["PEXELS_API_KEY"] = old_env
+        if old_ci is None:
+            os.environ.pop("CI", None)
+        else:
+            os.environ["CI"] = old_ci
+    files = [{"width": 720, "height": 1280, "link": "hd"}, {"width": 1080, "height": 1920, "link": "fhd"},
+             {"width": 2160, "height": 3840, "link": "4k"}, {"width": 1920, "height": 1080, "link": "wide"}]
+    pick = stock.pexels_pick(files)
+    none = stock.pexels_pick([{"width": 1280, "height": 720, "link": "x"}, {"width": 540, "height": 960, "link": "y"}])
+    report.check(loud and from_file and ci_ok and pick and pick["link"] == "fhd" and none is None,
+                 "без ключа — отказ с тем, где взять; ключ из .keys/; в CI не спрашивается; из Pexels — лёгкий 1080p, мыло — нет",
+                 f"отказ: {loud}, из файла: {from_file}, CI: {ci_ok}, выбран: {pick and pick['link']}, мыло: {none}")
+
+
 def check_score(report: Report):
     """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
     каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
@@ -5271,6 +5314,7 @@ def main():
         section(report, check_footage, tmp)
         section(report, check_sharpness, tmp)
         section(report, check_order, tmp)
+        section(report, check_keys, tmp)
         section(report, check_fx, tmp)
         section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)

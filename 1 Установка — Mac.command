@@ -74,6 +74,9 @@ ls presets/sfx/*.mp3 >/dev/null 2>&1 || fail "Нет звуков в presets/sfx
 step "Проекты: у каждого свои клиенты (projects/ — не в git движка)"
 .venv/bin/python scripts/clients.py ensure || fail "Не создался проект по умолчанию."
 
+step "Ключ Pexels: вертикальные стоки 1080p/4K (бесплатно, у каждого свой)"
+.venv/bin/python scripts/keys.py setup || fail "Без ключа Pexels установка не закончена — возьми его по шагам выше и запусти установку снова."
+
 step "Самопроверка (около минуты: честно кодирует видео)"
 .venv/bin/python scripts/selfcheck.py || fail "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."
 

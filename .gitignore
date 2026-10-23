@@ -8,6 +8,8 @@
 !/projects/README.md
 /work/
 /.clients/
+# ключи сервисов этой машины (scripts/keys.py): у каждого свои, в git — никогда
+/.keys/
 # страницы роликов пишет page.py из решений клиента; в движке — только общие вендоры и галереи
 /studio/*
 !/studio/_vendor/

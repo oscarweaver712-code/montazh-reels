@@ -9,6 +9,9 @@ original.mp4, часто 4K) и Mixkit (Stock Video Free License, https://mixkit
   .venv/bin/python scripts/stock.py sheet IMG_9665 coverr "worried woman phone" "autumn leaves"
                                                      → work/IMG_9665/broll/cv_<запрос>.jpg и .txt (номер → slug)
   .venv/bin/python scripts/stock.py sheet IMG_9665 mixkit "hourglass"     → mx_<запрос>.jpg (номер → id)
+  .venv/bin/python scripts/stock.py sheet IMG_9665 pexels "graduation dress"  → pe_<запрос>.jpg: только вертикальные,
+                                                     не мутнее 720p во весь кадр (ключ — scripts/keys.py, у каждого свой)
+  .venv/bin/python scripts/stock.py get IMG_9665 pexels 3195394 gown       → самый лёгкий файл, который даёт 1080p
   .venv/bin/python scripts/stock.py get IMG_9665 coverr coverr-worried-woman-talking-on-phone-in-city phone
   .venv/bin/python scripts/stock.py get IMG_9665 mixkit 28889 hourglass   → broll/<имя>.mp4 + <имя>.md (лицензия)
   .venv/bin/python scripts/stock.py fit IMG_9665 phone --from 0.4 --dur 3.0 --x 0.52
@@ -38,7 +41,10 @@ UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/53
 LICENSE = {
     "coverr": "Coverr License (https://coverr.co/license): бесплатно, в том числе коммерческое, без указания автора",
     "mixkit": "Mixkit Stock Video Free License (https://mixkit.co/license/#videoFree): коммерческое, без указания автора",
+    "pexels": ("Pexels License (https://www.pexels.com/license/): бесплатно, в том числе коммерческое, без указания автора; "
+               "нельзя продавать без изменений и показывать узнаваемых людей в дурном свете"),
 }
+PEXELS = "https://api.pexels.com/videos"
 
 
 class StockError(Exception):
@@ -55,8 +61,43 @@ def folder(stem: str) -> Path:
     return path
 
 
+def pexels_api(path: str) -> dict:
+    """Запрос к API Pexels со своим ключом (scripts/keys.py): 200 в час, 20 000 в месяц на ключ."""
+    import json
+    import urllib.error
+    import keys
+    try:
+        key = keys.require("pexels")
+    except keys.KeyMissing as e:
+        raise StockError(str(e)) from None
+    req = urllib.request.Request(f"{PEXELS}/{path}", headers={**UA, "Authorization": key})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise StockError({401: "Pexels не принял ключ — keys.py setup заново",
+                          429: "лимит Pexels на этот час кончился (200 запросов) — через час или Mixkit/Coverr"}.get(
+                              e.code, f"Pexels ответил {e.code}")) from None
+
+
+def pexels_pick(files: list) -> dict | None:
+    """Какой файл Pexels брать: самый лёгкий из тех, что во весь вертикальный кадр дают 1080p; таких нет — самый чёткий
+    не мутнее 720p; и таких нет — None (common.sharpness, 23.10.2026)."""
+    rated = [(sharpness(*vertical_crop(f["width"], f["height"]), 1080, 1920), f["width"] * f["height"], f)
+             for f in files if f.get("width") and f.get("height") and f.get("file_type", "video/mp4") == "video/mp4"]
+    good = [r for r in rated if r[0] >= QUALITY_GOOD]
+    if good:
+        return min(good, key=lambda r: r[1])[2]
+    ok = [r for r in rated if r[0] >= QUALITY_FLOOR]
+    return max(ok, key=lambda r: (r[0], r[1]))[2] if ok else None
+
+
 def search(source: str, query: str) -> list:
-    """[(ключ, адрес превью)] по запросу: ключ — slug Coverr или id Mixkit."""
+    """[(ключ, адрес превью)] по запросу: ключ — slug Coverr, id Mixkit или id Pexels."""
+    if source == "pexels":                      # только вертикальные и не меньше Full HD — мыло не показываем вовсе
+        data = pexels_api("search?" + urllib.parse.urlencode({"query": query, "orientation": "portrait",
+                                                               "size": "medium", "per_page": 24}))
+        return [(str(v["id"]), v["image"]) for v in data.get("videos", []) if pexels_pick(v.get("video_files") or [])]
     if source == "coverr":
         html = fetch("https://coverr.co/s?" + urllib.parse.urlencode({"q": query})).decode("utf-8", "replace")
         slugs = list(dict.fromkeys(s for s in re.findall(r"cdn\.coverr\.co/videos/([a-z0-9-]+)/", html) if "premium" not in s))
@@ -95,7 +136,15 @@ def sheet(stem: str, source: str, query: str) -> Path:
 
 
 def get(stem: str, source: str, key: str, name: str) -> Path:
-    if source == "coverr":
+    if source == "pexels":
+        video = pexels_api(f"videos/{int(key)}")
+        best = pexels_pick(video.get("video_files") or [])
+        if not best:
+            raise StockError(f"pexels {key}: нет файла не мутнее {QUALITY_FLOOR}p во весь вертикальный кадр")
+        author = (video.get("user") or {}).get("name", "")
+        urls = [(f"{best['width']}×{best['height']}", best["link"])]
+        page = (video.get("url") or f"https://www.pexels.com/video/{key}/") + (f", автор {author}" if author else "")
+    elif source == "coverr":
         urls = [(r, f"https://cdn.coverr.co/videos/{key}/{r}.mp4") for r in ("original", "2160p", "1080p")]
         page = f"https://coverr.co/videos/{key}"
     else:
@@ -195,7 +244,7 @@ def main():
     g = sub.add_parser("get")
     g.add_argument("stem")
     g.add_argument("source", choices=list(LICENSE))
-    g.add_argument("key", help="slug Coverr или id Mixkit — из листа превью (.txt рядом)")
+    g.add_argument("key", help="slug Coverr, id Mixkit или id Pexels — из листа превью (.txt рядом)")
     g.add_argument("name")
     f = sub.add_parser("fit")
     f.add_argument("stem")
