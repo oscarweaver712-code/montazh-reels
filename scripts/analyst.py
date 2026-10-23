@@ -31,7 +31,9 @@ from common import WORK_DIR  # noqa: E402
 
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
+FIX_EFFORT = "medium"   # исправление по списку провалов — правка JSON, не режиссура заново
 TRIES = 3
+AUTOFIX = 2             # проходов машинной правки (двойной текст → hide) до хода ИИ
 
 # Конституция аналитика: как решать. Что проверяет машина (лицо, пустые места, ключевые слова, серые зоны, двойной
 # текст, склейки), здесь только названо — нарушишь, получишь провал обратно. Правила проекта идут целиком в запросе.
@@ -200,13 +202,13 @@ def home() -> Path:
     return path
 
 
-def ask(prompt: str, session: str | None = None, system: str = SYSTEM, tools: str = "") -> dict:
+def ask(prompt: str, session: str | None = None, system: str = SYSTEM, tools: str = "", effort: str = EFFORT) -> dict:
     """Один ход: Claude без CLAUDE.md, со своей системной подсказкой и только с tools. → текст, сессия, цена."""
     import brain
     binary = brain.find_binary("claude")
     if not binary:
         raise RuntimeError("claude не найден на этой машине — аналитику нужен Claude Code")
-    cmd = [binary, "-p", prompt, "--output-format", "json", "--model", MODEL, "--effort", EFFORT, "--tools", tools,
+    cmd = [binary, "-p", prompt, "--output-format", "json", "--model", MODEL, "--effort", effort, "--tools", tools,
            "--system-prompt", system]
     if tools:
         cmd += ["--allowedTools", tools]
@@ -253,8 +255,19 @@ def page_slot():
         handle.close()                                  # замок снимается вместе с файлом
 
 
-def assemble(stem: str, variant: str | None, score: dict) -> list:
-    """Партитура → страница → проверка. Возвращает провалы (пусто — можно рендерить)."""
+class BuildBroken(RuntimeError):
+    """Провал сборки, а не партитуры (переход на склейке, звук, ошибка JS): аналитик его не исправит — ходы ИИ впустую.
+    23.10.2026: подпись оси уезжала за кадр из-за CSS, и аналитик IMG_3683/IMG_3684 переписал партитуру 6 раз."""
+
+
+# проверки про решения партитуры, у которых в подробностях нет приёма (#s<k>-…): их правит аналитик
+SCORE_CHECKS = ("субтитры не пропадают", "ключевое слово в субтитрах", "нет пустых мест без вставок",
+                "человек в кадре не меньше", "ИИ-видео не больше")
+PIECE = re.compile(r"#s(\d+)-([a-z]+)[\w-]*")
+
+
+def assemble(stem: str, variant: str | None, score: dict, info: dict | None = None) -> list:
+    """Партитура → страница → проверка. Возвращает провалы (пусто — можно рендерить); info — подробности (verify out)."""
     import compose
     import verify_page
     name = compose.project_name(stem, variant)
@@ -265,37 +278,95 @@ def assemble(stem: str, variant: str | None, score: dict) -> list:
         sc.build(stem, variant, score)
         compose.compose(stem, variant=variant)          # субтитры с решениями партитуры
         # маска считается после страницы и только по её окнам (autopilot.cut_on_windows): здесь её ещё может не быть
-        return verify_page.verify(name, matte_pending=True)
+        return verify_page.verify(name, matte_pending=True, out=info)
+
+
+def triage(failed: list, info: dict) -> list:
+    """Провалы — словами партитуры: «items[9] (timeline) «долг = 0» вылезает…». Чего аналитик не исправит — BuildBroken."""
+    mine, broken = [], []
+    for title in failed:
+        details = (info.get("details") or {}).get(title) or []
+        if title.startswith("партитура с ошибками") or title.startswith("ответ — не JSON"):
+            mine.append(title)
+            continue
+        ours = [d for d in details if PIECE.search(d)]
+        rest = [d for d in details if not PIECE.search(d)]
+        if title.startswith(SCORE_CHECKS):
+            ours, rest = details, []
+        if rest or not ours:
+            broken.append(title + "".join(f"\n    {d}" for d in (rest or details)[:4]))
+        if ours:
+            lines = [PIECE.sub(lambda m: f"items[{m.group(1)}] ({m.group(2)})", d).replace("hide_captions", '"hide"')
+                     for d in ours[:6]]
+            mine.append(title + ":" + "".join(f"\n    {d}" for d in lines))
+    if broken:
+        raise BuildBroken("сборка, а не партитура — ходы аналитика её не исправят, нужен разработчик:\n  "
+                          + "\n  ".join(broken))
+    return mine
+
+
+def autofix(words: list, score: dict, info: dict) -> bool:
+    """Машинная правка без ИИ: субтитр, который повторяет надпись на экране, прячется ("hide" на эти слова). True —
+    партитура поменялась. Это механика (какое слово под какой надписью), ход Opus на неё — $0,15 и ноль толку."""
+    norm = lambda t: re.sub(r"[^\wё]+", " ", t.lower()).split()       # noqa: E731
+    hide = [list(h) for h in score.get("hide") or []]
+    added = 0
+    for d in (info.get("res") or {}).get("dupes") or []:
+        cap = set(norm(d.get("cap", "")))
+        for i, w in enumerate(words):
+            # субтитр виден и после конца слова: слово 331 с 43,88 с, а надпись встала на 44,0 (IMG_3683) — по перекрытию
+            if w["start"] <= d["last"] + 0.25 and w["end"] >= d["from"] - 0.4 and set(norm(w["word"])) & cap \
+                    and not any(a <= i <= b for a, b in hide):
+                hide.append([i, i])
+                added += 1
+    if added:
+        score["hide"] = sorted(hide)
+    return bool(added)
 
 
 def run(stem: str, variant: str | None = "auto", tries: int = TRIES) -> Path:
     log = WORK_DIR / stem / "analyst.jsonl"
-    prompt, session = material(stem), None
+    prompt, session, total = material(stem), None, 0.0
     for attempt in range(1, tries + 1):
-        reply = ask(prompt, session)
+        reply = ask(prompt, session, effort=EFFORT if attempt == 1 else FIX_EFFORT)
         session = reply["session"]
+        spent, total = (reply["cost"] or 0) - total, reply["cost"] or 0     # total_cost_usd — итог разговора, не хода
         entry = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "stem": stem, "variant": variant, "attempt": attempt,
-                 "cost": reply["cost"], "seconds": reply["seconds"], "tokens": reply["tokens"]}
+                 "cost": round(spent, 4), "cost_total": round(total, 4), "seconds": reply["seconds"], "tokens": reply["tokens"]}
         try:
             score = parse(reply["text"])
             if score.get("skip"):                       # дубль не годится — не вымучивать ролик из брака
                 entry["skip"] = str(score["skip"])
                 _log(log, entry)
                 raise Skipped(f"аналитик: дубль не годится — {score['skip']}")
+            from kit import Take
             path = sc.path_of(stem, variant)
             path.write_text(json.dumps(score, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-            failed = assemble(stem, variant, score)
+            info = {}
+            failed = assemble(stem, variant, score, info)
+            for _ in range(AUTOFIX):                    # механику правит машина, ИИ — только решения
+                if not failed or not autofix(Take(stem, variant).words, score, info):
+                    break
+                entry["autofix"] = entry.get("autofix", 0) + 1
+                info = {}
+                failed = assemble(stem, variant, score, info)
+            path.write_text(json.dumps(score, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            failed = triage(failed, info)
         except (sc.ScoreError, ValueError) as e:
             failed = [str(e)]
+        except BuildBroken as e:
+            entry["failed"], entry["build"] = [str(e)], True
+            _log(log, entry)
+            raise
         entry["failed"] = failed
         _log(log, entry)
-        print(f"  ход {attempt}: ${reply['cost'] or 0:.2f}, {reply['seconds']:.0f} с, "
+        print(f"  ход {attempt}: ${spent:.2f}, {reply['seconds']:.0f} с, "
               f"{'чисто' if not failed else f'провалов {len(failed)}'}", flush=True)
         if not failed:
             print(f"✓ {sc.path_of(stem, variant).relative_to(WORK_DIR.parent)} → страница готова к рендеру")
             return sc.path_of(stem, variant)
-        prompt = ("Сборка и проверка нашли ошибки — исправь партитуру и ответь ею целиком (только JSON):\n- "
-                  + "\n- ".join(str(x) for x in failed))
+        prompt = ("Сборка и проверка нашли ошибки — исправь партитуру и ответь ею целиком (только JSON). items[k] — "
+                  "k-й приём твоего списка items, с нуля:\n- " + "\n- ".join(str(x) for x in failed))
     raise RuntimeError(f"за {tries} хода партитура не прошла проверку — последние провалы в "
                        f"{log.relative_to(WORK_DIR.parent)}")
 
@@ -372,12 +443,14 @@ def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
     shutil.copy2(picture, home() / "sheet.png")
     prompt = ("Партитура ролика:\n" + json.dumps(score, ensure_ascii=False, indent=1) + "\n\n" + material(stem)
               + "\n\nЛист кадров черновика — sheet.png. Ответь JSON.")
-    session = None
+    session, total = None, 0.0
     for attempt in range(1, tries + 1):
-        reply = ask(prompt, session, system=CRITIC, tools="Read")
+        reply = ask(prompt, session, system=CRITIC, tools="Read", effort=EFFORT if attempt == 1 else FIX_EFFORT)
         session = reply["session"]
+        spent, total = (reply["cost"] or 0) - total, reply["cost"] or 0     # total_cost_usd — итог разговора
         entry = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "stem": stem, "variant": variant, "role": "critic",
-                 "attempt": attempt, "cost": reply["cost"], "seconds": reply["seconds"], "tokens": reply["tokens"]}
+                 "attempt": attempt, "cost": round(spent, 4), "cost_total": round(total, 4), "seconds": reply["seconds"],
+                 "tokens": reply["tokens"]}
         try:
             answer = parse(reply["text"])
         except sc.ScoreError as e:
@@ -386,20 +459,27 @@ def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
         if answer.get("ok"):
             entry["failed"] = []
             _log(log, entry)
-            print(f"  критик: править нечего (${reply['cost'] or 0:.2f}) — {'; '.join(entry['notes'])[:300]}")
+            print(f"  критик: править нечего (${spent:.2f}) — {'; '.join(entry['notes'])[:300]}")
             return False
         if "items" in answer:
             fixed = {k: v for k, v in answer.items() if k != "notes"}
             backup = dict(score)
+            info = {}
             try:
-                failed = assemble(stem, variant, fixed)
+                failed = triage(assemble(stem, variant, fixed, info), info)
             except (sc.ScoreError, ValueError) as e:
                 failed = [str(e)]
+            except BuildBroken as e:                    # правка критика ломает сборку — оставить партитуру аналитика
+                entry["failed"], entry["build"] = [str(e)], True
+                _log(log, entry)
+                assemble(stem, variant, backup)
+                print(f"  критик: {e}")
+                return False
             entry["failed"] = failed
             _log(log, entry)
             if not failed:
                 sc.path_of(stem, variant).write_text(json.dumps(fixed, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-                print(f"  критик поправил (${reply['cost'] or 0:.2f}): {'; '.join(entry['notes'])[:400]}")
+                print(f"  критик поправил (${spent:.2f}): {'; '.join(entry['notes'])[:400]}")
                 return True
             assemble(stem, variant, backup)                     # страница — снова по годной партитуре
             prompt = ("Твоя партитура не прошла сборку и проверку — исправь и ответь ею целиком (только JSON):\n- "

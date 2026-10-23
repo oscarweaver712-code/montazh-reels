@@ -352,6 +352,47 @@ class SceneError(ValueError):
     """Сцену не собрать: нет подготовки, битый director.json или камера вылезла за кадр."""
 
 
+def fit_long_words(chunks: list, stem: str, caps: dict, fmt: str) -> None:
+    """Слово шире строки субтитров переносом не делится и вылезает за её края — под кнопки площадок и в боковую обрезку
+    («дифференцированный», «арифметическая» — 23.10.2026, IMG_3663 и IMG_3666; аналитик автопилота трижды не мог это
+    поправить, и ролики вставали). Такой субтитр получает свой кегль (fs, px) — по метрикам шрифта строки, с запасом."""
+    import kit
+    try:
+        project = projects.of(stem)
+    except projects.ProjectError:
+        return
+    import design
+    system = design.of(project)
+    if system:
+        path, scale = fonts.find(system.fonts["caption"]["src"], project), float(system.accent_scale)
+    else:
+        name = kit.EXTRA_FONTS.get(caps.get("css_font", "Manrope"), "Manrope-ExtraBold.ttf")
+        path, scale = fonts.find(name, project), float(project.config.get("caption_accent_scale", 1))
+    if "position" not in caps:                     # ролик без брифа — субтитры по стилю брифа проекта (как montage.build)
+        brief = styles.load_brief(stem)
+        caps = styles.kit_captions(styles.effective(styles.load_style(brief["style"]), brief.get("overrides")))
+    if path and caps["position"] in kit.CAPTION_BOX[fmt]:
+        fit_words(chunks, path, scale, caps, fmt)
+
+
+def fit_words(chunks: list, path: Path, scale: float, caps: dict, fmt: str) -> None:
+    """Кегль fs тем субтитрам, у которых самое длинное слово шире строки (шрифт — файл path, scale — акцент крупнее)."""
+    import kit
+    from fontTools.ttLib import TTFont
+    font = TTFont(path, lazy=True)
+    cmap, hmtx, upm = font.getBestCmap(), font["hmtx"], font["head"].unitsPerEm
+    box = kit.CAPTION_BOX[fmt][caps["position"]][1] - 16                 # запас на тень и смаз входа
+    base = round(kit.CAPTION_SIZE.get(caps["mode"], 52) * float(caps.get("size", 1.0)) * kit.FORMAT_SCALE[fmt])
+    upper = caps.get("case") == "upper"
+    for c in chunks:
+        size = round(base * scale) if c.get("accent") and scale > 1 else base
+        longest = max((w.upper() if upper else w for w in c["text"].split()), default="",
+                      key=lambda w: sum(hmtx[cmap.get(ord(ch), ".notdef")][0] for ch in w))
+        width = sum(hmtx[cmap.get(ord(ch), ".notdef")][0] for ch in longest) / upm * size
+        if width > box:
+            c["fs"] = int(size * box / width)
+
+
 def scene(stem: str, variant: str | None = None, seconds: float | None = None) -> dict:
     """Камера и субтитры ролика с решениями режиссёра и ручными правками студии.
 
@@ -405,6 +446,7 @@ def scene(stem: str, variant: str | None = None, seconds: float | None = None) -
     transforms = [[round(v, 3) for v in css_transform(z, cx, cy, width, height)]
                   for z, cx, cy in frames]
     chunks = caption_chunks(words, director, duration, caps["mode"], caps["case"], scenes=meta.get("scenes"))
+    fit_long_words(chunks, stem, caps, fmt)
     return {"meta": meta, "director": director, "edits": edits, "words": words, "style": style,
             "caps": caps, "fmt": fmt, "width": width, "height": height, "fps": fps,
             "duration": duration, "frames": frames, "chunks": chunks,

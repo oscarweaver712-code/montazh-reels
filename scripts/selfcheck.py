@@ -49,7 +49,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import (ROOT, WORK_DIR, detect_silence, ffmpeg_bin, ffprobe_bin,
+from common import (FONT_DIR, ROOT, WORK_DIR, detect_silence, ffmpeg_bin, ffprobe_bin,
                     load_preset, measure_noise_floor, snap_segments)
 from cut import plan_cut
 from look import expected_luma, look_filter
@@ -858,9 +858,22 @@ def check_captions(report: Report):
     и перед хуком пропадало слово «равенства». Тихая поломка: ролик собирается, а смысл
     первой секунды уже не тот.
     """
-    from compose import caption_chunks
+    from compose import caption_chunks, fit_words
 
     print("\nСубтитры")
+    # 23.10.2026, IMG_3663/IMG_3666: «дифференцированный» шире строки — переносом не делится и уезжал под кнопки
+    # площадок; аналитик автопилота этого не видел и вставал. Длинному слову — свой кегль, короткому — нет
+    import kit
+    caps = {"mode": "words", "position": "chest", "size": 1.0, "case": "lower"}
+    long_, short = {"text": "дифференцированный", "accent": True}, {"text": "банк", "accent": True}
+    fit_words([long_, short], FONT_DIR / "InterDisplay-ExtraBold.ttf", 1.15, caps, "9:16")
+    from fontTools.ttLib import TTFont
+    font = TTFont(FONT_DIR / "InterDisplay-ExtraBold.ttf", lazy=True)
+    cmap, hmtx, upm = font.getBestCmap(), font["hmtx"], font["head"].unitsPerEm
+    width = sum(hmtx[cmap[ord(ch)]][0] for ch in long_["text"]) / upm * long_.get("fs", 999)
+    report.check("fs" not in short and long_.get("fs", 0) > 30 and width <= kit.CAPTION_BOX["9:16"]["chest"][1],
+                 "слово шире строки субтитров — свой кегль, в строку влезает",
+                 f"кегль {long_.get('fs')}, ширина {width:.0f} px из {kit.CAPTION_BOX['9:16']['chest'][1]}")
     words = [{"word": w, "start": s, "end": e} for w, s, e in (
         ("Почему", 0.10, 0.50), ("знак", 0.59, 0.95), ("равенства", 1.07, 1.45),
         ("две", 1.57, 1.80), ("полоски?", 1.93, 2.50), ("это", 2.63, 2.90),
@@ -1742,6 +1755,30 @@ def check_score(report: Report):
     report.check(not errs_good and not missed, "партитура: годная проходит, ошибки аналитика ловятся до сборки",
                  f"годная: {'; '.join(errs_good) or 'чисто'}; не поймано: {', '.join(missed) or 'ничего'}")
 
+    # провалы проверки — аналитику словами партитуры, механику правит машина, сборку — не ИИ (23.10.2026: 0 чистых
+    # ходов из 15 — аналитик получал одно название проверки и правил вслепую, а баг вёрстки переписывал 6 раз)
+    import analyst
+    grey = "текст не заезжает в серые зоны площадок (шапка, ник и подпись, кнопки справа)"
+    gaps, cut = "субтитры не пропадают дольше 3 с, пока идёт речь", "склейки спрятаны: переход, смена крупности, ничего не висит через рез"
+    info = {"details": {grey: ["#s9-timeline «долг = 0» — справа: Instagram обрезает бок, 41.00–44.25 с, глубина 92 px"],
+                        gaps: ["23.32–26.84 с: 3.5 с речи без субтитров"],
+                        cut: ["склейка 53.47 с: крупность меняется на 0.02 (нужно ≥ 0.1)"]}}
+    told = analyst.triage([grey, gaps], info)
+    addressed = len(told) == 2 and "items[9] (timeline) «долг = 0»" in told[0] and "3.5 с речи" in told[1]
+    try:
+        analyst.triage([grey, cut], info)
+        stopped = False
+    except analyst.BuildBroken as e:
+        stopped = "крупность меняется" in str(e)
+    score = {"hide": [[2, 3]]}
+    dupes = {"res": {"dupes": [{"el": "#s4-write", "text": "331", "cap": "331", "from": 4.0, "last": 4.5}]}}
+    fixed = analyst.autofix(words[:5] + [{"word": "331,", "start": 4.2, "end": 4.6}] + words[6:], score, dupes)
+    report.check(addressed and stopped and fixed and [5, 5] in score["hide"] and [2, 3] in score["hide"],
+                 "провалы проверки: аналитику — номер приёма и подробность; двойной текст прячет машина; "
+                 "поломка сборки — стоп без хода ИИ",
+                 f"адресно: {'да' if addressed else told}; сборка — стоп: {'да' if stopped else 'нет'}; "
+                 f"машина спрятала: {score.get('hide')}")
+
 
 def check_blueprint(report: Report, tmp: Path):
     """«Чертёж» (scripts/blueprint.py, 19.10.2026): все приёмы складываются в страницу без ошибок и залипаний; в сплите
@@ -1762,7 +1799,10 @@ def check_blueprint(report: Report, tmp: Path):
     face = (330.0, 440.0, 750.0, 1060.0)
     geo = bp.split_geometry(face)
     pieces = [bp.route("r", [("а", 0.1, 0.9), ("б", 0.14, 0.3), ("в", 0.86, 0.5)], [0.5, 0.9, 1.3], 2.5, layout="behind"),
-              bp.timeline("tm", [("IX", "x"), ("XII", "y")], [3.5, 4.2], 5.5, layout="split"),
+              # последняя метка у правого края — выравнивается внутрь (ar); общий .big из kit (left: 0, width: 1080px)
+              # растягивал её на кадр, и подпись уезжала за край (IMG_3683, IMG_3684: 6 ходов аналитика впустую)
+              bp.timeline("tm", [("IX", "x"), ("XII", "y"), ("133,1−133,1", "третий год")], [3.5, 4.2, 4.8], 5.5,
+                          layout="split"),
               bp.write("w", "XVIII", 7.0, 8.5, layout="full", sub="= 18"),
               bp.hexes("hx", 10.0, 11.5, cols=4, rows=2, red=3, label="соты", layout="chest"),
               bp.cuboid("cb", 12.5, 14.0, layout="split"), bp.plot("pl", [0.1, 0.3, 0.8], 15.5, 17.0, mark=1, layout="full"),
@@ -1786,9 +1826,14 @@ def check_blueprint(report: Report, tmp: Path):
     page = fx.FX(stage=True).finalize(page)
     (project / "index.html").write_text(page, encoding="utf-8")
     faces = [[round(k * 0.25, 2), *face] for k in range(int(30 / 0.25))]
-    res = run_timeline(project / "index.html", faces=faces)
+    import formats
+    res = run_timeline(project / "index.html", faces=faces, zones=formats.grey_zones("9:16"))
     errors = res.get("pageErrors", []) + [w for w in res.get("warnings", []) if "not found" in w or "Invalid" in w]
     stuck = [i["el"] for i in res.get("stuck", []) + res.get("risky", [])]
+    edge = [f"{g['el']} «{g['text']}» {g.get('zone') or g.get('where')}" for g in res.get("grey", []) + res.get("spills", [])
+            if g["el"].startswith("#tm")]
+    report.check(not edge, "«Чертёж»: подпись оси у правого края стоит внутри кадра, а не за обрезкой Instagram",
+                 "; ".join(edge) or "")
     split_hits = [h["el"] for h in res.get("faceHits", []) if h["el"].startswith(("#tm", "#cb", "#tri"))]
     hidden = [o["el"] for o in res.get("occluded", [])]
     share = res.get("cutawayShare", 0)

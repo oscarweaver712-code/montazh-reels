@@ -90,7 +90,9 @@ CSS = f'''
       .bp-lbl.al {{ text-align: left; }}
       .bp-lbl.ar {{ text-align: right; }}
       [data-safe] .bp-lbl {{ background: rgba(20,18,16,0.78); padding: 4px 14px 6px; border-radius: 4px; }}
-      .bp-lbl.big {{ font-family: "Oswald"; font-weight: 700; font-size: 80px; letter-spacing: 0.02em; line-height: 1; }}
+      /* общий .big страницы (kit.STYLE: left 0, width 1080px) — не для подписей: у края (right: …) подпись растягивалась
+         на кадр и уезжала за обрезку Instagram (23.10.2026, IMG_3683 и IMG_3684 — 6 ходов аналитика впустую) */
+      .bp-lbl.big {{ left: auto; width: auto; font-family: "Oswald"; font-weight: 700; font-size: 80px; letter-spacing: 0.02em; line-height: 1; }}
       .bp-lbl .sub {{ display: block; margin-top: 4px; font-family: "Cormorant"; font-style: italic; font-weight: 600;
                      font-size: 38px; letter-spacing: 0; text-transform: none; opacity: 0.9; }}
       .bp-write {{ fill: rgba(242,235,221,0); stroke: {CREAM}; stroke-width: 5; stroke-dasharray: 3000; stroke-dashoffset: 3000;

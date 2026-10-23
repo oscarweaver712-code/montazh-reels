@@ -1219,12 +1219,15 @@ def cta_leak(name: str, page_text: str) -> str | None:
     return ""
 
 
-def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending: bool = False) -> list:
+def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending: bool = False,
+           out: dict | None = None) -> list:
     """Печатает отчёт по странице; возвращает список провалов (пустой — можно рендерить).
 
     strict — страница идёт в рендер: собранная до норм звука не проходит. Сводка --all — не строгая.
     matte_pending — черновик до маски (analyst.assemble): маска считается после страницы, по её окнам, —
     окна без маски печатаются, но не провал. Рендер так не идёт: render_reel проверяет без этого флага.
+    out — сюда же подробности провалов ({"details": {название: [строки]}, "res": разбор страницы}): аналитику нужны
+    элемент, текст и секунда, а не одно название проверки (23.10.2026: 0 чистых ходов из 15 — правил вслепую).
     """
     project = Path(stem_or_dir)
     if not project.is_dir():
@@ -1242,6 +1245,8 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending:
             print(f"      … и ещё {len(details) - 8}")
         if not ok:
             failed.append(title)
+            if out is not None:
+                out.setdefault("details", {})[title] = [str(d) for d in details]
 
     print(f"Страница {project.name}")
     page_text = page_path.read_text(encoding="utf-8")
@@ -1286,6 +1291,8 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending:
                 check(False, f"страница собрана по дизайн-системе {name}, а projects/{name}/DESIGN.md нет")
         palette = system.allowed() if system else None
     res = run_timeline(page_path, fps, zones=zones, faces=faces, splices=splices, design=palette)
+    if out is not None:
+        out["res"] = res
     if not res.get("ok"):
         check(False, "таймлайн разобран", [res.get("crash", "?")])
         return failed

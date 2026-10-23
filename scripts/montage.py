@@ -283,6 +283,9 @@ class Montage:
                 if c0 < b0 and c1 > a0:
                     b0 = min(b0, c0 - 0.05) if c0 > a0 else b0
                     a0 = max(a0, c1 + 0.05) if c0 <= a0 else a0
+            # слово на первом слове: окно с −0,03 с маска не видела (matte.FG_LINE), а tl.set ровно в 0 рендер не проигрывает
+            # в первом кадре (verify_page: #cam-fg «0.00 вместо 1.00») — окно не раньше второго кадра (IMG_3667, IMG_3674)
+            a0 = max(a0, 0.04)
             if b0 - a0 >= 0.2:
                 fg.append((round(a0, 2), round(b0, 2)))
         self.fg_windows = fg
