@@ -3207,6 +3207,45 @@ def check_batch(report: Report, tmp: Path):
         studio_api.AUTOPILOT_CMD, studio_api.AUTOPILOT_LOGS = saved_ap
         studio_api.batch.update(running=False, items=[])
         (studio_api.WORK_DIR / "_studio" / "batch.json").unlink(missing_ok=True)
+    # проба (24.10.2026): первый ролик проекта — до графики (код 4), второй ждёт; «Дальше» — первый досчитывается
+    # без ИИ (--finish), второй идёт следом. Флаги — в команде автопилота.
+    seen = tmp / "probe_args.txt"
+    probe_fake = tmp / "fake_probe.py"
+    probe_fake.write_text("import sys\nstem, flags = sys.argv[1], sys.argv[2:]\n"
+                          f"open(r'{seen}', 'a', encoding='utf-8').write(stem + ' ' + ' '.join(flags) + '\\n')\n"
+                          "if '--probe' in flags:\n    print('· проба ' + stem + ' готова: открой ролик в студии')\n    sys.exit(4)\n"
+                          "print('✓ ' + stem + ': готов')\n", encoding="utf-8")
+    studio_api.AUTOPILOT_CMD = lambda stem: [sys.executable, str(probe_fake), stem]
+    studio_api.batch.update(running=False, items=[])
+    states = {}
+    try:
+        with temp_projects(tmp / "probe_projects", "main") as made, TestClient(app, base_url="http://127.0.0.1:8765") as live:
+            sys.modules["projects"].save_setup(made["main"], READY_ANSWERS)
+            for stem in ("РОЛИК_А", "РОЛИК_Б"):
+                (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б"], "engine": "claude", "parallel": 2,
+                                                "probe": True}, headers={"X-Studio-Token": TOKEN})
+            for _ in range(200):
+                time.sleep(0.05)
+                if studio_api.batch["items"] and studio_api.batch["items"][0]["status"] == "probe":
+                    break
+            time.sleep(0.3)
+            states["проба"] = [i["status"] for i in studio_api.batch["items"]]
+            live.post("/api/brain/batch/go/РОЛИК_А", headers={"X-Studio-Token": TOKEN})
+            for _ in range(200):
+                time.sleep(0.05)
+                if not studio_api.batch["running"]:
+                    break
+            states["после"] = [i["status"] for i in studio_api.batch["items"]]
+    finally:
+        studio_api.AUTOPILOT_CMD = saved_ap[0]
+        studio_api.batch.update(running=False, items=[])
+        (studio_api.WORK_DIR / "_studio" / "batch.json").unlink(missing_ok=True)
+    calls = seen.read_text(encoding="utf-8").split("\n") if seen.exists() else []
+    report.check(states.get("проба") == ["probe", "queued"] and states.get("после") == ["done", "done"]
+                 and calls[:3] == ["РОЛИК_А --probe", "РОЛИК_А --finish", "РОЛИК_Б "],
+                 "проба: первый ролик проекта — до графики, второй ждёт; «Дальше» — досчёт без ИИ, второй следом",
+                 f"{states}; вызовы: {calls[:3]}")
     logged = (tmp / "autopilot_logs" / "РОЛИК_А" / "autopilot.log").exists()
     report.check([i["status"] for i in auto] == ["done", "needs_human", "failed"] and logged
                  and "брак" in auto[1]["note"] and not any(i.get("thread") for i in auto),

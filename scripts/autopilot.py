@@ -21,6 +21,12 @@
   .venv/bin/python scripts/autopilot.py IMG_3330              # до готового ролика в output/ проекта
   .venv/bin/python scripts/autopilot.py IMG_3330 --no-render  # до страницы — посмотреть в студии
   .venv/bin/python scripts/autopilot.py IMG_3330 --no-critic
+  .venv/bin/python scripts/autopilot.py IMG_3330 --probe      # проба: до графики, без маски и рендера (код выхода 4)
+  .venv/bin/python scripts/autopilot.py IMG_3330 --finish     # после пробы: маска и рендер по готовой партитуре, без ИИ
+
+Проба (24.10.2026, Валера: «окно с предпросмотром… как там будут выглядеть шрифты и монтаж»): первый ролик проекта в
+пачке останавливается, как только собрана страница, — шрифты, субтитры и вставки видны в живом предпросмотре студии,
+а долгие маска и рендер не тратятся на то, что человек всё равно бы переделал.
 """
 import argparse
 import json
@@ -40,6 +46,13 @@ from common import ROOT, WORK_DIR  # noqa: E402
 
 class Stop(RuntimeError):
     """Автопилот дальше не может — по-русски, что сделать человеку."""
+
+
+class Probe(RuntimeError):
+    """Проба готова: страница собрана, дальше — по слову человека (autopilot.py --finish)."""
+
+
+PROBE_EXIT = 4
 
 
 def queued(name: str, steps: list, timeout_min: float = 120) -> None:
@@ -111,28 +124,41 @@ def cut_on_windows(stem: str) -> None:
     compose.compose(stem)
 
 
-def run(stem: str, critic: bool = True, render: bool = True) -> None:
+def run(stem: str, critic: bool = True, render: bool = True, probe: bool = False, finish: bool = False) -> None:
     import analyst
     import compose
+    import score as sc
     started = time.time()
-    print(f"▶ автопилот {stem}", flush=True)
+    print(f"▶ автопилот {stem}{' — после пробы' if finish else ''}", flush=True)
     prepare(stem)
     compose.compose(stem)                                  # камера и ассеты: сплиту и словам над головой нужно лицо
     import matte
     ok, why = matte.need(stem)
     print(f"  → маска {'по окнам страницы' if ok else 'не нужна'}: {why}", flush=True)
-    analyst.run(stem, None)
+    if finish:                                             # партитура уже принята на пробе — ИИ не зовётся
+        if not sc.path_of(stem).exists():
+            raise Stop(f"у {stem} нет партитуры work/{stem}/score.json — пробы не было, запусти без --finish")
+        sc.build(stem)
+        compose.compose(stem)                              # правки человека из монтажной (timeline.json) — поверх
+        critic = False
+    else:
+        analyst.run(stem, None)
+    if probe:
+        if critic:
+            analyst.critique(stem, None)
+        raise Probe(f"проба {stem} готова: открой ролик в студии — шрифты, субтитры и вставки в предпросмотре; "
+                    f"дальше — «Дальше» в пачке (маска и рендер без ИИ)")
     cut_on_windows(stem)                                   # до критика: на листе кадров человек поверх — настоящий
     if critic and analyst.critique(stem, None):
         cut_on_windows(stem)                               # окна сдвинулись — досчитывается только новое
     # ИИ-клипы Flow автопилот не генерирует (это браузер и бонусы подписки) — берёт только уже принятые; правило проекта
     # «ИИ-видео 1–2 на ролик» тогда не выполнено — сказать до рендера, а не молча (AGENTS.md: «чего-то не может — говорит»)
-    import score as sc
     if not any(item.get("kind") == "clip" for item in sc.load(stem).get("items") or []):
         print(f"  · ИИ-клипов Flow нет: автопилот их не делает — нужен клип, попроси в чате «оживи» про {stem}", flush=True)
     if render:
         queued(f"05-render-{stem}", [f"python scripts/render_reel.py {stem}"], timeout_min=60)
-    spent = [json.loads(line) for line in (WORK_DIR / stem / "analyst.jsonl").read_text(encoding="utf-8").splitlines()]
+    log = WORK_DIR / stem / "analyst.jsonl"
+    spent = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
     cost = sum(e.get("cost") or 0 for e in spent if e.get("at", "") >= time.strftime("%Y-%m-%d %H:%M:%S",
                                                                                      time.localtime(started)))
     print(f"✓ {stem}: автопилот за {(time.time() - started) / 60:.0f} мин, ИИ — ${cost:.2f}", flush=True)
@@ -143,23 +169,30 @@ def main():
     ap.add_argument("stems", nargs="+")
     ap.add_argument("--no-critic", action="store_true")
     ap.add_argument("--no-render", action="store_true", help="остановиться на странице — посмотреть в студии")
+    ap.add_argument("--probe", action="store_true", help="проба: до графики, без маски и рендера (код выхода 4)")
+    ap.add_argument("--finish", action="store_true", help="после пробы: маска и рендер по готовой партитуре, без ИИ")
     args = ap.parse_args()
     import analyst
-    human, failed = [], []
+    human, failed, probes = [], [], []
     for stem in args.stems:                # роликов несколько — по одному: тяжёлое всё равно одной очередью
         try:
-            run(stem, critic=not args.no_critic, render=not args.no_render)
+            run(stem, critic=not args.no_critic, render=not args.no_render, probe=args.probe, finish=args.finish)
+        except Probe as e:
+            print(f"· {e}", flush=True)
+            probes.append(stem)
         except (Stop, analyst.Skipped) as e:   # решать человеку: брак, согласие на маску
             print(f"✗ {stem}: нужен человек — {e}", flush=True)
             human.append(stem)
         except RuntimeError as e:
             print(f"✗ {stem}: {e}", flush=True)
             failed.append(stem)
-    # код выхода — для студии: 0 готово, 3 нужен человек, 1 не вышло
+    # код выхода — для студии: 0 готово, 3 нужен человек, 4 проба готова, 1 не вышло
     if failed:
         sys.exit(1)
     if human:
         sys.exit(3)
+    if probes:
+        sys.exit(PROBE_EXIT)
 
 
 if __name__ == "__main__":

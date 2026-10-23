@@ -1535,6 +1535,7 @@ async def batch_turn(thread: dict, text: str, mode: str) -> dict:
 
 
 # команда автопилота и папка его лога — переменные модуля: самопроверка подставляет свои (без ИИ и без work/)
+PROBE_EXIT = 4                       # autopilot.py --probe: страница готова, маска и рендер — после «Дальше»
 AUTOPILOT_CMD = lambda stem: [str(host.venv_python()), "-u", str(ROOT / "scripts" / "autopilot.py"), stem]    # noqa: E731
 AUTOPILOT_LOGS = WORK_DIR
 
@@ -1549,8 +1550,9 @@ async def batch_autopilot(item: dict) -> None:
     item.update(status="working", note="автопилот: подготовка дубля")
     batch_save()
     lines = []
+    flags = (["--probe"] if item.get("probe") else []) + (["--finish"] if item.get("finish") else [])
     try:
-        proc = subprocess.Popen(AUTOPILOT_CMD(stem), cwd=ROOT,
+        proc = subprocess.Popen(AUTOPILOT_CMD(stem) + flags, cwd=ROOT,
                                 env=brain.child_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, **host.own_group())
     except OSError as e:
@@ -1579,6 +1581,9 @@ async def batch_autopilot(item: dict) -> None:
     flow = next((x.strip("· ").strip() for x in lines if "ИИ-клипов Flow нет" in x), "")
     if code == 0:
         item.update(status="done", note=(last + (f" · {flow}" if flow else ""))[:300])
+    elif code == PROBE_EXIT:              # страница собрана — человек смотрит предпросмотр и жмёт «Дальше»
+        probe = next((x.strip("· ").strip() for x in reversed(lines) if "проба" in x), "проба готова")
+        item.update(status="probe", note=probe[:300])
     elif code == 3:
         item.update(status="needs_human", note=last[:300])
     else:
@@ -1688,6 +1693,16 @@ def montage_busy() -> int:
     return live + len(running_threads())
 
 
+def held(item: dict) -> bool:
+    """Ролик ждёт пробы первого ролика своего проекта (24.10.2026): пока проба идёт или ждёт «Дальше», остальные ролики
+    проекта не тратят ИИ на стиль, который человек может поменять. Проба кончилась чем угодно, кроме «проба» — свободны."""
+    lead = item.get("hold")
+    if not lead:
+        return False
+    first = next((i for i in batch["items"] if i["stem"] == lead), None)
+    return bool(first) and first["status"] in ("queued", "working", "probe")
+
+
 async def run_batch() -> None:
     """Пачка: каждый ролик — своя сессия; batch["parallel"] роликов разом, тяжёлое — одной очередью.
     Список не застывает на старте: ролик, догруженный по ходу (21.10.2026: видео закидывали по одному «сразу
@@ -1695,23 +1710,32 @@ async def run_batch() -> None:
     место ему уже выделили при приёме (batch_start), мимо batch["parallel"]."""
 
     async def one(item: dict) -> None:
-        if batch["stop"]:
-            item.update(status="skipped", note="пачку остановили")
-            return
-        await batch_item(item)
-        batch_save()
+        try:
+            if batch["stop"]:
+                item.update(status="skipped", note="пачку остановили")
+                return
+            await batch_item(item)
+            batch_save()
+        finally:
+            started.discard(id(item))           # проба → «Дальше»: тот же ролик встаёт в очередь снова
 
     started, tasks = set(), set()
     try:
         while True:
             for item in batch["items"]:
-                if id(item) in started or item["status"] != "queued":
+                if id(item) in started or item["status"] != "queued" or held(item):
                     continue
                 if item.get("now") or len(tasks) < max(1, batch.get("parallel") or 1):
                     started.add(id(item))
                     tasks.add(asyncio.create_task(one(item)))
-            if not tasks:
+            if not tasks and not any(i["status"] == "queued" and held(i) for i in batch["items"]):
                 break                   # без await до running=False: догрузка между ними не потеряется
+            if batch["stop"]:
+                for i in batch["items"]:
+                    if i["status"] == "queued" and held(i):
+                        i.update(status="skipped", note="пачку остановили")
+                if not tasks:
+                    break
             batch_wake.clear()
             wake = asyncio.create_task(batch_wake.wait())
             done, _ = await asyncio.wait(tasks | {wake}, return_when=asyncio.FIRST_COMPLETED)
@@ -1781,6 +1805,18 @@ async def batch_start(data: dict = Body(...)):
                                  "подписки). Дождись, пока один закончит, и нажми ещё раз")
     fresh = [{"stem": s, "status": "queued", "thread": None, "note": "", "how": how, "engine": engine, "mode": mode}
              for s in stems]
+    if data.get("probe") and how == "autopilot":
+        leads = {}
+        for item in fresh:                       # первый ролик проекта — проба, остальные ждут её
+            try:
+                owner = projects.of(item["stem"]).name
+            except projects.ProjectError:
+                continue
+            if owner in leads:
+                item.update(hold=leads[owner], note=f"ждёт пробы {leads[owner]}")
+            else:
+                leads[owner] = item["stem"]
+                item["probe"] = True
     if batch["running"]:
         refused = stems[free:]
         fresh = fresh[:free]
@@ -1798,6 +1834,25 @@ async def batch_start(data: dict = Body(...)):
     batch_save()
     asyncio.create_task(run_batch())
     return {**batch_view(), "added": stems}
+
+
+@router.post("/api/brain/batch/go/{stem}")
+async def batch_go(stem: str):
+    """«Дальше» после пробы: ролик досчитывается без ИИ (autopilot.py --finish — маска и рендер по принятой партитуре),
+    ролики его проекта, ждавшие пробы, идут сами. Пачка уже кончилась — запускается снова, с тем же."""
+    item = next((i for i in batch["items"] if i["stem"] == stem and i["status"] == "probe"), None)
+    if not item:
+        raise HTTPException(404, f"{stem} не ждёт пробы в пачке")
+    if montage_busy() >= MAX_BRAINS:
+        raise HTTPException(409, f"Монтируются уже {MAX_BRAINS} ролика — нажми «Дальше», когда один закончит")
+    item.update(status="queued", probe=False, finish=True, now=True, note="после пробы: маска и рендер")
+    batch_save()
+    if batch["running"]:
+        batch_wake.set()
+    else:
+        batch.update(running=True, stop=False)
+        asyncio.create_task(run_batch())
+    return batch_view()
 
 
 @router.post("/api/brain/batch/stop")

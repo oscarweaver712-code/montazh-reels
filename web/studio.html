@@ -298,7 +298,7 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; backg
 .batch { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel2); font-size: 12px; display: grid; gap: 4px; }
 .batch .row { display: flex; gap: 8px; align-items: baseline; }
 .batch .st { font-family: var(--mono); font-size: 11px; color: var(--mute); min-width: 92px; }
-.batch .st.done { color: var(--ok); } .batch .st.failed, .batch .st.needs_human { color: var(--rec); }
+.batch .st.done { color: var(--ok); } .batch .st.probe { color: var(--ok); font-weight: 700; } .batch .st.failed, .batch .st.needs_human { color: var(--rec); }
 
 /* свойства выделенного */
 .insp { display: grid; gap: 10px; }
@@ -848,9 +848,10 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
   <div class="say">Каждый ролик монтируется отдельно: контекст одного не портит монтаж другого. Тяжёлые шаги (вырезка, рендер) всё равно идут по одному — машина не перегрузится.</div>
   <div class="grp" id="batch-pick"></div>
   <div class="grp" id="batch-how" style="margin-top:12px">
-    <label class="pick"><input type="radio" name="batch-how" value="autopilot" checked> Автопилот — ~$2 за ролик: ИИ решает, что показать, коротким ходом, остальное делает машина. Новых ИИ-клипов Flow не делает — скажет, где их нет</label>
+    <label class="pick"><input type="radio" name="batch-how" value="autopilot" checked> Автопилот — ~$1 за ролик: ИИ решает, что показать, коротким ходом, остальное делает машина (и сток подбирает сама). Новых ИИ-клипов Flow не делает — скажет, где их нет</label>
     <label class="pick"><input type="radio" name="batch-how" value="brain"> Сессия ИИ на ролик — как раньше: дороже ($2–30), сам генерирует клипы во Flow</label>
   </div>
+  <label class="pick" style="margin-top:12px"><input type="checkbox" id="batch-probe" checked> Проба: первый ролик каждого проекта остановится, как только будет графика, — посмотришь шрифты и монтаж в предпросмотре и нажмёшь «Дальше». Остальные ролики проекта ждут её (только для автопилота)</label>
   <label class="pick" style="margin-top:12px">Монтировать разом:
     <select id="batch-par"><option value="1">1 ролик</option><option value="2">2 ролика</option><option value="3">3 ролика</option><option value="4">4 ролика</option></select></label>
   <p class="hint" style="margin:4px 0 0">ИИ думают одновременно, а очередь тяжёлых шагов — одна. Больше разом — быстрее, но быстрее тратится лимит подписки.</p>
@@ -2844,7 +2845,7 @@ $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.meta
 $("stop").addEventListener("click", async () => { try { await api(`/api/brain/stop/${S.thread}`, { method: "POST" }); } catch (e) { say("brain-say", e.message, true); } });
 
 /* пачка */
-const BATCH_STATUS = { queued: "ждёт", working: "монтирует", waiting_queue: "ждёт очередь", done: "готово", needs_human: "нужен человек", failed: "не вышло", skipped: "пропущен" };
+const BATCH_STATUS = { queued: "ждёт", working: "монтирует", waiting_queue: "ждёт очередь", probe: "проба — посмотри", done: "готово", needs_human: "нужен человек", failed: "не вышло", skipped: "пропущен" };
 // догрузка в идущую пачку: кто пошёл монтироваться сразу, кому не хватило места (больше 4 разом студия не монтирует)
 function batchAdded(r) {
   const refused = (r && r.refused) || [];
@@ -2856,10 +2857,16 @@ function renderBatch(b) {
   box.hidden = false;
   const done = b.items.filter((i) => ["done", "needs_human", "failed", "skipped"].includes(i.status)).length;
   box.innerHTML = `<div class="row"><b>Пачка ${done}/${b.items.length}</b>${b.running ? `<span class="grow"></span><button type="button" class="icon" id="batch-stop">Остановить пачку</button>` : ""}</div>`
-    + b.items.map((i) => `<div class="row"><span class="st ${esc(i.status)}">${esc(BATCH_STATUS[i.status] || i.status)}</span><span>${esc(i.stem)}</span><span class="say" title="${esc(i.note)}">${esc((i.note || "").slice(0, 70))}</span></div>`).join("");
+    + b.items.map((i) => `<div class="row"><span class="st ${esc(i.status)}">${esc(BATCH_STATUS[i.status] || i.status)}</span><span>${esc(i.stem)}</span><span class="say" title="${esc(i.note)}">${esc((i.note || "").slice(0, 70))}</span>${i.status === "probe" ? `<button type="button" class="icon" data-go="${esc(i.stem)}" title="Шрифты и монтаж устраивают: маска и рендер без ИИ, ролики проекта пойдут следом">Дальше</button>` : ""}</div>`).join("");
   S.runningStems = b.items.filter((i) => ["working", "waiting_queue"].includes(i.status)).map((i) => i.stem);
 }
-$("batch").addEventListener("click", async (e) => { if (e.target.id !== "batch-stop") return; try { renderBatch(await api("/api/brain/batch/stop", { method: "POST" })); } catch (err) { say("brain-say", err.message, true); } });
+$("batch").addEventListener("click", async (e) => {
+  const go = e.target.closest("[data-go]");
+  try {
+    if (go) { renderBatch(await api(`/api/brain/batch/go/${encodeURIComponent(go.dataset.go)}`, { method: "POST" })); return; }
+    if (e.target.id === "batch-stop") renderBatch(await api("/api/brain/batch/stop", { method: "POST" }));
+  } catch (err) { say("brain-say", err.message, true); }
+});
 $("batch-go").addEventListener("click", async () => {
   try {
     const b = await api("/api/brain/batch");
@@ -2868,6 +2875,7 @@ $("batch-go").addEventListener("click", async () => {
     $("batch-par").value = String(store.get("batchPar", 3));
     const how = store.get("how", "autopilot");
     document.querySelectorAll('#batch-how input').forEach((x) => { x.checked = x.value === how; });
+    $("batch-probe").checked = store.get("probe", true);
     $("batch-dialog").showModal();
   } catch (e) { say("brain-say", e.message, true); }
 });
@@ -2877,7 +2885,8 @@ $("batch-start").addEventListener("click", async () => {
   if (!stems.length) return;
   const parallel = Number($("batch-par").value) || 1; store.set("batchPar", parallel);
   const how = (document.querySelector('#batch-how input:checked') || {}).value || "autopilot"; store.set("how", how);
-  try { const r = await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel, how } }); renderBatch(r); $("batch-dialog").close();
+  const probe = $("batch-probe").checked; store.set("probe", probe);
+  try { const r = await api("/api/brain/batch", { method: "POST", json: { stems, engine: S.engine, mode: S.mode, parallel, how, probe } }); renderBatch(r); $("batch-dialog").close();
         say("brain-say", r.refused ? `Добавил к идущей пачке, монтируются сразу: ${r.added.join(", ")}.${batchAdded(r)}`
                                    : `Пачка: ${stems.length} роликов, ${parallel > 1 ? `по ${parallel} разом` : "по одному"}, ${how === "autopilot" ? "автопилотом" : "каждый в своей сессии ИИ"}.`, !!(r.refused || []).length); }
   catch (e) { say("brain-say", e.message, true); }
