@@ -328,6 +328,37 @@ def post_brief(stem: str, data: dict = Body(...)):
         raise HTTPException(400, str(e))
 
 
+@router.get("/api/studio/refs")
+def refs_list():
+    """Замеренные референсы (analyze_reference.py → work/_refs/<имя>.json): имя, длина, темп — для «что брать»."""
+    out = []
+    for f in sorted((WORK_DIR / "_refs").glob("*.json")):
+        if f.name.endswith((".source.json", ".words.json")):
+            continue
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        out.append({"ref": f.stem, "duration": d.get("duration"), "cuts_per_min": d.get("cuts_per_min"),
+                    "file": Path(str(d.get("file", ""))).name})
+    return {"refs": out}
+
+
+@router.post("/api/studio/refs/measure")
+def refs_measure(data: dict = Body(...)):
+    """Замерить референс по ссылке или файлу — очередью (скачивание и разбор кадров — тяжёлое, инвариант 2)."""
+    source = str(data.get("source") or "").strip()
+    if not re.match(r"^https?://\S+$", source):
+        raise HTTPException(400, "Ссылка на ролик — https://…")
+    name = f"15-ref-{abs(hash(source)) % 100000}"
+    try:
+        jobqueue.write_job(name, [["python", "scripts/analyze_reference.py", source]], title="Замер референса")
+    except FileExistsError:
+        raise HTTPException(409, "Этот референс уже замеряется")
+    ensure_runner()
+    return {"ok": True, "job": name}
+
+
 # ---------------------------------------------------------------- очередь
 
 def ensure_runner() -> bool:

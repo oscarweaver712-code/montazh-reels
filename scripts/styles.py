@@ -194,6 +194,8 @@ DEFAULT_BRIEF = {
     "boldness": 0.3,
     "overrides": {},
     "notes": "",
+    # референсы ролика и что из них брать (24.10.2026): [{"ref": имя замера work/_refs, "take": ["темп", …], "note": ""}]
+    "refs": [],
 }
 
 

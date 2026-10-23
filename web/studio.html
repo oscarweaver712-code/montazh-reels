@@ -618,6 +618,10 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
       <button type="button" class="chip" id="all-styles" style="margin-top:8px">Показать все стили</button>
       <h2>Пожелания ИИ</h2>
       <textarea id="notes" rows="3" placeholder="Например: хук — «90% учеников теряют баллы здесь», в конце — кодовое слово «экономика»"></textarea>
+      <h2>Референсы — что взять</h2>
+      <p class="hint" style="margin:0 0 6px">Отметь, что взять из образца: ИИ получит цифры замера и возьмёт только отмеченное. Шрифты и цвета — дело дизайн-системы проекта, не этого ролика.</p>
+      <div id="refs"></div>
+      <div class="row" style="gap:6px;margin-top:6px"><input id="ref-url" type="url" placeholder="Ссылка на рилс-образец" style="flex:1"><button type="button" class="chip" id="ref-measure">Замерить</button></div>
       <details class="rgroup" style="margin-top:10px"><summary>Тонкая настройка: цели и смелость</summary>
         <h2>Какой выхлоп нужен</h2>
         <div class="goals" id="goals"></div>
@@ -2431,7 +2435,7 @@ $("approve-go").addEventListener("click", async () => {
 
 /* ---------- бриф: цели, формат, стиль ---------- */
 function fillBrief() {
-  S.brief = S.brief || { goals: {}, formats: ["9:16"], variants: [], boldness: 0.3, notes: "", style: "viral-behind", overrides: {} };
+  S.brief = S.brief || { goals: {}, formats: ["9:16"], variants: [], boldness: 0.3, notes: "", style: "viral-behind", overrides: {}, refs: [] };
   const b = S.brief;
   $("goals").innerHTML = Object.entries(GOAL_NAMES).map(([k, name]) => `<div class="goal">
       <label for="g-${k}">${name} <output id="o-${k}">${b.goals[k] ?? 0}</output></label>
@@ -2441,7 +2445,36 @@ function fillBrief() {
     return `<button type="button" class="fmt" data-fmt="${f}" aria-pressed="${b.formats.includes(f)}"><span class="frame" style="width:${Math.round(w * k)}px;height:${Math.round(h * k)}px"></span>${f} <span class="hint">${{ "9:16": "Reels, Shorts, TikTok", "16:9": "YouTube", "1:1": "лента", "4:5": "лента IG" }[f]}</span></button>`;
   }).join("");
   $("notes").value = b.notes || "";
+  renderBriefRefs();
 }
+// референсы ролика: замеренные (work/_refs) и галочки «что взять» — в brief.refs
+const REF_TAKE = { "темп": "темп и склейки", "текст": "сколько текста в кадре", "структура": "длина и самый долгий план" };
+async function renderBriefRefs() {
+  const box = $("refs");
+  try { S.refList = (await api("/api/studio/refs")).refs; } catch (e) { S.refList = S.refList || []; }
+  const mine = Object.fromEntries(((S.brief && S.brief.refs) || []).map((r) => [r.ref, r]));
+  box.innerHTML = S.refList.length ? S.refList.map((r) => {
+    const m = mine[r.ref] || { take: [], note: "" };
+    return `<div class="grp" data-ref="${esc(r.ref)}"><b>${esc(r.ref)}</b> <span class="hint">${r.duration ? `${Math.round(r.duration)} с` : ""}${r.cuts_per_min != null ? `, склеек ${r.cuts_per_min}/мин` : ""}</span><br>`
+      + Object.entries(REF_TAKE).map(([k, v]) => `<label class="pick"><input type="checkbox" data-take="${k}" ${m.take.includes(k) ? "checked" : ""}> ${v}</label>`).join("")
+      + `<input type="text" data-note placeholder="своими словами: что именно нравится" value="${esc(m.note || "")}" style="width:100%;margin-top:4px"></div>`;
+  }).join("") : `<p class="hint">Замеренных референсов нет — вставь ссылку ниже.</p>`;
+}
+function collectRefs() {
+  S.brief.refs = [...document.querySelectorAll("#refs [data-ref]")].map((el) => ({
+    ref: el.dataset.ref, take: [...el.querySelectorAll("[data-take]:checked")].map((x) => x.dataset.take),
+    note: el.querySelector("[data-note]").value.trim() })).filter((r) => r.take.length || r.note);
+  autoSaveBrief();
+}
+$("refs").addEventListener("change", collectRefs);
+$("refs").addEventListener("input", (e) => { if (e.target.matches("[data-note]")) collectRefs(); });
+$("ref-measure").addEventListener("click", async () => {
+  const source = $("ref-url").value.trim();
+  if (!source) return;
+  try { await api("/api/studio/refs/measure", { method: "POST", json: { source } }); $("ref-url").value = "";
+        say("say", "Замер референса — в очереди; когда закончится, он появится в списке (обнови вкладку)"); }
+  catch (e) { say("say", e.message, true); }
+});
 $("goals").addEventListener("input", (e) => {
   const k = e.target.dataset.goal; if (!k) return;
   $(`o-${k}`).textContent = e.target.value; S.brief.goals[k] = Number(e.target.value); refreshStyles(); autoSaveBrief();

@@ -1884,6 +1884,29 @@ def check_stock_auto(report: Report, tmp: Path):
                  f"кривой запрос: {'пойман' if bad else 'нет'}; партитура: {score['items']}; в очередь: {queued}; провалы: {failed}")
 
 
+def check_studio_js(report: Report, tmp: Path):
+    """Скрипты студии разбираются (node --check): 24.10.2026 вторая function renderRefs уронила бы всю студию —
+    в браузере страница встаёт целиком, а не частью. Бриф хранит референсы с «что брать» (refs), а не теряет их."""
+    import styles
+    print("\nСтудия: скрипты и бриф")
+    page = (ROOT / "web" / "studio.html").read_text(encoding="utf-8")
+    code = "\n;\n".join(re.findall(r"<script(?![^>]*src)[^>]*>(.*?)</script>", page, re.S))
+    js = tmp / "studio_check.mjs"
+    js.write_text(code, encoding="utf-8")
+    node = shutil.which("node")
+    out = subprocess.run([node, "--check", str(js)], capture_output=True, encoding="utf-8", errors="replace") if node else None
+    report.check(bool(node) and out.returncode == 0, "скрипты студии разбираются без ошибок (node --check)",
+                 "нет node" if not node else (out.stderr.strip().splitlines() or [""])[-1][:160])
+    stem = "_selfcheck_refs"
+    try:
+        saved = styles.save_brief(stem, {"refs": [{"ref": "src", "take": ["темп"], "note": "быстро"}]})
+        kept = saved.get("refs") == [{"ref": "src", "take": ["темп"], "note": "быстро"}] \
+            and styles.load_brief(stem).get("refs") == saved["refs"]
+    finally:
+        shutil.rmtree(WORK_DIR / stem, ignore_errors=True)
+    report.check(kept, "бриф хранит референсы с «что брать» после сохранения", str(saved.get("refs")))
+
+
 def check_score(report: Report):
     """Партитура (scripts/score.py, этап 3, 19.10.2026): годная проходит, а типовые ошибки аналитика ловятся до сборки,
     каждая своим сообщением — его аналитик получает обратно: чужой приём, слово за краем, призыв, после которого
@@ -5426,6 +5449,7 @@ def main():
         section(report, check_order, tmp)
         section(report, check_keys, tmp)
         section(report, check_stock_auto, tmp)
+        section(report, check_studio_js, tmp)
         section(report, check_fx, tmp)
         section(report, check_cutaway_rules, tmp)
         section(report, check_atomic_outputs, preset, tmp)
