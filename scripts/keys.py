@@ -8,6 +8,11 @@
 
   .venv/bin/python scripts/keys.py setup     # спросить недостающие ключи и проверить их запросом (установка зовёт сама)
   .venv/bin/python scripts/keys.py status    # что есть на этой машине
+  pbpaste | .venv/bin/python scripts/keys.py set gemini   # положить ключ из буфера, не показывая его
+
+Gemini (24.10.2026, Валера: «используй купленный») — не для монтажа, а для отсмотра больших съёмок: ключ куплен на
+маркетплейсе, то есть это чужой аккаунт Google, и загруженное видит продавец. Владелец это решил сам; установка ключ не
+спрашивает.
 
 В CI (переменная CI) ключ не спрашивается: там нет человека, а стоки самопроверка не качает.
 """
@@ -41,6 +46,13 @@ SERVICES = {
         "what": "Pexels — вертикальные стоки 1080p/4K без водяных знаков",
         "how": ("https://www.pexels.com/api/ → «Get Started» → ключ на https://www.pexels.com/api/key/ (23.10.2026 новые ключи\n"
                 "  у Pexels на паузе — тогда просто Enter, без него всё работает)"),
+    },
+    "gemini": {
+        "env": "GEMINI_API_KEY",
+        "required": False,
+        "setup": False,
+        "what": "Gemini API — отсмотр больших съёмок",
+        "how": "скопируй ключ и выполни: pbpaste | .venv/bin/python scripts/keys.py set gemini",
     },
 }
 
@@ -99,7 +111,23 @@ def check_pixabay(key: str) -> tuple:
         return False, f"нет связи с Pixabay: {e}"
 
 
-CHECKS = {"pexels": check_pexels, "pixabay": check_pixabay}
+def check_gemini(key: str) -> tuple:
+    """(годен, почему) — список моделей: 200 — ключ живой, ничего не тратит."""
+    req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
+                                 headers={"x-goog-api-key": key, "User-Agent": "reels-montage"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            names = [m["name"].split("/")[-1] for m in json.loads(resp.read()).get("models", [])]
+            flash = [n for n in names if "flash" in n]
+            return True, f"ключ работает, моделей: {len(names)}" + (f", flash: {', '.join(flash[:6])}" if flash else "")
+    except urllib.error.HTTPError as e:
+        return False, ("Gemini не принял ключ — скопируй его заново" if e.code in (400, 401, 403)
+                       else f"Gemini ответил {e.code}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        return False, f"нет связи с Gemini (нужен VPN?): {e}"
+
+
+CHECKS = {"pexels": check_pexels, "pixabay": check_pixabay, "gemini": check_gemini}
 
 
 def save(name: str, key: str) -> Path:
@@ -120,6 +148,8 @@ def setup() -> int:
         return 0
     missing = 0
     for name, service in SERVICES.items():
+        if not service.get("setup", True):
+            continue
         key = get(name)
         if key:
             ok, why = CHECKS[name](key)
@@ -155,10 +185,25 @@ def setup() -> int:
 def main():
     host.utf8_console()
     ap = argparse.ArgumentParser(description="Ключи внешних сервисов этой машины")
-    ap.add_argument("cmd", choices=["setup", "status"])
+    ap.add_argument("cmd", choices=["setup", "status", "set"])
+    ap.add_argument("name", nargs="?", choices=list(SERVICES), help="для set: какой ключ положить")
     a = ap.parse_args()
     if a.cmd == "setup":
         sys.exit(setup())
+    if a.cmd == "set":
+        if not a.name:
+            sys.exit("✗ какой ключ? например: pbpaste | .venv/bin/python scripts/keys.py set gemini")
+        key = (getpass.getpass("Ключ (не виден при вводе): ") if sys.stdin.isatty() else sys.stdin.read()).strip()
+        if not key:
+            sys.exit("✗ ключ пустой — скопируй его в буфер и повтори")
+        if any(c.isspace() for c in key):
+            sys.exit(f"✗ в буфере не ключ — в нём пробелы («{key[:6]}…», {len(key)} символов): скопируй сам ключ и повтори")
+        ok, why = CHECKS[a.name](key)
+        print(f"{'✓' if ok else '✗'} {SERVICES[a.name]['what']}: {why}")
+        if not ok:
+            sys.exit(1)
+        print(f"✓ сохранён: {save(a.name, key).relative_to(ROOT)} (не в git)")
+        return
     for name, service in SERVICES.items():
         print(f"{'✓' if get(name) else '✗'} {name}: {service['what']}")
 
