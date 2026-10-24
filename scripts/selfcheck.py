@@ -2332,6 +2332,115 @@ def check_design(report: Report, tmp: Path):
                  f"плашек {probe.get('n')}, текст {probe.get('text')!r}, шторка {probe.get('clip')}, ошибки {probe.get('errors')}")
 
 
+def check_survey(report: Report, tmp: Path):
+    """Отсмотр большой съёмки (24.10.2026, «Вкудесник», ~2,5 ч сырья → каталог): разговор не рвётся на куски,
+    немые планы режутся не длиннее 15 с, куски идут встык; речь на улице, где шум всего на 4 дБ тише голоса, не
+    выбрасывается (строгий порог выкинул 158 настоящих слов из 184), а выдуманный Whisper титр — выбрасывается;
+    тёмное, однотонное и короткое — брак с причиной. Деньги: тот же запрос второй раз не оплачивается (кэш по куску),
+    потолок бюджета — громкий отказ, модель без цены не вызывается."""
+    import survey
+    print("\nОтсмотр съёмки")
+    dur, fps = 60.0, survey.SAMPLE_FPS
+    rms = [-30.0] * int(dur * survey.RMS_HZ)               # улица: шум −30 дБ
+    words = []
+    for a, b in ((5.0, 12.0), (13.0, 20.0), (40.0, 45.0)):  # речь −26 дБ: всего на 4 дБ громче улицы
+        for i in range(int(a * 10), int(b * 10)):
+            rms[i] = -26.0
+        t = a
+        while t + 0.4 <= b:
+            words.append({"word": "слово", "start": t, "end": t + 0.4, "prob": 0.8})
+            t += 0.5
+    for i in range(570, 600):                              # настоящая тишина в конце
+        rms[i] = -62.0
+    real = len(words)
+    words += [{"word": "субтитры", "start": 30.0, "end": 30.5, "prob": 0.9},   # титр-выдумка в уличном шуме
+              {"word": "привет", "start": 58.0, "end": 58.4, "prob": 0.3}]     # неуверенное слово в тишине
+    frames = [{"luma": 120.0, "std": 50.0, "bright": 0.0, "sharp": 900.0, "diff": 1.0 + (i % 7 == 0), "shift": 0.01,
+               "faces": []} for i in range(int(dur * fps))]
+    data = {"duration": dur, "sample_fps": fps, "rms": rms, "words": words, "frames": frames}
+    pieces = survey.segment(data)
+    kept = sum(1 for w in survey.mark_words(words, rms) if w["ok"])
+    talk = [p for p in pieces if p[0] <= 5.0 and p[1] >= 20.0]
+    longest_quiet = max(b - a for a, b in pieces if b <= 4.9 or (a >= 20.5 and b <= 39.9) or a >= 45.5)
+    joined = all(abs(pieces[i][1] - pieces[i + 1][0]) < 1e-6 for i in range(len(pieces) - 1)) \
+        and pieces[0][0] == 0.0 and pieces[-1][1] == dur
+    texts = " ".join(survey.piece_stats(data, a, b)["text"] for a, b in pieces)
+    report.check(kept == real and len(talk) == 1 and longest_quiet <= survey.QUIET_MAX + 1e-6 and joined
+                 and "субтитры" not in texts and "привет" not in texts,
+                 "отсмотр: разговор через паузу в 1 с — один кусок, немое — до 15 с, куски встык; речь на улице "
+                 "остаётся, титр-выдумка и слово в тишине — нет",
+                 f"слов оставлено {kept} из {real}, разговор целиком: {len(talk) == 1}, самый длинный немой "
+                 f"{longest_quiet:.1f} с, встык: {joined}, выдумки в тексте: "
+                 f"{[w for w in ('субтитры', 'привет') if w in texts]}")
+    base = {"luma": 120, "std": 50, "bright": 0.0, "sharp": 900, "shift": 0.01, "words": 0}
+    got = {"короткий": survey.reject_reason(base, 1.0), "тёмный": survey.reject_reason({**base, "luma": 20}, 5),
+           "однотонный": survey.reject_reason({**base, "std": 5}, 5), "засвет": survey.reject_reason({**base, "bright": 0.6}, 5),
+           "годный": survey.reject_reason(base, 5)}
+    report.check(got["годный"] is None and "короче" in (got["короткий"] or "") and got["тёмный"] == "тёмное"
+                 and "в землю" in (got["однотонный"] or "") and got["засвет"] == "засветка",
+                 "отсмотр: брак с причиной — короткое, тёмное, однотонное, засветка; годное — не брак", str(got))
+
+    # деньги: подменяем сеть, ключ и папку каталога — настоящий Gemini здесь не вызывается
+    import keys
+    calls = []
+    cat = tmp / "survey_catalog"
+    (cat).mkdir()
+    (cat / "pillars.md").write_text("1. Опора\n", encoding="utf-8")
+    inv = {"videos": [{"id": "phone/A", "shot_at": ""}], "photos": []}
+    piece = {"id": "A-00000", "file": "phone/A", "path": "phone/A.MOV", "kind": "video", "duration": 5.0,
+             "faces_max": 1, "face_share": 1.0, "loud_peak": 3.0, "text": "привет"}
+    answer = {"what": "x", "who": "x", "said": "", "speech": "нет", "emotion": "", "tags": [], "pillars": [1],
+              "strength": 3, "hook": False, "people": 1, "hero_lens": "не 360", "usable": True, "unsure": False}
+
+    def fake_post(url, body, key, timeout=120):
+        calls.append(url)
+        ids = re.findall(r"Кусок (\S+):", json.dumps(body, ensure_ascii=False))
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(
+                    {"pieces": [dict(answer, id=i) for i in ids]})}]}}],
+                "usageMetadata": {"promptTokenCount": 1500, "candidatesTokenCount": 200}}
+
+    saved = (survey.catalog_dir, survey.load_inventory, survey.frames_image, survey.post, keys.require)
+    try:
+        survey.catalog_dir = lambda project: cat
+        survey.load_inventory = lambda project: inv
+        survey.frames_image = lambda project, p: b"jpeg"
+        survey.post = fake_post
+        keys.require = lambda name: "test"
+        survey.describe_sync("_t", [piece], budget=1.0)
+        survey.describe_sync("_t", [piece], budget=1.0)            # тот же кусок — из кэша, без вызова
+        once = len(calls) == 1 and survey.spent("_t")["calls"] == 1
+        pair = [dict(piece, id="A-00050"), dict(piece, id="A-00100")]     # два куска одного файла — один запрос
+        survey.describe_sync("_t", pair, budget=1.0)
+        grouped = len(calls) == 2 and all(survey.cached_answer("_t", p["id"]) for p in pair)
+        try:
+            survey.describe_sync("_t", [dict(piece, id="B-00000")], budget=0.0)
+            ceiling = False
+        except survey.SurveyError as e:
+            ceiling = "потолок" in str(e)
+        try:
+            survey.describe_sync("_t", [piece], budget=1.0, model="gemini-без-цены")
+            priceless = False
+        except survey.SurveyError as e:
+            priceless = "нет цены" in str(e)
+
+        def daily_quota(url, body, key, timeout=120):         # ключ бесплатного уровня: суточная квота кончилась
+            raise survey.GeminiRefused(429, json.dumps({"error": {"message": "quota", "details": [
+                {"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}, {"retryDelay": "51521s"}]}}))
+        survey.post = daily_quota
+        try:
+            survey.describe_sync("_t", [dict(piece, id="C-00000")], budget=1.0)
+            quota = False
+        except survey.SurveyError as e:
+            quota = "суточная квота" in str(e)
+    finally:
+        survey.catalog_dir, survey.load_inventory, survey.frames_image, survey.post, keys.require = saved
+    report.check(once and grouped and ceiling and priceless and quota and len(calls) == 2,
+                 "отсмотр: тот же запрос второй раз не оплачивается, соседние куски — одним запросом; потолок "
+                 "бюджета, модель без цены и суточная квота — громкий отказ",
+                 f"вызовов {len(calls)} (ждём 2), группа: {grouped}, потолок: {ceiling}, без цены: {priceless}, "
+                 f"квота: {quota}")
+
+
 def check_module_names(report: Report, folder: Path = Path(__file__).resolve().parent):
     """Скрипт не называется как модуль стандартной библиотеки.
 
@@ -5598,6 +5707,7 @@ def main():
         section(report, check_batch, tmp)
         section(report, check_ai_workflow, tmp)
         section(report, check_viz, tmp)
+        section(report, check_survey, tmp)
         section(report, check_render, preset, 200 if args.long else 60, tmp)
 
     print()
