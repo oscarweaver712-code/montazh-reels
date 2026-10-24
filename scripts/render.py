@@ -258,7 +258,7 @@ def cut_segments(video: Path, segments: list, zooms: list, video_cfg: dict,
             "-ss", f"{start:.6f}", "-t", f"{duration + 1.0:.6f}", "-i", src,
             "-filter_complex",
             (f"[0:v]setpts=PTS-STARTPTS,fps={fps},trim=end_frame={frames},setpts=PTS-STARTPTS,"
-             f"scale={zw}:{zh}:force_original_aspect_ratio=increase:out_range=tv,"
+             f"scale={zw}:{zh}:force_original_aspect_ratio=increase:force_divisible_by=2:out_range=tv,"  # чётно: zscale HDR на 4:2:0
              f"{hdr}format=yuv420p,crop={width}:{height},setsar=1{grade}[v];"
              f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,"
              f"afade=t=in:st=0:d={FADE},afade=t=out:st={out_at:.3f}:d={FADE}[a]"),

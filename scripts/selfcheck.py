@@ -390,6 +390,25 @@ def check_hdr(report: Report, preset: dict, tmp: Path):
                  "HDR с айфона (HLG) выходит в обычном цвете, а не бледной пастелью",
                  f"насыщенность {saturation:.0%} от исходной, отклонение {deviation:.0f}, цвет на выходе {tags}")
 
+    # 25.10.2026, v09 «Вкудесника»: очки Ray-Ban (HLG, 1376×1840) в кадр сборки 1376×2446 — масштаб «по большей
+    # стороне» дал ширину 1829, а перевод цвета (zscale) на 4:2:0 нечётную ширину не берёт: сборка упала. Здесь те же
+    # пропорции вдвое меньше: 688×920 → 688×1224 — промежуточная ширина 915 до crop.
+    import pack
+    from common import probe
+    odd_src, odd_out = tmp / "hdr_odd.mov", tmp / "hdr_odd_out.mov"
+    subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", str(hlg), "-vf", "scale=688:920,format=yuv422p10le",
+                    "-c:v", "prores_ks", "-profile:v", "3", "-color_trc", "arib-std-b67", "-color_primaries", "bt2020",
+                    "-colorspace", "bt2020nc", "-color_range", "tv", "-c:a", "copy", str(odd_src)],
+                   check=True, capture_output=True)
+    piece = {"start": 0.0, "end": 0.6, "speed": 1.0, "fit": "cover", "mute": False}
+    try:
+        frames, why = pack.cut_piece(odd_src, probe(odd_src), piece, (688, 1224), 0.0, odd_out, "4M"), ""
+    except pack.PackError as e:
+        frames, why = 0, str(e).splitlines()[-1][:120]
+    report.check(frames == 18 and odd_out.exists(),
+                 "HDR-клип другой пропорции режется в кадр сборки (нечётная ширина до обрезки не роняет перевод цвета)",
+                 why or f"{frames} кадров")
+
 
 def check_fps_source(report: Report, preset: dict, tmp: Path):
     """Исходник 60 к/с (айфон по умолчанию) и 29,97 к/с режется в ролик 30 к/с кадр в кадр с планом и звуком.

@@ -400,15 +400,16 @@ def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out
     freeze = f",tpad=stop_mode=clone:stop_duration={held / FPS:.4f},trim=end_frame={frames + held}" if held else ""
     hdr = hdr_to_sdr(info)
     hdr = f"{hdr}," if hdr else ""
+    # масштаб — до чётных сторон: перевод HDR (zscale) на 4:2:0 нечётную ширину не берёт (очки 1376×1840 → 1829, 25.10)
     base = f"[0:v]trim=0:{b - a:.6f},setpts=(PTS-STARTPTS)/{speed:.6f},fps={FPS}"
     if piece["fit"] == "blur":
         video = (f"{base},split[s0][s1];"
-                 f"[s0]scale={w}:{h}:force_original_aspect_ratio=increase:out_range=tv,{hdr}format=yuv420p,"
+                 f"[s0]scale={w}:{h}:force_original_aspect_ratio=increase:force_divisible_by=2:out_range=tv,{hdr}format=yuv420p,"
                  f"crop={w}:{h},boxblur=36:2,eq=brightness=-0.06[bg];"
-                 f"[s1]scale={w}:{h}:force_original_aspect_ratio=decrease:out_range=tv,{hdr}format=yuv420p[fg];"
+                 f"[s1]scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,{hdr}format=yuv420p[fg];"
                  f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,trim=end_frame={frames}{freeze}[v]")
     else:
-        video = (f"{base},scale={w}:{h}:force_original_aspect_ratio=increase:out_range=tv,{hdr}format=yuv420p,"
+        video = (f"{base},scale={w}:{h}:force_original_aspect_ratio=increase:force_divisible_by=2:out_range=tv,{hdr}format=yuv420p,"
                  f"crop={w}:{h},setsar=1,trim=end_frame={frames}{freeze}[v]")
     if info["has_audio"] and not piece["mute"]:
         audio = (f"[0:a]atrim=0:{b - a:.6f},asetpts=PTS-STARTPTS,{atempo(speed)},aresample=48000,"
