@@ -1150,7 +1150,15 @@ def build_catalog(project: str) -> dict:
             "gemini": spent(project), "pillars": pillar_texts(project), "scenes": scene_list, "pieces": pieces,
             "photos": photos}
     write_json(catalog_dir(project) / "catalog.json", data)
-    (catalog_dir(project) / "catalog.md").write_text(catalog_md(data), encoding="utf-8")
+    cat = catalog_dir(project)
+    (cat / "catalog.md").write_text(catalog_md(data), encoding="utf-8")
+    (cat / "photos.md").write_text(photos_md(data), encoding="utf-8")
+    scenes_dir = cat / "scenes"
+    scenes_dir.mkdir(exist_ok=True)
+    for old in scenes_dir.glob("S*.md"):          # сцены пересчитываются — старые номера не должны висеть
+        old.unlink()
+    for sc in scene_list:
+        (scenes_dir / f"{sc['id']}.md").write_text(scene_md(data, sc), encoding="utf-8")
     return data
 
 
@@ -1167,117 +1175,139 @@ def rank(e: dict) -> tuple:
     return (-(e.get("strength") or 0), not e.get("hook"), -e["duration"])
 
 
-def line(e: dict, full_said: bool = False) -> str:
-    said = (e.get("said") or "").strip()
-    said = said if full_said or len(said) < 160 else said[:157] + "…"
+def line(e: dict, said_len: int = 160) -> str:
+    """Строка куска для списков: сила, id, камера, сцена, таймкод, что происходит и (коротко) что говорят."""
+    said = (e.get("said") or "").strip() if said_len else ""
+    said = said if len(said) <= said_len else said[:said_len - 1] + "…"
     lens = f", {e['hero_lens']}" if e.get("hero_lens") else ""
-    return (f"- ★{e.get('strength') or '?'} **{e['id']}** · {e['camera']}{lens} · {e['time']} ({e['duration']:.0f} с)"
-            f"{' · хук' if e.get('hook') else ''} — {e.get('what') or ''}" + (f" Говорят: {said}" if said else ""))
+    return (f"- ★{e.get('strength') or '?'} **{e['id']}** · {e.get('scene', '')} · {e['camera']}{lens} · {e['time']} "
+            f"({e['duration']:.0f} с){' · хук' if e.get('hook') else ''} — {e.get('what') or ''}"
+            + (f" Говорят: {said}" if said else ""))
+
+
+def card(e: dict) -> list:
+    """Полная карточка куска — в файле сцены."""
+    lens = f" · {e['hero_lens']}" if e.get("hero_lens") else ""
+    out = [f"- **{e['id']}** · {e['camera']} · `{e['path']}` {e['time']} ({e['duration']:.1f} с) · {e['msk']} МСК · "
+           f"★{e.get('strength') or '?'}{' · хук: ' + (e.get('hook_note') or '') if e.get('hook') else ''}{lens}"]
+    if e["status"] == "undescribed":
+        out.append("  - НЕТ ОПИСАНИЯ (Gemini не ответил)")
+    else:
+        out.append(f"  - Что: {e.get('what')} Кто: {e.get('who')} Эмоция: {e.get('emotion')}.")
+        out.append(f"  - Речь: {e.get('speech')}. {e.get('said') or ''}".rstrip())
+        out.append(f"  - Метки: {', '.join(e.get('tags') or []) or '—'}; опоры: "
+                   f"{', '.join(map(str, e.get('pillars') or [])) or '—'}; людей: {e.get('people')}"
+                   + (" · Gemini не уверен" if e.get("unsure") else ""))
+    if e["whisper"]:
+        out.append(f"  - Whisper: «{e['whisper']}»")
+    if e.get("same_moment"):
+        out.append(f"  - Тот же момент: {', '.join(e['same_moment'][:6])}")
+    return out
+
+
+HOW_TO_READ = (
+    "**Как читать.** `id` куска — метка файла + начало в десятых секунды (`IMG_7009-00262` — IMG_7009 с 26,2 с; "
+    "`N0038-…` — DJI Nano, файл `…_0038_D`; `X0084-…` — 360-камера, файл `CAM_…_0084_D`). `S04` — сцена. Таймкоды — "
+    "секунды файла, границы речи примерные: точный рез в тишину делает сборка (`pack.py`). ★ — сила момента 1–5 "
+    "(5 — готовый момент рилса). «Говорят» — смысл речи от Gemini; дословно — строка Whisper в карточке сцены. "
+    "«Тот же момент» — куски других камер, снятые в те же секунды.\n\n"
+    "**360 (.OSV)** — две несшитые линзы фишай; «линза 1» — левая половина превью .LRF, «линза 2» — правая. "
+    "Выпрямленный кадр из одной линзы — около 670p (ниже пола 720p во весь кадр): только карточкой, полосой или в сплите.")
 
 
 def catalog_md(data: dict) -> str:
+    """Оглавление: сводка, сцены, хуки, речь, подарки, опоры — сильное; карточки — в scenes/, фото — в photos.md.
+    Целиком (1,25 МБ, ~400 тыс. токенов) каталог сессии сценариев не прочесть — так он и не пишется."""
     live = [e for e in data["pieces"] if e["status"] == "live"]
     rejects = [e for e in data["pieces"] if e["status"] == "reject"]
     undescribed = [e for e in data["pieces"] if e["status"] == "undescribed"]
     g = data["gemini"]
     out = [f"# Каталог отсмотра — {data['project']}", "",
-           f"Собран {data['built']} скриптом `scripts/survey.py` (движок). Это текст для сценариев: видео смотреть не нужно, "
-           "но перед монтажом кусок стоит проверить по листу кадров `work/_survey/<проект>/sheets/<файл>.jpg`.", "",
-           "**Как читать.** `id` куска — метка файла + начало в десятых секунды (`IMG_7009-00262` — IMG_7009 с 26,2 с; "
-           "`N0038-…` — DJI Nano, файл `…_0038_D`; `X0084-…` — 360-камера, файл `CAM_…_0084_D`). Таймкоды — секунды "
-           "файла, границы речи примерные: точный рез в тишину делает сборка (`pack.py`). ★ — сила момента 1–5 "
-           "(5 — готовый момент рилса). «Говорят» — смысл речи от Gemini; дословно — строка Whisper в полной карточке. "
-           "«Тот же момент» — куски других камер, снятые в те же секунды.", "",
-           "**360 (.OSV)** — две несшитые линзы фишай; «линза 1» — левая половина превью .LRF, «линза 2» — правая. "
-           "Выпрямленный кадр из одной линзы — около 670p (ниже пола 720p во весь кадр): только карточкой, полосой "
-           "или в сплите.", "",
-           "## Сводка", "",
-           "| папка | часов всего | живого | кусков | живых |", "|---|---|---|---|---|"]
+           f"Собран {data['built']} скриптом `scripts/survey.py` (движок). Это текст для сценариев: видео смотреть не "
+           "нужно. Здесь — оглавление и сильное; все куски сцены с речью дословно — `scenes/<сцена>.md`, фото — "
+           "`photos.md`, всё машиночитаемо — `catalog.json`. Листы кадров для проверки глазами — "
+           "`work/_survey/<проект>/sheets/<файл>.jpg`.", "", HOW_TO_READ, "",
+           "## Сводка", "", "| папка | часов всего | живого | кусков | живых |", "|---|---|---|---|---|"]
     for folder, f in data["folders"].items():
         out.append(f"| {folder} | {f['hours']:.2f} | {f['live_hours']:.2f} | {f['pieces']} | {f['live']} |")
-    out += ["", f"Gemini: ${g['usd']:.2f}, вызовов {g['calls']}, токенов — вход {g['in']}, выход {g['out']}.",
-            f"Живых кусков {len(live)}, брак {len(rejects)}" + (f", без описания {len(undescribed)}" if undescribed else "")
-            + f". Фото — {len(data['photos'])} (раздел в конце).", ""]
+    out += ["", f"Gemini: ${g['usd']:.2f} по ценам платного уровня, вызовов {g['calls']}, токенов — вход {g['in']}, "
+            f"выход {g['out']}.", f"Живых кусков {len(live)}, брак {len(rejects)}"
+            + (f", без описания {len(undescribed)}" if undescribed else "") + f". Фото — {len(data['photos'])}.", "",
+            "## Сцены", "", f"Сцена — эпизод съёмки без перерыва дольше {SCENE_GAP} с, всеми камерами вместе. Длинная "
+            "сцена (прогулка, поездка) — это много встреч подряд: «разных роликов» в ней столько, сколько разных "
+            "встреч и идей, а не одна.", "",
+            "| сцена | время (МСК) | камеры | кусков | ★4+ | лучший | что |", "|---|---|---|---|---|---|---|"]
+    for sc in data.get("scenes", []):
+        strong = sum(1 for e in live if e.get("scene") == sc["id"] and (e.get("strength") or 0) >= STRONG)
+        out.append(f"| [{sc['id']}](scenes/{sc['id']}.md) | {sc['from']}–{sc['to']} | {', '.join(sc['cameras'])} | "
+                   f"{len(sc['pieces'])} | {strong} | ★{sc['strength'] or '?'} {sc['best']} | "
+                   f"{(sc['what'] or '').replace('|', '/')} |")
+    out.append("")
 
-    def section(title: str, rows: list, note: str = "", limit: int | None = None):
-        out.append(f"## {title} ({len(rows)})")
-        out.append("")
-        if note:
-            out.extend([note, ""])
-        rows = sorted(rows, key=rank)
-        out.extend(line(e) for e in rows[:limit])
-        if limit and len(rows) > limit:
-            out.append(f"- … ещё {len(rows) - limit} — в catalog.json")
+    def section(title: str, rows: list, note: str = "", floor: int = 3, said_len: int = 120):
+        shown = sorted((e for e in rows if (e.get("strength") or 0) >= floor), key=rank)
+        out.extend([f"## {title} ({len(rows)}, здесь от ★{floor} — {len(shown)})", ""] + ([note, ""] if note else []))
+        out.extend(line(e, said_len) for e in shown)
         out.append("")
 
     section("Лучшие хуки (первые 1–2 с)", [e for e in live if e.get("hook")],
             "Куски, первые секунды которых сами цепляют как начало рилса.")
     section("Речь в камеру", [e for e in live if e.get("speech") == "в камеру"],
             "Главный ресурс по референсу заказчицы (GoHoney): человек сам говорит в кадр.")
-    section("Диалоги с людьми", [e for e in live if e.get("speech") == "диалог с людьми"])
-    section("Стишки", [e for e in live if e.get("speech") == "стишок" or "стишок" in (e.get("tags") or [])])
+    section("Диалоги с людьми", [e for e in live if e.get("speech") == "диалог с людьми"], floor=4)
+    section("Стишки", [e for e in live if e.get("speech") == "стишок" or "стишок" in (e.get("tags") or [])], floor=1)
     section("Реакции на подарок и вручение", [e for e in live if {"реакция на подарок", "вручение подарка", "объятия"}
                                               & set(e.get("tags") or [])])
     section("Подарки крупно (продукт)", [e for e in live if {"подарки крупно", "мешок", "мороженое"}
                                          & set(e.get("tags") or [])],
             "Продукт — как бутылка у GoHoney: мешок, коробки, вручение крупно.")
-    out += ["## Сцены", "", f"Сцена — эпизод съёмки без перерыва дольше {SCENE_GAP} с, всеми камерами вместе. "
-            "Из одной сцены обычно выходит один ролик (правило «каждый ролик — своя идея»).", "",
-            "| сцена | время (МСК) | камеры | кусков | лучший | что |", "|---|---|---|---|---|---|"]
-    for sc in data.get("scenes", []):
-        out.append(f"| {sc['id']} | {sc['from']}–{sc['to']} | {', '.join(sc['cameras'])} | {len(sc['pieces'])} | "
-                   f"★{sc['strength'] or '?'} {sc['best']} | {(sc['what'] or '').replace('|', '/')} |")
-    out += ["", "## По опорам заказчицы", "",
-            "В списке — куски от ★3; слабее — в catalog.json. «Разных сцен» — сколько разных эпизодов съёмки дают "
-            "сильные куски: это верхняя граница числа разных роликов по опоре.", ""]
+    out += ["## По опорам заказчицы", "",
+            f"Здесь — куски от ★{STRONG} без пересказа речи (он — в разделах выше и в карточках сцен); ★3 и слабее — "
+            "в catalog.json. «Разных сцен» — сколько эпизодов съёмки дают сильные куски.", ""]
     for num, text in data["pillars"].items():
         rows = [e for e in live if num in (e.get("pillars") or [])]
-        strong = [e for e in rows if (e.get("strength") or 0) >= STRONG]
+        strong = sorted((e for e in rows if (e.get("strength") or 0) >= STRONG), key=rank)
         out += [f"### {num}. {text}", "",
-                f"Кусков {len(rows)}, сильных (★{STRONG}+) {len(strong)} — из {len({e.get('scene') for e in strong})} "
-                f"разных сцен ({len({e['file'] for e in strong})} файлов).", ""]
-        out.extend(line(e) for e in sorted((e for e in rows if (e.get("strength") or 0) >= 3), key=rank))
-        out.append("")
-    out += ["## Все живые куски по файлам", ""]
-    by_file = {}
-    for e in live + undescribed:
-        by_file.setdefault(e["file"], []).append(e)
-    for fid, rows in by_file.items():
-        e0 = rows[0]
-        out += [f"### {e0['path']} — {e0['camera']}, {e0['sharp_p']}p во весь кадр", ""]
-        for e in sorted(rows, key=lambda r: r["start"]):
-            lens = f" · {e['hero_lens']}" if e.get("hero_lens") else ""
-            out.append(f"- **{e['id']}** {e['time']} ({e['duration']:.1f} с) · {e['msk']} МСК · {e.get('scene', '')} · "
-                       f"★{e.get('strength') or '?'}"
-                       f"{' · хук: ' + (e.get('hook_note') or '') if e.get('hook') else ''}{lens}")
-            if e["status"] == "undescribed":
-                out.append("  - НЕТ ОПИСАНИЯ (Gemini не ответил)")
-            else:
-                out.append(f"  - Что: {e.get('what')} Кто: {e.get('who')} Эмоция: {e.get('emotion')}.")
-                out.append(f"  - Речь: {e.get('speech')}. {e.get('said') or ''}".rstrip())
-                out.append(f"  - Метки: {', '.join(e.get('tags') or []) or '—'}; опоры: "
-                           f"{', '.join(map(str, e.get('pillars') or [])) or '—'}; людей: {e.get('people')}"
-                           + (" · Gemini не уверен" if e.get("unsure") else ""))
-            if e["whisper"]:
-                out.append(f"  - Whisper: «{e['whisper']}»")
-            if e.get("same_moment"):
-                out.append(f"  - Тот же момент: {', '.join(e['same_moment'][:6])}")
+                f"Кусков {len(rows)}, ★3 — {sum(1 for e in rows if e.get('strength') == 3)}, сильных (★{STRONG}+) "
+                f"{len(strong)} из {len({e.get('scene') for e in strong})} сцен ({len({e['file'] for e in strong})} "
+                "файлов).", ""]
+        out.extend(line(e, 0) for e in strong)
         out.append("")
     out += [f"## Брак ({len(rejects)})", "", "Отброшено с причиной — для проверки глазами по листам кадров.", "",
             "| id | файл | время | причина |", "|---|---|---|---|"]
     for e in sorted(rejects, key=lambda r: (r["file"], r["start"])):
         out.append(f"| {e['id']} | {e['path']} | {e['time']} | {e['reject']} |")
-    out += ["", f"## Фото ({len(data['photos'])})", "",
-            "Вставки и стоп-кадры. Sony 6000×4000 — годятся во весь кадр с запасом на кадрирование.", ""]
+    out += ["", f"## Фото ({len(data['photos'])}) — все в photos.md", ""]
+    for use in PHOTO_USE + [None]:
+        rows = [p for p in data["photos"] if p.get("use") == use]
+        if rows:
+            out.append(f"- {use or 'без описания'}: {len(rows)}, из них ★4+ — "
+                       f"{sum(1 for p in rows if (p.get('strength') or 0) >= STRONG)}")
+    return "\n".join(out) + "\n"
+
+
+def scene_md(data: dict, scene: dict) -> str:
+    rows = [e for e in data["pieces"] if e.get("scene") == scene["id"]]
+    out = [f"# Сцена {scene['id']} — {scene['from']}–{scene['to']} МСК", "",
+           f"Камеры: {', '.join(scene['cameras'])}. Кусков {len(rows)}, лучший — ★{scene['strength'] or '?'} "
+           f"{scene['best']}: {scene['what']}", "", "Куски всех камер по времени съёмки. Как читать — catalog.md.", ""]
+    for e in sorted(rows, key=lambda r: (r["msk"], r["file"])):
+        out.extend(card(e))
+    return "\n".join(out) + "\n"
+
+
+def photos_md(data: dict) -> str:
+    out = [f"# Фото ({len(data['photos'])})", "",
+           "Вставки и стоп-кадры. Sony 6000×4000 — во весь кадр с запасом на кадрирование.", ""]
     for use in PHOTO_USE + [None]:
         rows = [p for p in data["photos"] if p.get("use") == use]
         if not rows:
             continue
-        out += [f"### {use or 'без описания'} ({len(rows)})", ""]
-        for p in sorted(rows, key=lambda r: -(r.get("strength") or 0)):
-            pill = f" (опоры {', '.join(map(str, p['pillars']))})" if p.get("pillars") else ""
-            out.append(f"- ★{p.get('strength') or '?'} `{p['path']}` {p.get('width')}×{p.get('height')} — "
-                       f"{p.get('what') or ''}{pill}")
+        out += [f"## {use or 'без описания'} ({len(rows)})", ""]
+        for ph in sorted(rows, key=lambda r: -(r.get("strength") or 0)):
+            pill = f" (опоры {', '.join(map(str, ph['pillars']))})" if ph.get("pillars") else ""
+            out.append(f"- ★{ph.get('strength') or '?'} `{ph['path']}` {ph.get('width')}×{ph.get('height')} — "
+                       f"{ph.get('what') or ''}{pill}")
         out.append("")
     return "\n".join(out) + "\n"
 
