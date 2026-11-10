@@ -75,9 +75,6 @@ Check "Не запускается HyperFrames через npx."
 npx --yes $Hyperframes browser ensure
 Check "Не скачался браузер HyperFrames — проверь интернет."
 
-Step "Скиллы для Claude: ссылки на общие (git на Windows кладёт вместо них текстовые файлы)"
-& $Python scripts\host.py --link-skills
-Check "Не подключились скиллы для Claude."
 
 Step "Звуки и GSAP на месте"
 if (-not (Test-Path "studio\_vendor\gsap.min.js")) { Fail "Нет studio\_vendor\gsap.min.js — репозиторий скачан не целиком." }
@@ -95,10 +92,10 @@ Step "Самопроверка (около минуты: честно кодир
 & $Python scripts\selfcheck.py
 Check "Самопроверка не прошла — пришли её вывод тому, кто ведёт проект."
 
-Step "ИИ, который монтирует: Claude (Codex — по желанию)"
+Step "ИИ, который монтирует: GPT через Codex"
 & $Python scripts\brain.py --status
 
 Write-Host ""
-Write-Host "✓ Готово. Открой папку в терминале и запусти claude — студия откроется в браузере сама. Первые шаги — docs\СТАРТ.md"
+Write-Host "✓ Готово. Открой папку в терминале и запусти codex — студия откроется в браузере сама. Первые шаги — docs\СТАРТ.md"
 Write-Host "  Без агента: двойной клик по «2 Монтаж — Windows.bat». Подробности в README.md"
 exit 0

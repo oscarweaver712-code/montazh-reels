@@ -1005,37 +1005,14 @@ def check_ffmpeg_options(report: Report):
 
 
 def check_skill_links(report: Report, tmp: Path):
-    """Заглушка git на месте ссылки на скилл превращается в ссылку.
-
-    Git на Windows ставится без права на symlink и кладёт вместо .claude/skills/<имя> текстовый
-    файл с путём — Claude такого скилла не видит. host.link_skills (установщик и старт студии)
-    делает настоящую ссылку; порванную — тоже; папку-копию не трогает.
-    """
+    """Codex читает исходные навыки; старый установщик не создаёт ссылки Claude."""
     import host
-
-    print("\nСкиллы на Windows")
     root = tmp / "skills_root"
-    for name in ("a", "b", "c"):
-        (root / ".agents/skills" / name).mkdir(parents=True)
-        (root / ".agents/skills" / name / "SKILL.md").write_text(f"---\nname: {name}\n", encoding="utf-8")
-    links = root / ".claude/skills"
-    links.mkdir(parents=True)
-    (links / "a").write_text("../../.agents/skills/a", encoding="utf-8")    # так git кладёт ссылку на Windows
-    if not host.IS_WINDOWS:                    # symlink на Windows без прав не создать
-        (links / "b").symlink_to(root / "нет-такой")                     # порванная ссылка
-    (links / "c").mkdir()
-    (links / "c" / "SKILL.md").write_text("копия", encoding="utf-8")
-    try:
-        fixed = host.link_skills(root)
-        again = host.link_skills(root)
-    except OSError as e:
-        fixed, again = [f"ошибка: {e}"], []
-    linked = all((links / n).exists() and (links / n).resolve() == (root / ".agents/skills" / n).resolve()
-                 for n in (["a"] if host.IS_WINDOWS else ["a", "b"]))
-    report.check(linked and not again, "заглушка git на месте ссылки на скилл становится ссылкой, повтор ничего не меняет",
-                 ", ".join(fixed) or "ничего не починено")
-    report.check((links / "c" / "SKILL.md").read_text(encoding="utf-8") == "копия",
-                 "папку-копию скилла починка не удаляет (её ловит проверка «скиллы общие»)")
+    target = root / ".agents/skills/reels/SKILL.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("---\nname: reels\n", encoding="utf-8")
+    report.check(host.link_skills(root) == [] and not (root / ".claude").exists() and target.is_file(),
+                 "скиллы Codex доступны напрямую, старый установщик не создаёт .claude")
 
 
 def check_sfx(report: Report):
@@ -3379,7 +3356,7 @@ def check_batch(report: Report, tmp: Path):
         else:
             jobqueue.write_job(f"20-prep-{stem}", [["python", "-c", "pass"]], queue=queue)
             text = "Поставил подготовку в очередь. СТАТУС: ЖДУ ОЧЕРЕДЬ"
-        event = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}},
+        event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": text}},
                            ensure_ascii=False)
         return [sys.executable, "-c", f"import time; print({event!r}, flush=True); time.sleep(0.6)"]
 
@@ -3402,7 +3379,7 @@ def check_batch(report: Report, tmp: Path):
             for stem in ("РОЛИК_А", "РОЛИК_Б"):        # ролик вне проектов пачка не берёт — громко
                 (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
             (made["fresh"].input / "РОЛИК_В.MOV").write_bytes(b"v")
-            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_В"], "engine": "claude",
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_В"], "engine": "codex",
                                                 "parallel": 2, "how": "brain"},
                       headers={"X-Studio-Token": TOKEN})
             for _ in range(200):
@@ -3452,7 +3429,7 @@ def check_batch(report: Report, tmp: Path):
             sys.modules["projects"].save_setup(made["main"], READY_ANSWERS)
             for stem in ("РОЛИК_А", "РОЛИК_Б", "РОЛИК_Г"):
                 (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
-            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_Г"], "engine": "claude", "parallel": 2},
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б", "РОЛИК_Г"], "engine": "codex", "parallel": 2},
                       headers={"X-Studio-Token": TOKEN})
             for _ in range(200):
                 time.sleep(0.05)
@@ -3479,7 +3456,7 @@ def check_batch(report: Report, tmp: Path):
             sys.modules["projects"].save_setup(made["main"], READY_ANSWERS)
             for stem in ("РОЛИК_А", "РОЛИК_Б"):
                 (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
-            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б"], "engine": "claude", "parallel": 2,
+            live.post("/api/brain/batch", json={"stems": ["РОЛИК_А", "РОЛИК_Б"], "engine": "codex", "parallel": 2,
                                                 "probe": True}, headers={"X-Studio-Token": TOKEN})
             for _ in range(200):
                 time.sleep(0.05)
@@ -3525,7 +3502,7 @@ def check_batch(report: Report, tmp: Path):
                 (made["main"].input / f"{stem}.MOV").write_bytes(b"v")
 
             def start(stem):
-                r = live.post("/api/brain/batch", json={"stems": [stem], "engine": "claude", "parallel": 1},
+                r = live.post("/api/brain/batch", json={"stems": [stem], "engine": "codex", "parallel": 1},
                               headers={"X-Studio-Token": TOKEN})
                 return r.status_code, r.json()
 
@@ -3603,36 +3580,19 @@ def check_ai_workflow(report: Report, tmp: Path):
                  "тяжёлый шаг агент студии запускает только через очередь (роликов разом много, тяжёлый процесс один)",
                  f"без очереди: {'отказ' if blocked.returncode else 'ПРОШЛО'}; без защиты: {', '.join(unguarded) or 'нет'}")
 
-    # 2. дописанное по ходу: хук отдаёт агенту и помечает доставленным; без разговора студии — молчит
+    # 2. Все дописанные просьбы — один следующий ход GPT, с сохранением порядка.
     tid = f"selfcheck-{os.getpid()}"
-    node = shutil.which("node")
     try:
         brain.inbox_add(tid, "кодовое слово ГРУША")
-        before = brain.inbox_state(tid)
-        hook = [node, str(ROOT / "scripts" / "inbox_hook.mjs")] if node else None
-        out = subprocess.run(hook, env=dict(os.environ, REELS_THREAD=tid), input="{}", capture_output=True,
-                             encoding="utf-8", errors="replace", timeout=30) if hook else None
-        ctx = json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"] if out and out.stdout.strip() else ""
-        after = brain.inbox_state(tid)
-        quiet = subprocess.run(hook, env={k: v for k, v in os.environ.items() if k != "REELS_THREAD"}, input="{}",
-                               capture_output=True, encoding="utf-8", errors="replace", timeout=30) if hook else None
         brain.inbox_add(tid, "второе")
+        before = brain.inbox_state(tid)
         taken, again = brain.inbox_take(tid), brain.inbox_take(tid)
+        after = brain.inbox_state(tid)
     finally:
         shutil.rmtree(brain.INBOX / tid, ignore_errors=True)
-    saved_find = brain.find_binary
-    brain.find_binary = lambda name: name
-    try:
-        cmd = brain.command("claude", "x", thread_id=tid)
-        plain = brain.command("claude", "x")
-    finally:
-        brain.find_binary = saved_find
-    settings = cmd[cmd.index("--settings") + 1] if "--settings" in cmd else ""
-    report.check("ГРУША" in ctx and list(before.values()) == [False] and list(after.values()) == [True]
-                 and quiet is not None and not quiet.stdout.strip() and taken == ["второе"] and not again
-                 and "inbox_hook.mjs" in settings and "--settings" not in plain,
-                 "дописанное посреди монтажа: хук отдаёт его агенту и помечает, недоставленное уходит следующим ходом",
-                 f"хук: {'отдал' if 'ГРУША' in ctx else 'НЕ отдал'}{'' if node else ' (нет node)'}; дальше: {taken}")
+    report.check(taken == ["кодовое слово ГРУША", "второе"] and not again
+                 and not any(before.values()) and all(after.values()),
+                 "правки посреди монтажа собираются одним списком без потерь и повторной доставки")
 
     # 3. свежая сессия ролика: разросшийся разговор продолжается новым, с передачей дел
     thread = {"id": "x", "stem": "S", "session": "abc", "messages": [
@@ -3665,7 +3625,7 @@ def check_ai_workflow(report: Report, tmp: Path):
             projects.save_setup(made["main"], READY_ANSWERS)
             (made["main"].input / "РОЛИК_С.MOV").write_bytes(b"v")
             (made["neo"].input / "РОЛИК_Н.MOV").write_bytes(b"v")
-            old = brain.new_thread("claude", "старый", "РОЛИК_С")
+            old = brain.new_thread("codex", "старый", "РОЛИК_С")
             old.update(session="s1", messages=thread["messages"])
             brain.save_thread(old)
             key = {"X-Studio-Token": TOKEN}
@@ -3677,7 +3637,7 @@ def check_ai_workflow(report: Report, tmp: Path):
                 time.sleep(0.05)
             if sent.get("thread") and sent["thread"] != old["id"]:
                 fresh_thread = brain.load_thread(sent["thread"])
-            neo = brain.new_thread("claude", "", "РОЛИК_Н")
+            neo = brain.new_thread("codex", "", "РОЛИК_Н")
             gate = live.post("/api/brain/send", json={"thread": neo["id"], "text": "смонтируй", "stem": "РОЛИК_Н"},
                              headers=key)
             inbox_late = live.post(f"/api/brain/inbox/{old['id']}", json={"text": "поздно"}, headers=key)
@@ -4530,6 +4490,64 @@ def check_packs(report: Report, tmp: Path):
             report.check(built["cuts"] == [second["t0"]] and built["joins"] == [third["t0"]],
                          "кусок того же клипа дальше по времени — склейка внутри плана, другой клип — смена сцены",
                          f"склейки {built['cuts']}, сцены {built['joins']}")
+
+            # мультикамера (25.10.2026, «Вкудесник» v09: 12 с одного статичного плана): картинка с другой камеры того же
+            # момента, звук — клипа куска без шва; переключение — смена сцены
+            subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                            "color=c=red:size=720x1280:rate=30:duration=3", "-f", "lavfi", "-i",
+                            "anullsrc=r=48000:cl=stereo", *source_codec(), "-pix_fmt", "yuv420p", "-c:a", "aac",
+                            "-t", "3", str(box / "d.mov")], check=True, capture_output=True)
+            (cache / "d.words.json").write_text(json.dumps({"language": "ru", "text": "", "words": []}), encoding="utf-8")
+            (cache / "d.source.json").write_text(json.dumps({"name": "d.mov", "size": (box / "d.mov").stat().st_size}),
+                                                 encoding="utf-8")
+            refused_cam = refused([{"clip": "a.mov", "from": 0, "to": 3, "exact": True, "speed": 1.2,
+                                    "cams": [{"at": 1.0, "clip": "d.mov", "shift": 0.5}]}], "cams")
+            plan_path.write_text(json.dumps({"pieces": [
+                {"clip": "a.mov", "from": 0, "to": 3, "exact": True,
+                 "cams": [{"at": 1.0, "clip": "d.mov", "shift": 0.5}, {"at": 1.3, "clip": "a.mov"}]}]}), encoding="utf-8")
+            out = pack.build("party")
+            built = json.loads((work / "party" / "pack.built.json").read_text(encoding="utf-8"))
+
+            def redness(t: float) -> float:
+                raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-ss", f"{t:.3f}", "-i", str(out), "-frames:v", "1",
+                                      "-vf", "scale=8:8", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                     capture_output=True, check=True).stdout
+                px = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(float)
+                return float((px[:, 0] - px[:, 1]).mean())
+            reds = [redness(t) for t in (0.5, 1.15, 2.0)]
+            burst = lufs(1.42, 1.88)                               # тон a.mov 1.4–1.9 — звук идёт с клипа куска
+            report.check(not refused_cam and reds[1] > 150 and reds[0] < 60 and reds[2] < 60
+                         and built["joins"] == [1.0, 1.3] and burst > -40
+                         and abs(float(probe_value(out, "format=duration")) - 3.0) <= 1.5 / 30,
+                         "мультикамера: картинка с другой камеры, звук клипа куска, переключения — смены сцены",
+                         f"красного {[round(r) for r in reds]}, сцены {built['joins']}, тон {burst:.1f} LUFS"
+                         + (f", ускорение: {refused_cam}" if refused_cam else ""))
+
+            # фото в сборке (26.10.2026, «Вкудесник» v2: «7 фото очень много… давай без фоток пока»): project.json →
+            # photos: false — клип из photoclip.py не идёт ни камерой, ни куском; обычное видео идёт
+            import photoclip
+            import types
+            subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:size=1080x1920",
+                            "-frames:v", "1", str(box / "still.jpg")], check=True, capture_output=True)
+            with contextlib.redirect_stdout(io.StringIO()):
+                photoclip.make(box / "still.jpg", box / "ph.mp4", (540, 960, 1000), (540, 960, 800), 0.5)
+            files = {"a.mov": box / "a.mov", "d.mov": box / "d.mov", "ph.mp4": box / "ph.mp4"}
+            as_cam = [{"clip": "a.mov", "cams": [{"clip": "ph.mp4"}]}]
+            saved_of, verdicts = pack.projects.of, []
+            try:
+                for photos, plan in ((False, as_cam), (False, [{"clip": "ph.mp4", "cams": []}]),
+                                     (False, [{"clip": "a.mov", "cams": [{"clip": "d.mov"}]}]), (True, as_cam)):
+                    pack.projects.of = lambda stem, photos=photos: types.SimpleNamespace(config={"photos": photos})
+                    try:
+                        pack.check_photos("party", plan, files)
+                        verdicts.append("пустил")
+                    except pack.PackError:
+                        verdicts.append("отказ")
+            finally:
+                pack.projects.of = saved_of
+            report.check(verdicts == ["отказ", "отказ", "пустил", "пустил"],
+                         "photos: false — клип из фото не идёт ни камерой, ни куском; видео и проект с фото — идут",
+                         f"камера-фото, кусок-фото, видео, проект с фото: {verdicts}")
         finally:
             pack.WORK_DIR, prep.WORK_DIR, verify_page.WORK_DIR = saved
 
@@ -4566,6 +4584,27 @@ def check_packs(report: Report, tmp: Path):
         verify_page.WORK_DIR = saved
     report.check(cuts == [3.0], "стык сборки — не склейка дубля: вспышку и наезд там не требуют",
                  f"склейки {cuts}")
+
+    # план без смены картинки (25.10.2026, «Вкудесник»: 7 с фото и 12 с одного плана — «супер стрёмно»): стык и склейка —
+    # смена, зум-рез камеры — смена, плавный наезд — нет
+    (work / "party" / "aroll.json").write_text(json.dumps(
+        {"duration": 10.0, "segments": [[0, 10]], "scenes": [2.0], "jumps": [4.0]}), encoding="utf-8")
+    project.mkdir(parents=True, exist_ok=True)
+    zoom = [1.0] * 300
+    for k in range(150, 300):
+        zoom[k] = 1.15 if k < 180 else 1.0 + 0.1 * (k - 180) / 120     # 5–6 с — зум-рез на 1.15, дальше плавно 1.0 → 1.1
+    (project / "camera.js").write_text("window.CAMERA_FPS = 30;\nwindow.CAMERA = "
+                                       + json.dumps([[0, 0, z] for z in zoom]) + ";\n", encoding="utf-8")
+    saved = verify_page.take_dir
+    try:
+        verify_page.take_dir = lambda p: work / "party"
+        long_shots = verify_page.shot_gaps(project, 3.0)
+        all_short = verify_page.shot_gaps(project, 5.0)
+    finally:
+        verify_page.take_dir = saved
+    report.check(long_shots == [(6.0, 10.0)] and not all_short,
+                 "план дольше shot_max ловится; стык, склейка и зум-рез его рвут, плавный наезд — нет",
+                 f"дольше 3 с: {long_shots}, дольше 5 с: {all_short}")
 
 
 def check_life_edit(report: Report, tmp: Path):
@@ -4889,55 +4928,27 @@ def check_render(report: Report, preset: dict, n_segments: int, tmp: Path):
 
 
 def check_agents(report: Report):
-    """Claude и Codex читают одни и те же правила и один скилл.
-
-    Раньше правила и скилл жили двумя копиями: поправил одну — Claude и Codex начинали
-    монтировать по-разному, молча. Теперь CLAUDE.md подключает AGENTS.md, а скилл Claude —
-    ссылка на скилл Codex. Хуки старта обоих агентов поднимают студию, но не внутри агентов,
-    которых запускает сама студия (иначе каждый ответ мозга открывал бы вкладку).
-    """
-    print("\nClaude и Codex: одни правила")
-    claude_md = (ROOT / "CLAUDE.md").read_text(encoding="utf-8").strip()
-    report.check(claude_md == "@AGENTS.md", "CLAUDE.md подключает AGENTS.md, а не хранит копию",
-                 claude_md[:40])
+    """Один монтажный агент: Codex, одни правила и исходные навыки."""
+    print("\nGPT / Codex: правила и запуск")
     agents_md = ROOT / "AGENTS.md"
     report.check(agents_md.exists() and "Инварианты" in agents_md.read_text(encoding="utf-8"),
                  "правила проекта лежат в AGENTS.md")
-    claude_skill, codex_skill = ROOT / ".claude/skills/reels", ROOT / ".agents/skills/reels"
-    same = claude_skill.resolve() == codex_skill.resolve() and (codex_skill / "SKILL.md").exists()
-    # каждый скилл проекта (reels, viz…) у Claude — ссылка на общий, а не своя копия
     skills = sorted(p.name for p in (ROOT / ".agents/skills").iterdir() if (p / "SKILL.md").exists())
-    unlinked = [n for n in skills if not ((ROOT / ".claude/skills" / n).exists()
-                                          and (ROOT / ".claude/skills" / n).resolve() == (ROOT / ".agents/skills" / n).resolve())]
-    report.check(same and not unlinked, "скиллы общие на оба агента (у Claude — ссылки, не копии)",
-                 f"{', '.join(skills)}" + (f"; без ссылки: {', '.join(unlinked)}" if unlinked else ""))
     heads = {n: (ROOT / ".agents/skills" / n / "SKILL.md").read_text(encoding="utf-8").split("\n", 3)[:3] for n in skills}
     bad_heads = [n for n, h in heads.items() if not (len(h) == 3 and h[0] == "---" and h[1] == f"name: {n}"
                                                        and h[2].startswith("description: "))]
-    report.check(bool(heads) and not bad_heads, "у каждого скилла есть заголовок name/description",
+    report.check(bool(heads) and not bad_heads, "у каждого скилла Codex есть заголовок name/description",
                  ", ".join(bad_heads) or "чисто")
-
-    hooks = []
-    for path, key in ((ROOT / ".claude/settings.json", "hooks"), (ROOT / ".codex/hooks.json", "hooks")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            hooks += [h["command"] for g in data[key]["SessionStart"] for h in g["hooks"]]
-        except (OSError, KeyError, json.JSONDecodeError) as e:
-            hooks.append(f"ошибка {path.name}: {e}")
-    # хук — одна команда node: её одинаково понимают bash (Mac, Git Bash у Claude на Windows),
-    # PowerShell и cmd (Codex на Windows); синтаксис «[ -x … ] || true» понимал только bash
-    launcher = (ROOT / "scripts/studio_hook.mjs").read_text(encoding="utf-8") \
-        if (ROOT / "scripts/studio_hook.mjs").exists() else ""
-    report.check(len(hooks) == 2 and all(h.startswith("node ") and "studio_hook.mjs" in h for h in hooks)
+    data = json.loads((ROOT / ".codex/hooks.json").read_text(encoding="utf-8"))
+    hooks = [h["command"] for g in data["hooks"]["SessionStart"] for h in g["hooks"]]
+    launcher = (ROOT / "scripts/studio_hook.mjs").read_text(encoding="utf-8")
+    report.check(len(hooks) == 1 and all(h.startswith("node ") and "studio_hook.mjs" in h for h in hooks)
                  and "studio_up.py" in launcher and "process.exit(0)" in launcher,
-                 "хуки старта Claude и Codex поднимают студию одной командой node на любой системе",
-                 "; ".join(h[:50] for h in hooks))
-
+                 "хук Codex поднимает студию одной командой node на любой системе")
     env = dict(os.environ, REELS_STUDIO_CHILD="1")
     node = shutil.which("node")
     cmd = [node, str(ROOT / "scripts/studio_hook.mjs")] if node else [sys.executable, str(ROOT / "scripts/studio_up.py")]
-    child = subprocess.run(cmd, input="{}", capture_output=True, encoding="utf-8", errors="replace",
-                           env=env, timeout=30)
+    child = subprocess.run(cmd, input="{}", capture_output=True, encoding="utf-8", errors="replace", env=env, timeout=30)
     report.check(child.returncode == 0 and not child.stdout.strip(),
                  "агент, запущенный студией, студию не открывает", child.stdout.strip()[:80] or "тихо")
 
@@ -5292,8 +5303,8 @@ def check_studio(report: Report, tmp: Path):
     web = TestClient(app, base_url="http://127.0.0.1:8765")
     page = web.get("/")
     report.check(page.status_code == 200 and TOKEN in page.text, "страница студии отдаётся с ключом")
-    no_key = web.post("/api/brain/threads", json={"engine": "claude"})
-    foreign = web.post("/api/brain/threads", json={"engine": "claude"},
+    no_key = web.post("/api/brain/threads", json={"engine": "codex"})
+    foreign = web.post("/api/brain/threads", json={"engine": "codex"},
                        headers={"X-Studio-Token": TOKEN, "Origin": "https://evil.example"})
     rebound = TestClient(app, base_url="http://evil.example").get("/api/studio/state")
     allowed = web.post("/api/studio/brief/НЕТ_ТАКОГО_РОЛИКА", json={}, headers={"X-Studio-Token": TOKEN})
@@ -5302,33 +5313,23 @@ def check_studio(report: Report, tmp: Path):
                  f"{no_key.status_code}/{foreign.status_code}/{rebound.status_code}")
     report.check(allowed.status_code == 404, "с ключом запрос проходит до дела", f"код {allowed.status_code}")
 
-    claude = brain.parse_line("claude", json.dumps({"type": "assistant", "message": {"content": [
-        {"type": "text", "text": "Готово"}, {"type": "tool_use", "id": "t1", "name": "Bash",
-                                              "input": {"command": "ls work"}}]}}))
     codex = brain.parse_line("codex", json.dumps({"type": "item.started", "item": {
         "id": "i1", "type": "mcp_tool_call", "server": "node_repl", "tool": "js", "arguments": {}}}))
-    report.check([e["type"] for e in claude] == ["text", "tool"] and codex and codex[0]["type"] == "tool",
-                 "события Claude и Codex доходят до чата (и действия через MCP тоже)")
-    cmd_safe = brain.command("claude", "x", mode="safe") if brain.find_binary("claude") else ["--permission-mode"]
-    report.check("--dangerously-skip-permissions" not in cmd_safe and "--permission-mode" in cmd_safe,
-                 "безопасный режим мозга не снимает ограничения")
-    # 17.10.2026: мозг студии был без браузера — v2 IMG_3292 вышла без видео Flow и без музыки, а в терминале
-    # то же самое делалось. Студия должна монтировать так же, как терминал
-    report.check(("--chrome" in cmd_safe or not brain.find_binary("claude")) and "mcp__claude-in-chrome" in brain.SAFE_TOOLS
-                 and "браузера нет" not in brain.STUDIO_PROMPT and "jobqueue.py wait" in brain.STUDIO_PROMPT,
-                 "мозг студии с браузером, как агент в терминале, и ждёт очередь через wait")
-    report.check(brain.child_env().get(brain.CHILD_ENV) == "1", "агент студии помечен для хука старта")
-    # 19.10.2026: модель и усилие мозга брались из личных настроек запустившего — закреплены в проекте
+    said = brain.parse_line("codex", json.dumps({"type": "item.completed", "item": {
+        "type": "agent_message", "text": "Готово"}}))
+    report.check(codex and codex[0]["type"] == "tool" and said[0]["text"] == "Готово",
+                 "события GPT / Codex доходят до чата, включая действия MCP")
     saved_find = brain.find_binary
     brain.find_binary = lambda name: name
     try:
-        pinned = brain.command("claude", "x")
+        cmd_safe = brain.command("codex", "x", mode="safe")
     finally:
         brain.find_binary = saved_find
-    flag = lambda name: pinned[pinned.index(name) + 1] if name in pinned else None  # noqa: E731
-    report.check(flag("--model") == brain.CLAUDE_MODEL and flag("--effort") == brain.CLAUDE_EFFORT,
-                 "мозг студии идёт на модели и усилии проекта, а не на личных настройках",
-                 f"модель {flag('--model')}, усилие {flag('--effort')}")
+    report.check("--dangerously-bypass-approvals-and-sandbox" not in cmd_safe and "workspace-write" in cmd_safe,
+                 "безопасный режим мозга не снимает ограничения")
+    report.check("Computer Use" in brain.STUDIO_PROMPT and "jobqueue.py wait" in brain.STUDIO_PROMPT,
+                 "режиссёр использует доступный браузер и штатное ожидание очереди")
+    report.check(brain.child_env().get(brain.CHILD_ENV) == "1", "агент студии помечен для хука старта")
 
     # цена хода (13.10.2026): total_cost_usd у Claude — нарастающий итог сессии, а студия показывала его
     # под каждым ходом как цену хода — у IMG_1803 сумма по ходам выходила $13,41 при настоящих $3,90
@@ -5533,10 +5534,15 @@ def check_studio_failures(report: Report, tmp: Path):
     # тот же рендер поставлен снова, а прошлый с этим именем лежит в done/ — ждать надо новый
     (q / "done" / "05-render-D.json").write_text("[]", encoding="utf-8")
     (q / "05-render-D.json").write_text("[]", encoding="utf-8")
+    # 25.10.2026: повтор уже отработал и упал (failed/), а прошлый с тем же именем лежит в done/ — итог свежий, «упала»
+    (q / "done" / "05-render-E.json").write_text("[]", encoding="utf-8")
+    os.utime(q / "done" / "05-render-E.json", (time.time() - 3600, time.time() - 3600))
+    (q / "failed" / "05-render-E.json").write_text("[]", encoding="utf-8")
     with contextlib.redirect_stdout(io.StringIO()):
-        codes = [jobqueue.wait(n, 0.3, queue=q, poll=0.1) for n in ("05-render-A", "05-render-B", "20-prep-C", "99-нет", "05-render-D")]
-    report.check(codes == [0, 1, 2, 2, 2], "ожидание задачи очереди: готово — 0, упала — 1, идёт дольше срока или нет — 2, "
-                 "повтор с тем же именем ждёт новую, а не прошлую из done/", str(codes))
+        codes = [jobqueue.wait(n, 0.3, queue=q, poll=0.1)
+                 for n in ("05-render-A", "05-render-B", "20-prep-C", "99-нет", "05-render-D", "05-render-E")]
+    report.check(codes == [0, 1, 2, 2, 2, 1], "ожидание задачи очереди: готово — 0, упала — 1, идёт дольше срока или нет — 2, "
+                 "повтор с тем же именем ждёт новую, а не прошлую из done/, и итог — самый свежий", str(codes))
 
     # 17.10.2026, IMG_3292 v2: трека не нашлось — ролик ушёл в рендер без музыки, сказано только в отчёте
     import verify_page
@@ -5583,14 +5589,14 @@ def check_studio_failures(report: Report, tmp: Path):
                  f"свежий {fresh}, старый {stale}, занятый {working}")
 
     # одно непонятное событие агента не вешает мозг навсегда
-    bad = json.dumps({"type": "assistant", "message": {"content": ["строка вместо блока"]}})
+    bad = json.dumps({"type": "item.started", "item": "строка вместо объекта"})
     saved_brain = (brain.THREADS, brain.command)
     echo = [sys.executable, "-c", f"print({bad!r})"]          # /bin/echo есть не везде (Windows)
     brain.THREADS, brain.command = tmp / "threads", (lambda *a, **k: echo)
     states = []
     try:
         with TestClient(app, base_url="http://127.0.0.1:8765") as live:
-            thread = live.post("/api/brain/threads", json={"engine": "claude"}, headers=key).json()["id"]
+            thread = live.post("/api/brain/threads", json={"engine": "codex"}, headers=key).json()["id"]
             for text in ("привет", "ещё раз"):
                 sent = live.post("/api/brain/send", json={"thread": thread, "text": text}, headers=key)
                 for _ in range(50):
@@ -5640,11 +5646,124 @@ def check_studio_failures(report: Report, tmp: Path):
                  said[:50])
 
     # 14.10.2026: результат с is_error пачка читала как обычный ответ и крутила ходы впустую
-    failed = brain.parse_line("claude", json.dumps({"type": "result", "is_error": True,
-                                                     "result": "Failed to authenticate. API Error: 403 Request not allowed"}))
+    failed = brain.parse_line("codex", json.dumps({"type": "turn.failed", "error": {
+        "message": "Failed to authenticate. API Error: 403 Request not allowed"}}))
     errors = [e["text"] for e in failed if e["type"] == "error"]
     report.check(bool(errors) and "не авторизован" in errors[0],
                  "ошибка входа мозга (403) — громкая ошибка, пачка останавливается", (errors or ["молча"])[0][:60])
+
+
+def check_gpt_workflow(report: Report, tmp: Path):
+    """Монтаж целиком через Codex; проверка не обращается к модели и не расходует подписку."""
+    import gpt_client
+    import brain
+    from unittest.mock import patch
+
+    print("\nGPT: роли, сессии, токены")
+    with patch.object(brain, "find_binary", return_value="codex"):
+        first = brain.command("codex", "сделай ролик")
+        resumed = brain.command("codex", "все правки одним списком", session="session-1")
+        try:
+            brain.command("claude", "случайный старый выбор")
+            refused = False
+        except ValueError:
+            refused = True
+    report.check(refused and "resume" in resumed and "session-1" in resumed,
+                 "старый выбор Claude отклоняется, правки того же ролика продолжают сессию Codex")
+    director = gpt_client.profile("director")
+    report.check(first[first.index("-m") + 1] == director["model"]
+                 and f'model_reasoning_effort="{director["effort"]}"' in first,
+                 "модель и усилие режиссёра закреплены в проекте")
+    cam = tmp / "critic.png"
+    cam.write_bytes(b"test")
+    cmd = gpt_client.command("codex", "партитура", cwd=tmp, role="critic", images=[cam], isolated=True)
+    report.check("--ignore-user-config" in cmd and "read-only" in cmd
+                 and Path(cmd[cmd.index("--image") + 1]).samefile(cam) and "-" == cmd[-1],
+                 "критик получает свой лист кадров вложением; короткий запрос идёт через stdin вне проекта")
+    events = [
+        {"type": "thread.started", "thread_id": "s-1"},
+        {"type": "item.completed", "item": {"type": "agent_message", "text": '{"items": []}'}},
+        {"type": "turn.completed", "usage": {"input_tokens": 500, "cached_input_tokens": 400, "output_tokens": 50}},
+    ]
+    stream = "\n".join(json.dumps(e) for e in events)
+    got = gpt_client.read_result(stream, "", 0)
+    report.check(got["text"] == '{"items": []}' and got["session"] == "s-1" and got["cost"] is None
+                 and got["tokens"]["cached_input_tokens"] == 400,
+                 "JSONL Codex даёт ответ, сессию и кэш; неизвестная цена не превращается в $0")
+    failures = []
+    for output, code in ((stream, 1), (stream.rsplit("\n", 1)[0], 0),
+                         (stream + '\n' + json.dumps({"type": "turn.failed", "error": {"message": "429 usage limit"}}), 0)):
+        try:
+            gpt_client.read_result(output, "сбой", code)
+            failures.append(False)
+        except RuntimeError:
+            failures.append(True)
+    report.check(all(failures), "ошибка процесса, оборванный поток и лимит не выдаются за готовую партитуру")
+    import analyst
+    captured = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stream, "")
+
+    # Проверяем реальный путь analyst.ask, а не только общий конструктор команды.
+    with patch.object(brain, "find_binary", return_value="codex"), \
+            patch.object(analyst.subprocess, "run", side_effect=fake_run):
+        a = analyst.ask("слова ролика А", images=[cam])
+        other = tmp / "other.png"
+        other.write_bytes(b"other")
+        b = analyst.ask("слова ролика Б", role="critic", images=[other])
+        analyst.ask("исправь сразу весь список", session=a["session"], role="repair")
+    report.check([Path(c[0][c[0].index("--image") + 1]).name for c in captured[:2]] == [cam.name, other.name]
+                 and "слова ролика А" in captured[0][1]["input"]
+                 and "слова ролика Б" not in captured[0][1]["input"]
+                 and captured[2][1]["input"] == "исправь сразу весь список"
+                 and "resume" in captured[2][0] and b["role"] == "critic",
+                 "аналитик и критик получают свои данные и изображения; правки продолжаются без повторного пакета")
+    usage = brain.parse_line("codex", json.dumps(events[-1]))[0]
+    report.check(usage["context"] == 500 and usage["usage"]["cached_input_tokens"] == 400
+                 and usage["cost"] is None,
+                 "чат учитывает кэш внутри входа и не приписывает Codex цену")
+    import kit
+    import types
+    box = tmp / "gpt-router"
+    box.mkdir()
+    (box / "router").mkdir()
+    calls = []
+
+    def fake_ask(prompt, session=None, **kwargs):
+        role = kwargs["role"]
+        calls.append((role, prompt, session))
+        return {"text": '{"items": []}', "session": "one-reel", "cost": None, "seconds": 0,
+                "tokens": {"input_tokens": 10, "output_tokens": 5}, "role": role, **gpt_client.profile(role)}
+
+    with patch.object(analyst, "WORK_DIR", box), patch.object(analyst, "ask", side_effect=fake_ask), \
+            patch.object(analyst, "material", return_value="материал одного ролика"), \
+            patch.object(analyst.sc, "path_of", return_value=box / "router" / "score.json"), \
+            patch.object(kit, "Take", return_value=types.SimpleNamespace(words=[])), \
+            patch.object(analyst.sc, "fix_mechanics", return_value=[]), \
+            patch.object(analyst, "resolve_stock", return_value=[]), \
+            patch.object(analyst, "autofix", return_value=False), \
+            patch.object(analyst, "assemble", side_effect=[["сдвинь текст", "поправь время"], ["сдвинь текст"], []]), \
+            patch.object(analyst, "triage", side_effect=lambda failed, info: failed), \
+            contextlib.redirect_stdout(io.StringIO()):
+        analyst.run("router", variant=None)
+    logged = [json.loads(line) for line in (box / "router" / "analyst.jsonl").read_text(encoding="utf-8").splitlines()]
+    report.check([c[0] for c in calls] == ["analyst", "repair", "analyst"]
+                 and "сдвинь текст" in calls[1][1] and "поправь время" in calls[1][1]
+                 and all(c[2] == "one-reel" for c in calls[1:])
+                 and len(logged) == 3 and all(e["cost"] is None for e in logged),
+                 "все провалы идут одним запросом дешёвой роли; повторный провал возвращается основной модели")
+    with patch.object(brain, "THREADS", tmp / "legacy-threads"):
+        old = {"id": "old", "engine": "claude", "session": "foreign", "messages": [
+            {"role": "user", "text": "сохрани мою правку"}]}
+        brain.save_thread(old)
+        migrated = brain.load_thread("old")
+        again = brain.load_thread("old")
+    report.check(migrated["engine"] == "codex" and migrated["session"] is None
+                 and migrated["messages"] == old["messages"] and again.get("handoff") == migrated.get("handoff")
+                 and "сохрани мою правку" in migrated.get("handoff", ""),
+                 "старый разговор сохраняет историю и передачу дел, чужая сессия не передаётся Codex")
 
 
 def main():
@@ -5676,6 +5795,7 @@ def main():
     section(report, check_long_runs)
     with tempfile.TemporaryDirectory(prefix="reels_selfcheck_") as tmpdir:
         tmp = Path(tmpdir)
+        section(report, check_gpt_workflow, tmp)
         section(report, check_skill_links, tmp)
         section(report, check_gen_image, tmp)
         section(report, check_footage, tmp)

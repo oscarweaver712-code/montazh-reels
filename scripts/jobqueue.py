@@ -399,17 +399,20 @@ def wait(name: str, timeout: float, queue: Path | None = None, poll: float = 5) 
                 return 2
             time.sleep(poll)
             continue
-        for state, code in (("done", 0), ("failed", 1)):
-            found = [p for p in job_files(queue / state) if p.stem == name]
-            if found:
-                log = queue / "logs" / f"{name}.log"
-                try:
-                    tail = log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-12:]
-                except OSError:
-                    tail = []
-                print("\n".join(tail))
-                print(f"{'✓' if code == 0 else '✗'} {name}: {'готово' if code == 0 else 'упала'} (лог — {log.relative_to(ROOT) if log.is_relative_to(ROOT) else log})")
-                return code
+        # итог — самый свежий из done/ и failed/: 25.10.2026 повторный 05-render-v09 упал (failed/), а wait нашёл в done/
+        # итог прошлого рендера с тем же именем и сказал «готово»
+        found = sorted(((p.stat().st_mtime, state, code) for state, code in (("done", 0), ("failed", 1))
+                        for p in job_files(queue / state) if p.stem == name), reverse=True)
+        if found:
+            _, state, code = found[0]
+            log = queue / "logs" / f"{name}.log"
+            try:
+                tail = log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-12:]
+            except OSError:
+                tail = []
+            print("\n".join(tail))
+            print(f"{'✓' if code == 0 else '✗'} {name}: {'готово' if code == 0 else 'упала'} (лог — {log.relative_to(ROOT) if log.is_relative_to(ROOT) else log})")
+            return code
         print(f"✗ задачи {name} нет ни в очереди, ни в done/, ни в failed/ — проверь имя")
         return 2
 

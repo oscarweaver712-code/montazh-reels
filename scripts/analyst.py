@@ -5,14 +5,14 @@
 с нуля и сам гонял проверки — 100–200 вызовов, каждый заново нёс весь контекст ($2–31 за ролик, «IMG_3292 — с нуля»
 $9). Аналитик делает только то, где нужен ум, — решает, что показать на каких словах: получает транскрипт с номерами
 слов, события дубля, принятые клипы и правила проекта целиком, а отвечает партитурой (scripts/score.py). Инструментов
-у него нет, CLAUDE.md и память не подтягиваются (запуск вне папки проекта), системная подсказка — своя и короткая.
+он не вызывает; личные инструкции и MCP не подтягиваются (изолированный Codex вне проекта), подсказка — короткая.
 Страницу собирает score.py, проверяет verify_page; провалы уходят аналитику тем же разговором, не больше TRIES раз.
 
   .venv/bin/python scripts/analyst.py IMG_3292                  # партитура score.auto.json → studio/IMG_3292--auto
   .venv/bin/python scripts/analyst.py IMG_3292 --variant ""     # основная: score.json → studio/IMG_3292
   .venv/bin/python scripts/analyst.py IMG_3292 --dry            # только показать, что уйдёт аналитику
 
-Цена каждого хода — в work/<имя>/analyst.jsonl (токены, $, секунды): так считается «до и после».
+Модель, токены, кэш и время каждого хода — в work/<имя>/analyst.jsonl (точную цену подписочного хода CLI не сообщает): так считается «до и после».
 """
 import argparse
 import contextlib
@@ -28,11 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import score as sc  # noqa: E402
 import taste  # noqa: E402
+import gpt_client  # noqa: E402
 from common import WORK_DIR  # noqa: E402
 
-MODEL = "claude-opus-5-5"
-EFFORT = "high"
-FIX_EFFORT = "medium"   # исправление по списку провалов — правка JSON, не режиссура заново
 TRIES = 3
 AUTOFIX = 2             # проходов машинной правки (двойной текст → hide) до хода ИИ
 
@@ -40,7 +38,7 @@ AUTOFIX = 2             # проходов машинной правки (дво
 # текст, склейки), здесь только названо — нарушишь, получишь провал обратно. Правила проекта идут целиком в запросе.
 SYSTEM = """Ты — режиссёр вертикальных роликов-уроков (Reels, Shorts, TikTok) уровня лучших вирусных авторов. Тебе дают
 дубль: что и когда сказано (номера слов), где голова в кадре, события дубля, принятые ИИ-клипы, правила проекта и
-недавние ролики проекта. Ты решаешь, ЧТО показать и НА КАКИХ СЛОВАХ, и отвечаешь ОДНИМ JSON — партитурой. Страницу,
+недавние ролики проекта. Не вызывай инструменты и не читай файлы: все нужные данные уже в запросе. Ты решаешь, ЧТО показать и НА КАКИХ СЛОВАХ, и отвечаешь ОДНИМ JSON — партитурой. Страницу,
 звуки, музыку, склейки, вспышку после хука, смену плана ставит сборка сама. Ответ — только JSON, без пояснений вокруг.
 
 ГЛАВНОЕ: КАЖДЫЙ РОЛИК — СВОЯ ИДЕЯ (правило владельца на всю систему)
@@ -112,7 +110,9 @@ SYSTEM = """Ты — режиссёр вертикальных роликов-у
 поля hide нет).
 
 СВОЯ СЦЕНА — {"kind": "scene", "w": [от, до], "layer": "split"|"full"|"behind"|"front", "html": "…", "css": "…", "js": "…", "hide": bool}
-Ты пишешь момент сам: HTML, стили и движение (GSAP-таймлайн tl). Так рождается то, чего не было в прошлых роликах.
+Для своей сцены пиши только уникальное содержание: HTML, стили и движение (GSAP-таймлайн tl). Входы, выходы,
+линии и удары бери готовыми помощниками enter/leave/slam/draw; цвета и шрифты — токенами системы. Не переписывай
+библиотеку анимаций: новизна — в идее и композиции, а не в новой реализации того же вылета.
 МАСШТАБ — главное правило картинки: зритель смотрит с телефона. Главные сцены (хук, письмо, взрыв числа, кульминация) —
 КРУПНО: "split" (человек в окне внизу, сцена — на всё поле над ним, размеры поля даны в запросе) или "full" (во весь
 кадр, 1–2 раза). Фигуры — 200–700 px, текст — 56–160 px, линии — от 6 px. "front" — только мелочь на груди (подпись,
@@ -341,38 +341,40 @@ def head_room(stem: str) -> str:
 
 
 def home() -> Path:
-    """Папка запуска аналитика и критика — вне проекта (иначе Claude Code сам подтянет CLAUDE.md, ~20 КБ, и память
-    проекта) и постоянная: сессии Claude Code живут по папке запуска, продолжение разговора ищется в той же."""
-    path = Path(tempfile.gettempdir()) / "reels-analyst"
+    """Постоянная папка коротких ролей вне проекта; все материалы передаются явно."""
+    path = Path(tempfile.gettempdir()) / "reels-gpt-analyst"
     path.mkdir(exist_ok=True)
     return path
 
 
-def ask(prompt: str, session: str | None = None, system: str = SYSTEM, tools: str = "", effort: str = EFFORT) -> dict:
-    """Один ход: Claude без CLAUDE.md, со своей системной подсказкой и только с tools. → текст, сессия, цена."""
+def ask(prompt: str, session: str | None = None, system: str = SYSTEM,
+        role: str = "analyst", images: list | None = None) -> dict:
+    """Короткий GPT-ход через Codex: JSONL, stdin и отдельные вложения критика."""
     import brain
-    binary = brain.find_binary("claude")
+    binary = brain.find_binary("codex")
     if not binary:
-        raise RuntimeError("claude не найден на этой машине — аналитику нужен Claude Code")
-    cmd = [binary, "-p", prompt, "--output-format", "json", "--model", MODEL, "--effort", effort, "--tools", tools,
-           "--system-prompt", system]
-    if tools:
-        cmd += ["--allowedTools", tools]
-    if session:
-        cmd += ["--resume", session]
+        raise RuntimeError("Codex не найден — аналитику нужен GPT через Codex; студия → «Подключить GPT»")
+    text = prompt if session else f"{system}\n\n{prompt}"
+    cmd = gpt_client.command(binary, "-", cwd=home(), role=role, session=session,
+                             images=images, isolated=True)
     started = time.time()
-    proc = subprocess.run(cmd, cwd=home(), capture_output=True, text=True, env=brain.child_env(), timeout=1800)
     try:
-        out = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        raise RuntimeError(f"ИИ не ответил JSON (код {proc.returncode}): {(proc.stderr or proc.stdout)[-600:]}")
-    if out.get("is_error"):
-        raise RuntimeError(f"ИИ упал: {brain.explain_error(str(out.get('result') or out))}")
-    usage = out.get("usage") or {}
-    return {"text": out.get("result") or "", "session": out.get("session_id"), "cost": out.get("total_cost_usd"),
-            "seconds": round(time.time() - started, 1),
-            "tokens": {k: usage.get(k) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
-                                                 "output_tokens")}}
+        proc = subprocess.run(cmd, input=text, cwd=home(), capture_output=True, encoding="utf-8", errors="replace",
+                              env=brain.child_env(), timeout=1800)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError("GPT не ответил за 30 минут — ход остановлен, повтори после проверки подключения") from e
+    try:
+        result = gpt_client.read_result(proc.stdout, proc.stderr, proc.returncode)
+    except RuntimeError as e:
+        raise RuntimeError(brain.explain_error(str(e))) from e
+    result.update(seconds=round(time.time() - started, 1), **gpt_client.profile(role), role=role)
+    # Некоторые версии CLI не повторяют thread.started при resume.
+    result["session"] = result["session"] or session
+    return result
+
+
+def log_reply(reply: dict) -> dict:
+    return {key: reply.get(key) for key in ("cost", "seconds", "tokens", "model", "effort", "role")}
 
 
 def parse(text: str) -> dict:
@@ -527,7 +529,7 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES, resume: boo
     """resume — довести готовую партитуру: аналитик получает её и её провалы и правит, не меняя идеи (21.10.2026: новый
     прогон с нуля выбрасывал удачную идею, которой не хватило ходов на мелкие провалы)."""
     log = WORK_DIR / stem / "analyst.jsonl"
-    prompt, session, total = material(stem), None, 0.0
+    prompt, session = material(stem), None
     if resume and sc.path_of(stem, variant).exists():
         current = sc.load(stem, variant)
         info = {}
@@ -542,11 +544,10 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES, resume: boo
                    "ответь партитурой целиком:\n" + json.dumps(current, ensure_ascii=False) + "\n\nПРОВАЛЫ:\n- "
                    + "\n- ".join(str(x) for x in failed))
     for attempt in range(1, tries + 1):
-        reply = ask(prompt, session, effort=EFFORT if attempt == 1 else FIX_EFFORT)
+        reply = ask(prompt, session, role="repair" if attempt == 2 else "analyst")
         session = reply["session"]
-        spent, total = (reply["cost"] or 0) - total, reply["cost"] or 0     # total_cost_usd — итог разговора, не хода
         entry = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "stem": stem, "variant": variant, "attempt": attempt,
-                 "cost": round(spent, 4), "cost_total": round(total, 4), "seconds": reply["seconds"], "tokens": reply["tokens"]}
+                 **log_reply(reply)}
         try:
             score = parse(reply["text"])
             if score.get("skip"):                       # дубль не годится — не вымучивать ролик из брака
@@ -578,7 +579,7 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES, resume: boo
             raise
         entry["failed"] = failed
         _log(log, entry)
-        print(f"  ход {attempt}: ${spent:.2f}, {reply['seconds']:.0f} с, "
+        print(f"  ход {attempt}: {gpt_client.usage_text(reply)}, {reply['seconds']:.0f} с, "
               f"{'чисто' if not failed else f'провалов {len(failed)}'}", flush=True)
         if not failed:
             print(f"✓ {sc.path_of(stem, variant).relative_to(WORK_DIR.parent)} → страница готова к рендеру")
@@ -590,7 +591,7 @@ def run(stem: str, variant: str | None = "auto", tries: int = TRIES, resume: boo
 
 
 CRITIC = """Ты — критик монтажа вертикального ролика-урока. Тебе дают партитуру (JSON решений режиссёра: что на каких
-словах показать) и лист кадров черновика — файл sheet.png (прочитай его инструментом Read): под каждым кадром время
+словах показать) и приложенный лист кадров черновика: под каждым кадром время
 и что идёт. Машинные проверки (серые зоны, лицо, субтитры, пустые места) уже пройдены — их не ищи.
 
 Планка — лучшие вирусные авторы, а не «нормально». Владелец (21.10.2026): «визуал скучный… можно усиливать и усиливать,
@@ -663,22 +664,19 @@ def host_tool(name: str) -> str:
 
 def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
     """Критик: лист кадров + партитура → правки. True — партитуру поправили и она прошла проверку."""
-    import shutil
     log = WORK_DIR / stem / "analyst.jsonl"
     score = sc.load(stem, variant)
     with page_slot():
         picture = sheet(stem, variant, score)
-    shutil.copy2(picture, home() / "sheet.png")
     prompt = ("Партитура ролика:\n" + json.dumps(score, ensure_ascii=False, indent=1) + "\n\n" + material(stem)
-              + "\n\nЛист кадров черновика — sheet.png. Ответь JSON.")
-    session, total = None, 0.0
+              + "\n\nЛист кадров черновика приложен. Не вызывай инструменты; ответь JSON.")
+    session = None
     for attempt in range(1, tries + 1):
-        reply = ask(prompt, session, system=CRITIC, tools="Read", effort=EFFORT if attempt == 1 else FIX_EFFORT)
+        reply = ask(prompt, session, system=CRITIC, role="critic" if attempt == 1 else "repair",
+                    images=[picture] if attempt == 1 or not session else None)
         session = reply["session"]
-        spent, total = (reply["cost"] or 0) - total, reply["cost"] or 0     # total_cost_usd — итог разговора
-        entry = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "stem": stem, "variant": variant, "role": "critic",
-                 "attempt": attempt, "cost": round(spent, 4), "cost_total": round(total, 4), "seconds": reply["seconds"],
-                 "tokens": reply["tokens"]}
+        entry = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "stem": stem, "variant": variant, "phase": "critic",
+                 "attempt": attempt, **log_reply(reply)}
         try:
             answer = parse(reply["text"])
         except sc.ScoreError as e:
@@ -687,7 +685,7 @@ def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
         if answer.get("ok"):
             entry["failed"] = []
             _log(log, entry)
-            print(f"  критик: править нечего (${spent:.2f}) — {'; '.join(entry['notes'])[:300]}")
+            print(f"  критик: править нечего ({gpt_client.usage_text(reply)}) — {'; '.join(entry['notes'])[:300]}")
             return False
         if "items" in answer:
             fixed = {k: v for k, v in answer.items() if k != "notes"}
@@ -708,7 +706,7 @@ def critique(stem: str, variant: str | None = "auto", tries: int = 2) -> bool:
             _log(log, entry)
             if not failed:
                 sc.path_of(stem, variant).write_text(json.dumps(fixed, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-                print(f"  критик поправил (${spent:.2f}): {'; '.join(entry['notes'])[:400]}")
+                print(f"  критик поправил ({gpt_client.usage_text(reply)}): {'; '.join(entry['notes'])[:400]}")
                 return True
             assemble(stem, variant, backup)                     # страница — снова по годной партитуре
             prompt = ("Твоя партитура не прошла сборку и проверку — исправь и ответь ею целиком (только JSON):\n- "

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""API студии монтажа: ролики и их состояние, бриф и стили, очередь, мозг (Claude/Codex).
+"""API студии монтажа: ролики и их состояние, бриф и стили, очередь, мозг (GPT / Codex).
 
 Подключается к серверу панели (server.py) и живёт на той же машине, на 127.0.0.1.
 Страница — web/studio.html. Тяжёлое отсюда не запускается напрямую: быстрый монтаж и
@@ -1090,10 +1090,10 @@ def brain_engines(fresh: int = 0):
 def brain_connect(engine: str, data: dict = Body(...)):
     """Поставить или подключить мозг: открывает Терминал (PowerShell на Windows) с нужной командой.
 
-    Вход у Claude и Codex — через браузер, по ссылке из терминала; пароль в студию не попадает.
+    Вход у Codex — через браузер, по ссылке из терминала; пароль в студию не попадает.
     """
-    if engine not in ("claude", "codex"):
-        raise HTTPException(400, "мозг бывает claude или codex")
+    if engine != "codex":
+        raise HTTPException(400, "Монтаж переведён на GPT — используй codex")
     action = data.get("action")
     try:
         cmd = brain.connect_command(engine, action)
@@ -1130,9 +1130,9 @@ def brain_threads():
 
 @router.post("/api/brain/threads")
 def brain_new_thread(data: dict = Body(...)):
-    engine = data.get("engine", "claude")
-    if engine not in ("claude", "codex"):
-        raise HTTPException(400, "мозг бывает claude или codex")
+    engine = data.get("engine", "codex")
+    if engine != "codex":
+        raise HTTPException(400, "Монтаж переведён на GPT — используй codex")
     stem, project = data.get("stem"), data.get("project")
     if stem:
         safe_stem(stem)
@@ -1257,6 +1257,8 @@ async def _run_turn(thread: dict, text: str, mode: str, model: str | None, finis
     подпроцессы asyncio работают не в каждом цикле событий, а поток работает везде.
     """
     run = runs[thread["id"]]
+    if not thread.get("session") and thread.get("handoff"):
+        text = thread.pop("handoff") + "\n\nНовая просьба человека:\n" + text
     engine = thread["engine"]
     reply = {"role": "assistant", "engine": engine, "at": time.time(), "events": []}
     thread["messages"].append(reply)
@@ -1449,7 +1451,7 @@ async def brain_send(data: dict = Body(...)):
 
 @router.post("/api/brain/inbox/{thread_id}")
 def brain_inbox(thread_id: str, data: dict = Body(...)):
-    """Дописать к идущему ходу: Claude получит после ближайшего действия (хук), Codex — следующим ходом."""
+    """Дописать к идущему ходу: все просьбы собираются в один следующий запрос Codex."""
     text = (data.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "пустое сообщение")
@@ -1465,8 +1467,7 @@ def brain_inbox(thread_id: str, data: dict = Body(...)):
     run["events"].append(ev)
     if run.get("reply") is not None:
         run["reply"]["events"].append(ev)
-    when = ("после ближайшего действия" if thread["engine"] == "claude"
-            else "как закончит текущий шаг — Codex не умеет получать сообщения посреди хода")
+    when = "единым списком после текущего шага Codex"
     return {"ok": True, "id": msg_id, "when": when}
 
 
@@ -1817,9 +1818,9 @@ def batch_state():
 @router.post("/api/brain/batch")
 async def batch_start(data: dict = Body(...)):
     """Пачка роликов: каждый в своей новой сессии мозга. Идёт пачка — ролики встают в неё же (догрузка)."""
-    engine = data.get("engine", "claude")
-    if engine not in ("claude", "codex"):
-        raise HTTPException(400, "мозг бывает claude или codex")
+    engine = data.get("engine", "codex")
+    if engine != "codex":
+        raise HTTPException(400, "Монтаж переведён на GPT — используй codex")
     stems = [safe_stem(s) for s in (data.get("stems") or new_videos())]
     if batch["running"]:
         stems = [s for s in dict.fromkeys(stems) if s not in batch_active_stems()]    # уже в пачке — второй раз не берём

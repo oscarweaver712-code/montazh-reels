@@ -103,6 +103,8 @@ CONFIG_TYPES = {"title": (str, "строкой"), "language": (str, "строк�
                 "music": (bool, "true или false"), "hook_flash": (bool, "true или false"), "soft_sounds": (bool, "true или false"),
                 "face_min": ((int, float), "числом от 0 до 1"), "insert_style": (str, "строкой: \"\" или \"blueprint\""),
                 "insert_gap_max": ((int, float), "числом секунд — дольше без вставок verify_page не пускает"),
+                "shot_max": ((int, float), "числом секунд — дольше один план без смены картинки verify_page не пускает"),
+                "photos": (bool, "true или false — false: фото (photoclip.py) в сборку не идут"),
                 "caption_accent_scale": ((int, float), "числом от 1 до 1.6 — во сколько ключевое слово субтитров крупнее"),
                 "cut_pauses": (bool, "true или false"),
                 "pause_max": ((int, float), "числом секунд — пауза длиннее режется"),

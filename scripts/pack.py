@@ -37,6 +37,12 @@ pack.json:
   cut      — каким будет стык перед куском: "scene" (смена сцены: камера заново, субтитр не переходит) или "jump"
              (склейка внутри одного плана — вырезанная пауза или оговорка: её прячет смена плана со смазом). По
              умолчанию — jump, если кусок того же клипа идёт дальше по времени с той же скоростью, иначе scene.
+  cams     — мультикамера (25.10.2026, «Вкудесник» v09: 12 с одного статичного плана айфона — «супер стрёмно, нужен
+             монтаж, который удерживает»; тот же разговор снят и очками Деда): [{"at": с клипа куска, "clip":
+             "IMG_7018.MOV", "shift": -8.6}, …] — с секунды at картинка идёт с другой камеры того же момента (её
+             секунда — at + shift), а звук — по-прежнему клипа куска, без шва. "clip" — клип самого куска: вернуться
+             на него. Переключение — смена сцены (aroll.json → scenes): камера решается заново. Только speed 1 и без
+             ramp; shift — сверь по звуку обеих камер (пик взаимной корреляции), а не по часам.
 
 Громкость: куски с речью приводятся к общей громкости речи (ebur128 по каждому куску): клипы
 сняты разными телефонами и на разном расстоянии, и без этого голос прыгал бы на каждом стыке.
@@ -62,9 +68,10 @@ import formats
 import projects
 import numpy as np
 
-from common import WORK_DIR, decode_threads, detect_voice, ffmpeg_bin, probe, require_queue
+from common import WORK_DIR, decode_threads, detect_voice, ffmpeg_bin, ffprobe_bin, probe, require_queue
 from cut import MIN_WORD_LAP
 from look import hdr_to_sdr
+from photoclip import PHOTO_TAG
 from prep import AIR, find_edges, load_edit, pick_format, speech_language
 from render import COLOR_TAGS, concat_line, even, vcodec
 from transcribe import run_transcribe
@@ -289,7 +296,7 @@ def load_beat(stem: str) -> dict | None:
 def check_plan(stem: str, pieces: list, durations: dict) -> list:
     """Куски решения → нормальный вид. Всё, что не так, — одной ошибкой со всеми причинами."""
     problems, out = [], []
-    known = {"clip", "from", "to", "speed", "gain", "mute", "fit", "exact", "cut", "ramp", "hold", "snap", "why"}
+    known = {"clip", "from", "to", "speed", "gain", "mute", "fit", "exact", "cut", "ramp", "hold", "snap", "cams", "why"}
     for n, p in enumerate(pieces, 1):
         where = f"кусок {n}"
         if not isinstance(p, dict):
@@ -329,11 +336,85 @@ def check_plan(stem: str, pieces: list, durations: dict) -> list:
         hold = p.get("hold", 0)
         if not isinstance(hold, (int, float)) or not 0 <= hold <= HOLD_MAX:
             problems.append(f"{where} ({name}): hold {hold!r} — стоп-кадр от 0 до {HOLD_MAX:g} с")
+        cams, bad = check_cams(p.get("cams"), name, a, min(b, dur), durations)
+        problems += [f"{where} ({name}): {b_}" for b_ in bad]
+        if cams and (speed != 1.0 or ramp):
+            problems.append(f"{where} ({name}): cams — только без ускорения и рывка: звук и картинка разъедутся")
         out.append({"clip": name, "from": a, "to": min(b, dur), "speed": speed, "gain": float(p.get("gain", 0.0)),
                     "mute": bool(p.get("mute")), "fit": fit, "exact": bool(p.get("exact")), "cut": p.get("cut"),
-                    "ramp": ramp, "hold": float(hold or 0), "snap": bool(p.get("snap")), "why": p.get("why", "")})
+                    "ramp": ramp, "hold": float(hold or 0), "snap": bool(p.get("snap")), "cams": cams,
+                    "why": p.get("why", "")})
     if problems:
         raise PackError(f"work/{stem}/pack.json:\n  " + "\n  ".join(problems))
+    return out
+
+
+def is_photo(clip: Path) -> bool:
+    """Клип собран из фото (photoclip.py ставит метку в comment)."""
+    out = subprocess.run([ffprobe_bin(), "-v", "error", "-show_entries", "format_tags=comment", "-of", "default=nw=1:nk=1",
+                          str(clip)], capture_output=True, encoding="utf-8", errors="replace").stdout
+    return out.strip().startswith(PHOTO_TAG)
+
+
+def check_photos(stem: str, plan: list, files: dict) -> None:
+    """project.json → photos: false — фото в сборку не идут ни куском, ни камерой (Вкудесник, 26.10.2026)."""
+    if projects.of(stem).config.get("photos", True):
+        return
+    used = dict.fromkeys([p["clip"] for p in plan] + [c["clip"] for p in plan for c in p["cams"]])
+    photos = [name for name in used if is_photo(files[name])]
+    if photos:
+        raise PackError(f"work/{stem}/pack.json: в проекте фото не берём (project.json → photos: false), а в сборке "
+                        f"{', '.join(photos)} — клипы из фото (photoclip.py). Под звук без картинки — другое видео "
+                        f"того же момента, иначе режь это место")
+
+
+def check_cams(cams, name: str, a: float, b: float, durations: dict) -> tuple:
+    """pack.json → cams куска: ([{at, clip, shift, fit}] по порядку, [что не так]). Нет cams — ([], [])."""
+    if cams is None:
+        return [], []
+    if not isinstance(cams, list) or not cams:
+        return [], ["cams — список [{\"at\", \"clip\", \"shift\"}]"]
+    out, bad, last = [], [], a
+    for k, c in enumerate(cams, 1):
+        try:
+            at, shift, clip = float(c["at"]), float(c.get("shift", 0.0)), str(c["clip"])
+        except (KeyError, TypeError, ValueError, AttributeError):
+            bad.append(f"камера {k}: нужны at (с клипа куска), clip и shift — числа и имя")
+            continue
+        if clip not in durations:
+            bad.append(f"камера {k}: клипа «{clip}» нет в сборке")
+            continue
+        if not last <= at < b or (out and at <= out[-1]["at"]):
+            bad.append(f"камера {k}: at {at:g} — внутри куска {a:g}–{b:g} и позже прошлой")
+            continue
+        until = next((float(n["at"]) for n in cams[k:] if isinstance(n, dict) and "at" in n), b)
+        if clip != name and not (0 <= at + shift and until + shift <= durations[clip] + 0.05):
+            bad.append(f"камера {k} ({clip}): {at + shift:.2f}–{until + shift:.2f} с вне клипа 0–{durations[clip]:.2f}")
+        fit = c.get("fit", "cover")
+        if fit not in FIT:
+            bad.append(f"камера {k}: fit «{fit}» — бывает {' или '.join(FIT)}")
+        out.append({"at": at, "clip": clip, "shift": 0.0 if clip == name else shift, "fit": fit})
+        last = at
+    return out, bad
+
+
+def cam_chunks(p: dict) -> list:
+    """Кусок с мультикамерой → части по камерам. Границы — на сетке кадров от начала куска (инвариант 4): звук частей
+    идёт встык, без затуханий внутри, — шва в голосе нет. Камера клипа куска — cam None. Стоп-кадр — у последней."""
+    a, b = p["start"], p["end"]
+    marks = [(a, None)]
+    for c in p["cams"]:
+        t = a + round((c["at"] - a) * FPS) / FPS
+        cam = None if c["clip"] == p["clip"] else c
+        if t <= marks[-1][0] + 0.5 / FPS:
+            marks[-1] = (marks[-1][0], cam)
+        elif t < b - 0.5 / FPS:
+            marks.append((t, cam))
+    out = []
+    for k, (t, cam) in enumerate(marks):
+        end = marks[k + 1][0] if k + 1 < len(marks) else b
+        out.append(dict(p, start=t, end=end, cam=cam, hold=0.0, fade_in=k == 0, fade_out=k == len(marks) - 1))
+    out[-1]["hold"] = p["hold"]
     return out
 
 
@@ -386,11 +467,14 @@ def canvas(stem: str, infos: list) -> tuple:
     return fmt, even(w * k), even(h * k)
 
 
-def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out: Path, bitrate: str) -> int:
+def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out: Path, bitrate: str,
+              cam: tuple | None = None) -> int:
     """Один кусок — один вызов ffmpeg (память постоянная, инвариант 1). Возвращает число кадров.
 
     Длина — trim/atrim по числу кадров, а не -t (инвариант 4): N кадров видео и ровно N/30 с звука,
     иначе к концу ролика набегает сдвиг и субтитры уезжают от речи.
+    cam — (клип, info, сдвиг): картинка с другой камеры того же момента, звук — по-прежнему clip (pack.json → cams).
+    Каждый вход читается один раз: картинка — из одного файла, звук — из другого.
     """
     w, h = size
     a, b, speed = piece["start"], piece["end"], piece["speed"]
@@ -398,11 +482,16 @@ def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out
     held = round(float(piece.get("hold") or 0) * FPS)           # стоп-кадр: последний кадр держится, звук — тишина
     samples = round((frames + held) / FPS * 48000)
     freeze = f",tpad=stop_mode=clone:stop_duration={held / FPS:.4f},trim=end_frame={frames + held}" if held else ""
-    hdr = hdr_to_sdr(info)
+    vclip, vinfo, shift = cam if cam else (clip, info, 0.0)
+    hdr = hdr_to_sdr(vinfo)
     hdr = f"{hdr}," if hdr else ""
+    fade_in = "afade=t=in:d=0.012," if piece.get("fade_in", True) else ""
+    fade_out = (f",afade=t=out:st={max(0.0, frames / FPS - 0.012):.4f}:d=0.012"
+                if piece.get("fade_out", True) else "")
+    ain = 1 if cam else 0
     # масштаб — до чётных сторон: перевод HDR (zscale) на 4:2:0 нечётную ширину не берёт (очки 1376×1840 → 1829, 25.10)
     base = f"[0:v]trim=0:{b - a:.6f},setpts=(PTS-STARTPTS)/{speed:.6f},fps={FPS}"
-    if piece["fit"] == "blur":
+    if (cam and piece["cam"]["fit"] or piece["fit"]) == "blur":
         video = (f"{base},split[s0][s1];"
                  f"[s0]scale={w}:{h}:force_original_aspect_ratio=increase:force_divisible_by=2:out_range=tv,{hdr}format=yuv420p,"
                  f"crop={w}:{h},boxblur=36:2,eq=brightness=-0.06[bg];"
@@ -412,16 +501,15 @@ def cut_piece(clip: Path, info: dict, piece: dict, size: tuple, gain: float, out
         video = (f"{base},scale={w}:{h}:force_original_aspect_ratio=increase:force_divisible_by=2:out_range=tv,{hdr}format=yuv420p,"
                  f"crop={w}:{h},setsar=1,trim=end_frame={frames}{freeze}[v]")
     if info["has_audio"] and not piece["mute"]:
-        audio = (f"[0:a]atrim=0:{b - a:.6f},asetpts=PTS-STARTPTS,{atempo(speed)},aresample=48000,"
+        audio = (f"[{ain}:a]atrim=0:{b - a:.6f},asetpts=PTS-STARTPTS,{atempo(speed)},aresample=48000,"
                  f"aformat=channel_layouts=stereo,volume={gain:.2f}dB,apad=whole_len={samples},"
-                 f"atrim=end_sample={samples},afade=t=in:d=0.012,"
-                 f"afade=t=out:st={max(0.0, frames / FPS - 0.012):.4f}:d=0.012[a]")
-        extra = []
+                 f"atrim=end_sample={samples}{',' + fade_in.rstrip(',') if fade_in else ''}{fade_out}[a]")
+        extra = ["-ss", f"{a:.6f}", "-t", f"{b - a + 1.0:.6f}", "-vn", "-i", str(clip)] if cam else []
     else:
         audio = f"[1:a]atrim=end_sample={samples}[a]"
         extra = ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-    cmd = [ffmpeg_bin(), "-y", "-loglevel", "error", *decode_threads(info),
-           "-ss", f"{a:.6f}", "-t", f"{b - a + 1.0:.6f}", "-i", str(clip), *extra,
+    cmd = [ffmpeg_bin(), "-y", "-loglevel", "error", *decode_threads(vinfo),
+           "-ss", f"{a + shift:.6f}", "-t", f"{b - a + 1.0:.6f}", "-i", str(vclip), *extra,
            "-filter_complex", f"{video};{audio}", "-map", "[v]", "-map", "[a]",
            *vcodec({"bitrate": bitrate}, "segment"), "-r", str(FPS), "-fps_mode", "cfr", "-pix_fmt", "yuv420p",
            *COLOR_TAGS, "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", str(out)]
@@ -531,6 +619,7 @@ def build(stem: str) -> Path:
     datas = {name: clip_info(stem, path, language) for name, path in files.items()}
     raw = load_plan(stem)
     plan = check_plan(stem, raw, {n: d["info"]["duration"] for n, d in datas.items()})
+    check_photos(stem, plan, files)
     beat = load_beat(stem)
     stale = stale_edit(stem, raw)
     if stale:
@@ -580,14 +669,18 @@ def build(stem: str) -> Path:
         acc, files_out = 0, []
         for n, p in enumerate(plan):
             info = datas[p["clip"]]["info"]
-            cs = chunks(p)
+            cs = cam_chunks(p) if p["cams"] else chunks(p)
             if p["snap"]:
                 cs = snap_chunks(p, cs, acc / FPS, beat, info["duration"])
                 p["end"], p["hold"] = cs[-1]["end"], cs[-1]["hold"]
-            frames = 0
+            frames, p["switches"] = 0, []
             for k, c in enumerate(cs):
                 piece_file = tmp / f"piece_{n:03d}_{k:02d}.mov"
-                frames += cut_piece(files[p["clip"]], info, c, (w, h), p["auto_gain"] + p["gain"], piece_file, bitrate)
+                cam = c.get("cam")
+                if k and "cam" in c:                    # мультикамера: переключение — смена сцены
+                    p["switches"].append(round((acc + frames) / FPS, 6))
+                frames += cut_piece(files[p["clip"]], info, c, (w, h), p["auto_gain"] + p["gain"], piece_file, bitrate,
+                                    cam=(files[cam["clip"]], datas[cam["clip"]]["info"], cam["shift"]) if cam else None)
                 files_out.append(piece_file)
             p["t0"], p["t1"], p["frames"] = round(acc / FPS, 6), round((acc + frames) / FPS, 6), frames
             acc += frames
@@ -595,6 +688,7 @@ def build(stem: str) -> Path:
             speed += f" рывок {'→'.join(f'{v:g}' for v in p['ramp'])}" if p["ramp"] else ""
             speed += f" стоп {p['hold']:.2f} с" if p["hold"] else ""
             speed += " в долю" if p["snap"] else ""
+            speed += f" камер {len(cs)}" if p["cams"] else ""
             level = f"  {p['auto_gain']:+.1f} дБ" if p["auto_gain"] else ""
             print(f"  {n + 1:>2}. {p['clip']} {p['start']:6.2f}–{p['end']:6.2f}{speed} → {p['t0']:6.2f}–{p['t1']:6.2f}"
                   f"{'  речь' if p['speech'] else ''}{level}", flush=True)
@@ -622,14 +716,16 @@ def build(stem: str) -> Path:
     (WORK_DIR / f"{stem}.txt").write_text(text, encoding="utf-8")
     (WORK_DIR / f"{stem}.source.json").write_text(json.dumps({"name": out.name, "size": out.stat().st_size}),
                                                   encoding="utf-8")
-    joins = [p["t0"] for prev, p in zip(plan, plan[1:]) if cut_kind(prev, p) == "scene"]
+    joins = sorted([p["t0"] for prev, p in zip(plan, plan[1:]) if cut_kind(prev, p) == "scene"]
+                   + [t for p in plan for t in p["switches"]])
     cuts = [p["t0"] for prev, p in zip(plan, plan[1:]) if cut_kind(prev, p) == "jump"]
     (WORK_DIR / stem / "pack.built.json").write_text(json.dumps({
         "file": str(out), "size": out.stat().st_size, "fps": FPS, "format": fmt, "width": w, "height": h,
         "duration": acc / FPS, "joins": joins, "cuts": cuts, "plan": raw,
         "beat": beat,
         "pieces": [{k: p[k] for k in ("clip", "start", "end", "speed", "t0", "t1", "frames", "speech", "auto_gain",
-                                      "gain", "mute", "fit", "ramp", "hold", "snap", "why")} for p in plan],
+                                      "gain", "mute", "fit", "ramp", "hold", "snap", "cams", "switches", "why")}
+                   for p in plan],
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     # дубль, камера и маска от прошлой сборки — уже не про этот файл: без aroll.json дальше всё скажет «сначала prep»
     for name in ("aroll.json",):
@@ -652,6 +748,7 @@ def summary(stem: str) -> None:
         durations[name] = (json.loads(marks.read_text(encoding="utf-8"))["info"]["duration"] if marks.exists()
                            else probe(path)["duration"])
     plan = check_plan(stem, load_plan(stem), durations)
+    check_photos(stem, plan, files)
     total = sum((p["to"] - p["from"]) / (sum(ramp_speeds(p["ramp"])) / RAMP_STEPS if p["ramp"] else p["speed"]) + p["hold"]
                 for p in plan)
     for n, p in enumerate(plan, 1):

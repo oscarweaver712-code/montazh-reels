@@ -4,10 +4,10 @@
 Правило Валеры (11.10.2026): одно видео — одна сессия. Контекст у сессии конечный, и если
 монтировать всю пачку в одном разговоре, каждый следующий ролик выходит хуже. Поэтому на
 «смонтируй новые» (из input/ проектов) агент в терминале не монтирует их сам, а запускает пачку в
-студии: она берёт ролики по одному, на каждый открывает новую сессию Claude или Codex и
+студии: она берёт ролики по одному, на каждый открывает новую сессию GPT / Codex и
 сама продолжает разговор, когда очередь отработала.
 
-  .venv/bin/python scripts/batch.py                    # все новые (без выпусков) — Claude
+  .venv/bin/python scripts/batch.py                    # все новые (без выпусков) — GPT / Codex
   .venv/bin/python scripts/batch.py IMG_3330 IMG_3331 --engine codex
   .venv/bin/python scripts/batch.py --watch            # и следить, пока пачка не кончится
   .venv/bin/python scripts/batch.py --status
@@ -63,7 +63,7 @@ def show(state: dict) -> str:
 def main():
     ap = argparse.ArgumentParser(description="Пачка роликов: автопилотом (по умолчанию) или каждый в своей сессии мозга")
     ap.add_argument("stems", nargs="*", help="ролики (имя без расширения); по умолчанию — все новые")
-    ap.add_argument("--engine", choices=("claude", "codex"), default="claude")
+    ap.add_argument("--engine", choices=("codex",), default="codex")
     ap.add_argument("--mode", choices=("safe", "full"), default="safe")
     ap.add_argument("--brain", action="store_true",
                     help="сессия мозга на ролик, как до 19.10 (дороже, сам делает клипы Flow); без флага — автопилот")

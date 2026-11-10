@@ -27,6 +27,7 @@
   m.sound("uz", "impact-bass-1", t(1.94), 0.9)
   m.fg(a, b); m.hide(a, b); m.wide(a, b)      # окно вырезки, без субтитров, без крупного плана
   m.footage("ft-india", "a_india", at, dur)   # перебивка Flow; m.slides(...) — серия картинок
+  m.transition(t, "in")                       # переход на стыке: зум-проброс ("in") или смаз-хлыст ("left"/"right")
   m.build("Заголовок", cta_at=t(85.7), text_fixes={...}, accent_words=[...])
 
 Время везде — шкала дубля (как у build_page). Что Montage поставил сам, он печатает: это часть отчёта.
@@ -47,6 +48,7 @@ HOOK_SOUND = "whoosh-cinematic"
 HOOK_ZOOM = 0.22           # вспышка хука: кадр бьёт на базу + 0.22 и отъезжает за HOOK_PULL
 HOOK_PULL = 0.9
 BLOOPER_LOOK = "grayscale(1) contrast(1.15) brightness(0.9)"
+TRANSITIONS = ("in", "left", "right")
 SOFT_EVERY = 6.0           # тихих звуков не реже одного на 6 с ролика (принятый стиль IMG_3303 v5 — раз в 2,4 с)
 
 # движения страницы → вид тихого звука (kit.SOFT_KINDS)
@@ -100,6 +102,7 @@ class Montage:
         self.sounds, self.punches, self.fg_windows, self.hidden, self.wide_windows = [], [], [], [], []
         self.cutaways, self.extra_soft, self.notes = [], [], []
         self.splits, self._bp, self._fig = [], False, 0
+        self.transitions = []
         self.hook_at, self.hook_why = "auto", ""
         self._matte = None
         self.stage_fx = False           # приём fx двигает всю картинку (#stage): пролёт, отъезд
@@ -148,6 +151,34 @@ class Montage:
         self.behind(html)
         self.js(js)
         self.cutaways.append((round(at, 2), round(at + dur, 2)))
+
+    def transition(self, t: float, kind: str = "in"):
+        """Переход на стыке (25.10.2026, «Вкудесник»: «нужен монтаж, который удерживает, переходы, виральнее!»; у
+        референса заказчицы — проброс и смаз на каждом третьем стыке). Сам кадр дубля разгоняется в последние 4 кадра до
+        стыка и новый план приходит из того же разгона: "in" — проброс вперёд, "left"/"right" — хлыст вбок (видео
+        только крупнее кадра: мельче — по краям чёрное). Ставь на стык сцен или зум-рез, не на середину фразы; тихий
+        звук стыка ставит сборка."""
+        if kind not in TRANSITIONS:
+            raise ValueError(f"переход «{kind}» — бывает {', '.join(TRANSITIONS)}")
+        if any(abs(t - u) < 0.4 for u, _ in self.transitions):
+            raise ValueError(f"переходы {t:.2f} с и соседний ближе 0,4 с — второй съест первый")
+        self.transitions.append((round(t, 3), kind))
+
+    def _transition_js(self, cutout: bool) -> str:
+        """Переходы страницы — движением видео внутри камеры (#aroll и вырезка с ним): ключи камеры не трогаются."""
+        videos = '["#aroll", "#cutout"]' if cutout else '"#aroll"'
+        out = []
+        for t, kind in sorted(self.transitions):
+            side = {"left": -1, "right": 1}.get(kind, 0)
+            k = 1.3 if side else 1.28          # сдвиг 150 px при 1.3 — запас 162 px с каждого края
+            leave = f"x: {150 * side}, scale: {k}" if side else f"scale: {k}"
+            come = f"x: {-150 * side}, scale: {k}" if side else f"scale: {k}"
+            out.append(f'      // переход «{kind}» на {t:.2f} с\n'
+                       f'      tl.fromTo({videos}, {{ x: 0, scale: 1, filter: BLUR(0) }}, {{ {leave}, filter: BLUR(14), '
+                       f'duration: 0.13, ease: "power2.in", immediateRender: false }}, {t - 0.133:.3f});\n'
+                       f'      tl.fromTo({videos}, {{ {come}, filter: BLUR(14) }}, {{ x: 0, scale: 1, filter: BLUR(0), '
+                       f'duration: 0.22, ease: "power3.out", immediateRender: false }}, {t:.3f});\n')
+        return "".join(out)
 
     def _look(self, label: str, kw: dict) -> dict:
         """Рамка мотива проекта для клипа и фото во весь кадр (insert_style), если страница не задала свою."""
@@ -378,6 +409,9 @@ class Montage:
             auto_js.append(whips)
             self.notes.append(f"смена плана: {len(switch)} крупных")
 
+        if self.transitions:
+            auto_js.append(self._transition_js(bool(cutout)))
+            self.notes.append(f"переходы: {len(self.transitions)}")
         beats = page_js + "".join(auto_js)
         if self.design:                              # функции движений системы — до движений страницы
             beats = self.design.js() + beats

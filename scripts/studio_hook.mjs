@@ -1,7 +1,7 @@
-// Хук старта Claude Code и Codex: поднять студию монтажа (scripts/studio_up.py).
+// Хук старта Codex: поднять студию монтажа (scripts/studio_up.py).
 //
 // Почему Node, а не строка оболочки: хук должен одинаково работать на Mac (bash/zsh) и на
-// Windows (Git Bash у Claude, PowerShell или cmd у Codex). Синтаксис «[ -x … ] && … || true»
+// Windows (PowerShell или cmd). Синтаксис «[ -x … ] && … || true»
 // понимает только bash, а `node scripts/studio_hook.mjs` понимают все. Node есть везде, где
 // стоит проект: на нём работает HyperFrames.
 //

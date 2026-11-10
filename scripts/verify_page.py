@@ -50,6 +50,8 @@ FOOTAGE_MAX = 2     # ИИ-видео на ролик (Валера 17.10: «г�
 SOFT_EVERY = 6.0    # с: тихий звук монтажа не реже раза за это время (rules.md п.9; принятый IMG_3303 v5 — раз в 2,4 с)
 MONTAGE_MARK = '<meta name="reels-montage"'
 CAP_GAP_MAX = 3.0   # с: дольше речь без субтитров не идёт (Валера 16.10, IMG_3303 v3: «надолго пропали»)
+SHOT_ZOOM = 0.1     # наезд камеры на столько и больше за SHOT_SNAP с — новый план (зум-рез), плавный ход — нет
+SHOT_SNAP = 0.2
 ACCENT_EVERY = 12.0  # с: дольше субтитры без ключевого слова — «одинаково скучно идут» (Валера 19.10, IMG_3292 v2)
 
 # Ставится до скриптов страницы: реестр таймлайнов (его даёт рантайм HyperFrames,
@@ -1217,6 +1219,37 @@ def caption_gaps(project: Path, limit: float = CAP_GAP_MAX) -> list:
     return [(round(a, 2), round(b, 2)) for a, b in gaps if b - a > limit]
 
 
+def shot_gaps(project: Path, limit: float) -> list:
+    """Где картинка не меняется дольше limit с (Валера 25.10.2026, «Вкудесник» v01/v09: «вставки фоток долго занимают,
+    супер стрёмно выглядит. Нужен монтаж, который удерживает, переходы, виральнее!» — 7 с почти одинаковых фото и 12 с
+    одного статичного плана айфона; у референса заказчицы план ~2 с). Смена плана — стык сцен и склейка (aroll.json →
+    scenes, jumps) или зум-рез: камера за SHOT_SNAP с меняет крупность на SHOT_ZOOM и больше (camera.js). Надпись поверх
+    картинку не меняет — её держит своя проверка (holds). Возвращает [(от, до)] на шкале дубля.
+    """
+    meta = take_dir(project) / "aroll.json"
+    if not meta.exists():
+        return []
+    data = json.loads(meta.read_text(encoding="utf-8"))
+    duration = float(data.get("duration") or 0)
+    marks = [float(t) for t in (data.get("scenes") or []) + (data.get("jumps") or [])]
+    path = project / "camera.js"
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        found = re.search(r"window\.CAMERA = (\[.*\]);", text, re.S)
+        fps_m = re.search(r"window\.CAMERA_FPS = ([\d.]+)", text)
+        if found:
+            cam, cfps = json.loads(found.group(1)), float(fps_m.group(1)) if fps_m else 30.0
+            back = max(1, round(SHOT_SNAP * cfps))
+            duration = duration or len(cam) / cfps
+            last = -1.0
+            for k in range(back, len(cam)):
+                if abs(cam[k][2] - cam[k - back][2]) >= SHOT_ZOOM and k / cfps - last > SHOT_SNAP:
+                    marks.append(k / cfps)
+                    last = k / cfps
+    edges = [0.0] + sorted(t for t in marks if 0 < t < duration) + [duration]
+    return [(round(a, 2), round(b, 2)) for a, b in zip(edges, edges[1:]) if b - a > limit]
+
+
 def take_splices(project: Path) -> list:
     """Секунды склеек на шкале дубля (по вырезам drop в aroll.json); нет дубля — пусто. Стыки сборки (scenes,
     scripts/pack.py) — смена сцены, а не склейка дубля: их не прячут, и в список они не входят."""
@@ -1426,6 +1459,12 @@ def verify(stem_or_dir: str, fps: int = FPS, strict: bool = True, matte_pending:
         bare = [f"{a:.2f}–{b:.2f} с: {b - a:.1f} с без единой вставки — поставь приём по словам этого места "
                 f"(«Чертёж», штамп, клип, карточка)" for a, b in res.get("bare", []) if b - a > float(gap_max)]
         check(not bare, f"нет пустых мест без вставок дольше {float(gap_max):g} с (project.json → insert_gap_max)", bare)
+    shot_max = cfg.get("shot_max")
+    if shot_max and strict:
+        long = [f"{a:.2f}–{b:.2f} с: {b - a:.1f} с одного плана — режь: другая камера того же момента (pack.json → cams), "
+                f"зум-рез m.punch(…, ease_in=0) крупнее на ≥ {SHOT_ZOOM:g}, другой кусок или фото"
+                for a, b in shot_gaps(project, float(shot_max))]
+        check(not long, f"план не дольше {float(shot_max):g} с без смены картинки (project.json → shot_max)", long)
     if palette:
         seen_off, off = set(), []
         for d in res.get("design", []):

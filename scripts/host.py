@@ -128,7 +128,7 @@ def open_file(path: Path) -> None:
 
 
 def open_terminal(command: str) -> None:
-    """Открыть окно терминала и выполнить в нём команду (установка и вход в Claude/Codex из студии).
+    """Открыть окно терминала и выполнить в нём команду (установка и вход в Codex из студии).
 
     Mac — Терминал через AppleScript, Windows — новое окно PowerShell, остальные — x-terminal-emulator.
     Окно остаётся открытым: человек видит, что произошло, и проходит вход по ссылке в браузере.
@@ -238,39 +238,12 @@ def link_dir(link: Path, target: Path) -> None:
 
 
 def link_skills(root: Path = ROOT) -> list:
-    """Скиллы у Claude — ссылки на общие: .claude/skills/<имя> → .agents/skills/<имя>.
-
-    В git это symlink. Git на Windows ставится без права на них и вместо ссылки кладёт
-    текстовый файл с путём — такого скилла Claude не видит. Здесь эта заглушка (или порванная
-    ссылка) заменяется настоящей ссылкой. В git путь помечается skip-worktree, а содержимое
-    junction закрыто в .gitignore: агент на Windows не закоммитит ни копию скилла, ни удаление
-    ссылки. Настоящую папку-копию не трогает — её ловит самопроверка. Вернёт имена починенных.
-    """
-    fixed = []
-    for target in sorted(p for p in (root / ".agents" / "skills").iterdir() if (p / "SKILL.md").is_file()):
-        link = root / ".claude" / "skills" / target.name
-        if link.exists() and link.resolve() == target.resolve():
-            continue
-        if link.is_symlink() or (IS_WINDOWS and link.is_junction()):
-            os.unlink(link)                                   # порванная: папку проекта перенесли
-        elif link.is_file() and link.read_text(encoding="utf-8", errors="replace").strip().replace(
-                "\\", "/").endswith(f".agents/skills/{target.name}"):
-            link.unlink()                                     # заглушка git: путь текстом
-        elif link.exists():
-            continue
-        link.parent.mkdir(parents=True, exist_ok=True)
-        link_dir(link, target)
-        if IS_WINDOWS and shutil.which("git"):
-            subprocess.run(["git", "update-index", "--skip-worktree", link.relative_to(root).as_posix()],
-                           cwd=root, capture_output=True)
-        fixed.append(target.name)
-    return fixed
+    """Совместимость со старыми установщиками: Codex читает .agents/skills напрямую."""
+    return []
 
 
 if __name__ == "__main__":
-    # установщик: python scripts/host.py --link-skills
     if sys.argv[1:] != ["--link-skills"]:
         sys.exit("Использование: python scripts/host.py --link-skills")
     utf8_console()
-    done = link_skills()
-    print(f"✓ скиллы для Claude: {'сделаны ссылки — ' + ', '.join(done) if done else 'ссылки на месте'}")
+    print("✓ скиллы GPT / Codex: .agents/skills (ссылки не нужны)")

@@ -392,7 +392,7 @@ def kit_captions(style: dict) -> dict:
 
 
 def director_brief(stem: str | None = None, brief: dict | None = None) -> str:
-    """Текст для режиссёра (Claude или Codex): что за выхлоп нужен и как его делать."""
+    """Текст для режиссёра GPT / Codex: что за выхлоп нужен и как его делать."""
     brief = brief or (load_brief(stem) if stem else copy.deepcopy(DEFAULT_BRIEF))
     style = effective(load_style(brief["style"]), brief.get("overrides"))
     p = style["params"]

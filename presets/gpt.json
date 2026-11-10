@@ -1,0 +1,6 @@
+{
+  "director": {"model": "gpt-6.1-sol", "effort": "high"},
+  "analyst": {"model": "gpt-6.1-sol", "effort": "high"},
+  "critic": {"model": "gpt-6.1-sol", "effort": "high"},
+  "repair": {"model": "gpt-6-luna", "effort": "medium"}
+}

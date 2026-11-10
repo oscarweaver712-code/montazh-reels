@@ -159,9 +159,12 @@ def run(stem: str, critic: bool = True, render: bool = True, probe: bool = False
         queued(f"05-render-{stem}", [f"python scripts/render_reel.py {stem}"], timeout_min=60)
     log = WORK_DIR / stem / "analyst.jsonl"
     spent = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
-    cost = sum(e.get("cost") or 0 for e in spent if e.get("at", "") >= time.strftime("%Y-%m-%d %H:%M:%S",
-                                                                                     time.localtime(started)))
-    print(f"✓ {stem}: автопилот за {(time.time() - started) / 60:.0f} мин, ИИ — ${cost:.2f}", flush=True)
+    current = [e for e in spent if e.get("at", "") >= time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(started))]
+    known = bool(current) and all(e.get("cost") is not None for e in current)
+    cost = f"${sum(e['cost'] for e in current):.2f}" if known else "точная цена CLI не сообщена"
+    tokens = sum(sum((e.get("tokens") or {}).get(k) or 0 for k in ("input_tokens", "output_tokens")) for e in current)
+    print(f"✓ {stem}: автопилот за {(time.time() - started) / 60:.0f} мин, GPT — {tokens:,} токенов; {cost}", flush=True)
+
 
 
 def main():

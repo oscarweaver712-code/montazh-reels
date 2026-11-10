@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Мозг студии: Claude Code или Codex, запущенные без интерфейса из веб-студии.
+"""Мозг студии: GPT через Codex CLI, запущенный из веб-студии.
 
-Студия (web/studio.html) отправляет реплику — сервер запускает `claude -p` или
+Студия (web/studio.html) отправляет реплику — сервер запускает
 `codex exec` в папке проекта, читает поток событий (JSONL) и показывает их в чате.
-Диалог продолжается той же сессией агента (--resume / exec resume), поэтому мозг
+Диалог продолжается той же сессией агента (exec resume), поэтому мозг
 помнит, о чём шла речь, а правила проекта (AGENTS.md, скилл reels) он читает сам.
 
 Здесь только логика без сервера: какие команды, как разбирать события, где лежат
@@ -11,10 +11,9 @@
 очередь выполняет их по одной: так пока считается ролик, ноутбуком можно пользоваться.
 
 Режимы доступа:
-  safe — правка файлов и скрипты проекта (Claude: список разрешённых команд; Codex:
-         песочница workspace-write с сетью). Не защита от злого умысла, а страховка от
+  safe — правка файлов и скрипты проекта: песочница workspace-write с сетью. Не защита от злого умысла, а страховка от
          случайного «rm -rf»: мозг может переписать скрипт и запустить его.
-  full — без ограничений (--dangerously-skip-permissions / bypass sandbox).
+  full — без ограничений (bypass sandbox).
 """
 import json
 import os
@@ -28,37 +27,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host
+import gpt_client
 from common import ROOT, WORK_DIR
 
 THREADS = WORK_DIR / "_studio" / "threads"
 CHILD_ENV = "REELS_STUDIO_CHILD"      # хук автозапуска студии не срабатывает в агентах студии
 
-# Что мозгу можно без спроса в безопасном режиме (Claude). Команды проекта и чтение —
-# да; удаление, git push, установка пакетов — нет: отказ вернётся в чат, человек решит.
-SAFE_TOOLS = [
-    "Read", "Glob", "Grep", "Edit", "Write", "WebSearch", "WebFetch", "TodoWrite",
-    # питон окружения: на Mac .venv/bin/python, на Windows .venv/Scripts/python.exe
-    "Bash(.venv/bin/python scripts/*)", "Bash(./.venv/bin/python scripts/*)",
-    "Bash(.venv/Scripts/python.exe scripts/*)", "Bash(./.venv/Scripts/python.exe scripts/*)",
-    "Bash(npx --yes hyperframes@0.8.141 *)", "Bash(ffprobe *)", "Bash(/opt/homebrew/bin/ffprobe *)",
-    "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(grep *)",
-    "Bash(mkdir -p *)", "Bash(cp *)", "Bash(curl -L -o work/*)", "Bash(curl -sL -o work/*)",
-    "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(du *)",
-    # страница ролика (work/<имя>/page.py) — тот же питон проекта; 17.10.2026 мозгу IMG_3292 её запуск запрещали
-    "Bash(.venv/bin/python work/*)", "Bash(./.venv/bin/python work/*)",
-    "Bash(.venv/Scripts/python.exe work/*)", "Bash(./.venv/Scripts/python.exe work/*)",
-    # браузер (Claude in Chrome): Flow, фонотека, свободные фото — как у агента в терминале
-    "mcp__claude-in-chrome", "ToolSearch", "Monitor",
-]
-
 PY = ".venv/Scripts/python.exe" if host.IS_WINDOWS else ".venv/bin/python"
-
-# Модель и усилие режиссёра Claude — в проекте, а не в личных настройках того, кто запустил студию
-# (19.10.2026, Валера: «для анализа точно опус 5.5 на очень высоком уровне рассуждений»). До этого
-# `claude -p` брал их из ~/.claude/settings.json: на другой машине команды монтаж шёл бы чем угодно.
-# Поменять на машине — REELS_BRAIN_MODEL / REELS_BRAIN_EFFORT; на один ход — model из студии.
-CLAUDE_MODEL = os.environ.get("REELS_BRAIN_MODEL") or "claude-opus-5-5"
-CLAUDE_EFFORT = os.environ.get("REELS_BRAIN_EFFORT") or "xhigh"
 
 STUDIO_PROMPT = f"""Тебя вызывают из локальной студии монтажа (web/studio.html): человек видит твои
 ответы в чате студии, терминала он не видит. Работай по AGENTS.md и скиллу reels
@@ -81,16 +56,18 @@ STUDIO_PROMPT = f"""Тебя вызывают из локальной студи
 — Рядом в своих сессиях могут монтироваться другие ролики: трогай только work/<свой ролик>/ и
   studio/<свой ролик>/; общие файлы (scripts/, presets/, правила проекта) — только по прямой просьбе.
   В имени задачи очереди — имя ролика (20-prep-IMG_3317): по нему студия понимает, чья задача.
-— Человек может дописать просьбу посреди хода — придёт строкой «Человек дописал…»: учти её с текущего шага.
+— Человек может дописать просьбы посреди хода: студия соберёт их в один следующий запрос. Исправляй весь список
+  вместе, сохраняй удачную идею и ручные правки timeline.json; механические правки делай скриптами без нового ИИ.
 — Приёмы рилса @tenfoldmarc (оглавление, чек-лист, телефон, интерфейс, стена, орбита, рамка, вертиго,
   пролёт, отъезд, рост, сцена, коллаж, каракули, обложка, стекло) — scripts/fx.py, когда к месту —
   docs/ПРИЁМЫ-17.md. Ставь по плану и к смыслу, не ради набора: не больше двух крупных приёмов на мысль.
-— Браузер у тебя есть — тот же Chrome человека, что у агента в терминале (Claude — Claude in Chrome, Codex —
-  Computer Use): монтаж из студии должен быть не хуже монтажа из терминала. ИИ-футаж (Google Flow / Omni) делай
+— Если в этом запуске доступны инструменты Computer Use, используй Chrome человека: монтаж из студии должен быть не хуже монтажа из терминала. ИИ-футаж (Google Flow / Omni) делай
   сам по скиллу flow (.agents/skills/flow/SKILL.md), бонусы — в пределах budget из footage.json; лоу-фай — из
   фонотеки YouTube (rules.md проекта, scripts/music.py add). Приём клипа (footage.py --take) — через очередь.
-  Браузер не отвечает — не подменяй видео картинкой молча: напиши человеку, чего не хватает, до рендера.
+  Инструментов браузера нет или он не отвечает — не подменяй видео картинкой молча: напиши человеку, чего не хватает, до рендера.
 — Ждать задачу очереди — только {PY} scripts/jobqueue.py wait <задача>, не своим циклом по логу.
+— Дизайн и готовые движения — DESIGN.md проекта, scripts/design.py, score.py и montage.py. Выбирай готовые
+  приёмы, их содержание и тайминги; свои сцены пиши только там, где они усиливают новую идею этого ролика.
 — Порядок инструментов проекта — его rules.md (у antishkola п.18: всегда → часто → иногда → редко); субтитры не
   на лице и текст за головой виден — проверяет verify_page, рендер не пойдёт.
 """
@@ -99,9 +76,13 @@ STUDIO_PROMPT = f"""Тебя вызывают из локальной студи
 # ---------------------------------------------------------------- движки
 
 # Где обычно живут CLI агентов, если PATH урезан (сервер, поднятый из Finder или хука)
-EXTRA_BIN = (["~/.local/bin", "~/AppData/Roaming/npm", "~/AppData/Local/Programs/claude",
-              "~/.claude/local"] if host.IS_WINDOWS else
-             ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.claude/local", "~/.npm-global/bin"])
+EXTRA_BIN = (["~/.local/bin", "~/AppData/Roaming/npm"] if host.IS_WINDOWS else
+             ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.npm-global/bin"])
+
+
+def require_engine(name: str) -> None:
+    if name != "codex":
+        raise ValueError("Монтаж переведён на GPT: выбери codex; Claude больше не запускается")
 
 
 def find_binary(name: str) -> str | None:
@@ -119,7 +100,7 @@ def find_binary(name: str) -> str | None:
 def engines() -> dict:
     """Какие мозги есть на машине и их версии."""
     out = {}
-    for name in ("claude", "codex"):
+    for name in ("codex",):
         path = find_binary(name)
         version = None
         if path:
@@ -133,17 +114,9 @@ def engines() -> dict:
 
 
 def auth_status(name: str, path: str) -> dict:
-    """Вошёл ли человек в мозг и на каком тарифе: claude auth status / codex login status.
-
-    Ничего не запускает в модели и ничего не тратит. Не смогли узнать — logged_in None (не «нет»).
-    """
+    """Вход Codex, без запроса к модели. Не удалось проверить — logged_in None."""
+    require_engine(name)
     try:
-        if name == "claude":
-            out = subprocess.run([path, "auth", "status", "--json"], capture_output=True, encoding="utf-8",
-                                 errors="replace", timeout=20, env=clean_env())
-            data = json.loads(out.stdout or "{}")
-            plan = data.get("subscriptionType") or ("API-ключ" if data.get("authMethod") == "apiKey" else data.get("authMethod"))
-            return {"logged_in": bool(data.get("loggedIn")), "plan": plan}
         out = subprocess.run([path, "login", "status"], capture_output=True, encoding="utf-8", errors="replace",
                              timeout=20, env=clean_env(), stdin=subprocess.DEVNULL)
         text = f"{out.stdout} {out.stderr}"
@@ -156,17 +129,15 @@ def auth_status(name: str, path: str) -> dict:
 
 def connect_command(engine: str, action: str) -> str:
     """Команда для терминала: поставить мозг (официальный способ) или войти в него через браузер."""
+    require_engine(engine)
     path = find_binary(engine)
     quoted = (f'& "{path}"' if host.IS_WINDOWS else f'"{path}"') if path else engine
     if action == "install":
-        if engine == "claude":
-            return ("irm https://claude.ai/install.ps1 | iex" if host.IS_WINDOWS
-                    else "curl -fsSL https://claude.ai/install.sh | bash")
         return "npm install -g @openai/codex"          # npm есть: на Node работает HyperFrames
     if action == "login":
         if not path:
             raise ValueError(f"{engine} ещё не установлен — сначала «Установить»")
-        return f"{quoted} auth login" if engine == "claude" else f"{quoted} login"
+        return f"{quoted} login"
     raise ValueError("действие — install или login")
 
 
@@ -192,63 +163,22 @@ def child_env(thread_id: str | None = None) -> dict:
     env = host.utf8_env(clean_env())
     env[CHILD_ENV] = "1"
     if thread_id:
-        env["REELS_THREAD"] = thread_id       # хук дописанных просьб (scripts/inbox_hook.mjs) знает, чей ход
+        env["REELS_THREAD"] = thread_id       # идентификатор разговора для скриптов студии
     # из Finder PATH короткий — без него агент не найдёт ffmpeg, node и npx
     extra = [str(Path(folder).expanduser()) for folder in EXTRA_BIN]
     env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
     return env
 
 
-# Хук «после каждого действия»: дописанное человеком посреди монтажа агент получает сразу, а не в конце
-# хода (замер 16.10.2026: Claude видит его после ближайшего действия). Только агентам студии — через
-# --settings, в настройки проекта его не кладём. Codex в режиме exec хуки после действий не вызывает
-# (проверено на 0.162) — ему дописанное студия отдаёт следующим ходом.
-INBOX_HOOK = {"hooks": {"PostToolUse": [{"matcher": "", "hooks": [
-    {"type": "command", "command": 'node "$CLAUDE_PROJECT_DIR/scripts/inbox_hook.mjs"', "timeout": 10}]}]}}
-
-
 def command(engine: str, prompt: str, session: str | None = None, mode: str = "safe",
             model: str | None = None, context: str = "", thread_id: str | None = None) -> list:
-    """Команда запуска одного хода агента. prompt — реплика человека."""
+    """Режиссёр GPT; продолжение — только сессией того же ролика."""
+    require_engine(engine)
     binary = find_binary(engine)
     if not binary:
-        raise RuntimeError(f"{engine} не найден на этой машине — установи его или выбери другой мозг")
-    if mode not in ("safe", "full"):
-        raise ValueError(f"Режим доступа «{mode}» не знаю: safe или full")
-
-    if engine == "claude":
-        cmd = [binary, "-p", prompt, "--output-format", "stream-json", "--verbose",
-               "--append-system-prompt", STUDIO_PROMPT + ("\n" + context if context else "")]
-        # --chrome: браузер человека, как у агента в терминале (17.10.2026: «чтобы монтаж из студии был идентичен»)
-        cmd += ["--chrome"]
-        if mode == "full":
-            cmd += ["--dangerously-skip-permissions"]
-        else:
-            cmd += ["--permission-mode", "acceptEdits", "--allowedTools", *SAFE_TOOLS]
-        cmd += ["--model", model or CLAUDE_MODEL, "--effort", CLAUDE_EFFORT]
-        if thread_id:
-            cmd += ["--settings", json.dumps(INBOX_HOOK)]
-        if session:
-            cmd += ["--resume", session]
-        return cmd
-
-    if engine == "codex":
-        # у Codex нет отдельной системной подсказки: правила студии идут в первую реплику
-        text = prompt if session else f"{STUDIO_PROMPT}\n{context}\n\nЗапрос:\n{prompt}".strip()
-        cmd = [binary, "exec", "--json", "--skip-git-repo-check", "-C", str(ROOT)]
-        if mode == "full":
-            cmd += ["--dangerously-bypass-approvals-and-sandbox"]
-        else:
-            cmd += ["-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
-        if model:
-            cmd += ["-m", model]
-        if session:
-            cmd += ["resume", session, text]
-        else:
-            cmd += [text]
-        return cmd
-
-    raise ValueError(f"Мозг «{engine}» не знаю: claude или codex")
+        raise RuntimeError("Codex не найден — установи его в студии → «Подключить GPT» и войди в ChatGPT")
+    text = prompt if session else f"{STUDIO_PROMPT}\n{context}\n\nЗапрос:\n{prompt}".strip()
+    return gpt_client.command(binary, text, session=session, mode=mode, model=model)
 
 
 # ---------------------------------------------------------------- разбор событий
@@ -302,36 +232,6 @@ def parse_line(engine: str, line: str) -> list:
     kind = ev.get("type")
     out = []
 
-    if engine == "claude":
-        if kind == "system" and ev.get("subtype") == "init":
-            out.append({"type": "session", "id": ev.get("session_id"), "model": ev.get("model")})
-        elif kind == "assistant":
-            for block in (ev.get("message") or {}).get("content") or []:
-                if block.get("type") == "text" and block.get("text", "").strip():
-                    out.append({"type": "text", "text": block["text"]})
-                elif block.get("type") == "tool_use":
-                    out.append({"type": "tool", "id": block.get("id"), "name": block.get("name"),
-                                "summary": _tool_summary(block.get("name", ""), block.get("input") or {})})
-        elif kind == "user":
-            for block in (ev.get("message") or {}).get("content") or []:
-                if isinstance(block, dict) and block.get("type") == "tool_result":
-                    content = block.get("content")
-                    if isinstance(content, list):
-                        content = " ".join(c.get("text", "") for c in content if isinstance(c, dict))
-                    out.append({"type": "tool_done", "id": block.get("tool_use_id"),
-                                "error": bool(block.get("is_error")), "output": _short(content or "", 300)})
-        elif kind == "result":
-            denials = [_tool_summary(d.get("tool_name", ""), d.get("tool_input") or {})
-                       for d in ev.get("permission_denials") or []]
-            out.append({"type": "result", "ok": not ev.get("is_error"), "text": ev.get("result") or "",
-                        "session": ev.get("session_id"), "cost": ev.get("total_cost_usd"),
-                        "denied": denials, "context": context_size(ev.get("usage"))})
-            if ev.get("is_error"):
-                # 14.10.2026: «Failed to authenticate. API Error: 403» приходил только текстом результата —
-                # пачка не видела ошибки и прожгла на ней оставшиеся ходы ролика
-                out.append({"type": "error", "text": explain_error(ev.get("result") or "агент закончил ход ошибкой")})
-        return out
-
     if engine == "codex":
         item = ev.get("item") or {}
         itype = item.get("type")
@@ -360,7 +260,8 @@ def parse_line(engine: str, line: str) -> list:
                 out.append({"type": "tool_done", "id": item.get("id"), "error": failed,
                             "output": _short(output, 300)})
         elif kind == "turn.completed":
-            out.append({"type": "result", "ok": True, "text": "", "usage": ev.get("usage")})
+            out.append({"type": "result", "ok": True, "text": "", "usage": ev.get("usage"),
+                        "context": context_size(ev.get("usage")), "cost": None})
         elif kind in ("turn.failed", "error"):
             message = (ev.get("error") or {}).get("message") if kind == "turn.failed" else ev.get("message")
             out.append({"type": "error", "text": explain_error(message or "")})
@@ -369,17 +270,11 @@ def parse_line(engine: str, line: str) -> list:
 
 
 def context_size(usage: dict | None) -> int | None:
-    """Сколько токенов занимал разговор в последнем обращении к модели — по нему видно, что сессия разрослась.
-
-    usage итога Claude — сумма за ход; размер контекста — у последнего обращения (iterations[-1]):
-    вход + прочитанное из кэша + записанное в кэш.
-    """
-    if not isinstance(usage, dict):
+    """Входные токены хода Codex, включая закэшированные (их повторно не прибавляем)."""
+    if not isinstance(usage, dict) or usage.get("input_tokens") is None:
         return None
-    last = (usage.get("iterations") or [None])[-1] or usage
     try:
-        return int(last.get("input_tokens", 0)) + int(last.get("cache_read_input_tokens", 0)) \
-            + int(last.get("cache_creation_input_tokens", 0))
+        return int(usage["input_tokens"])
     except (TypeError, ValueError):
         return None
 
@@ -395,12 +290,14 @@ def explain_error(message: str) -> str:
     # лимит — первым: у Claude в нём есть «/upgrade», и раньше это читалось как «Codex устарел»
     # 15.10.2026: «You've hit your session limit · resets 6:20am» не узнавался — пачка пробежала по всем роликам
     if "rate limit" in low or "usage limit" in low or "session limit" in low or "429" in low:
-        return f"Лимит подписки исчерпан — подожди или переключи мозг. ({message})"
+        return f"Лимит подписки исчерпан — дождись сброса лимита ChatGPT. ({message})"
     if "newer version of codex" in low or ("codex" in low and "upgrade" in low):
-        return f"Codex устарел для выбранной модели — выполни в терминале `codex update`. ({message})"
+        return f"Codex устарел для выбранной модели — обнови Codex: `npm install -g @openai/codex`. ({message})"
+    if "unexpected argument" in low or "unknown option" in low:
+        return f"Codex не понимает опции запуска — обнови CLI: `npm install -g @openai/codex`. ({message})"
     if ("not logged in" in low or "login" in low or "unauthorized" in low or "401" in low
             or "failed to authenticate" in low or "403" in low):
-        return f"Мозг не авторизован — открой терминал и войди (claude → /login или codex login). ({message})"
+        return f"Мозг не авторизован — открой терминал и войди (codex login). ({message})"
     return message
 
 
@@ -413,6 +310,7 @@ def _thread_path(thread_id: str) -> Path:
 
 
 def new_thread(engine: str, title: str = "", stem: str | None = None, project: str | None = None) -> dict:
+    require_engine(engine)
     THREADS.mkdir(parents=True, exist_ok=True)
     thread = {"id": uuid.uuid4().hex[:12], "engine": engine, "title": title or "Новый разговор",
               "stem": stem, "project": project, "session": None, "created": time.time(), "updated": time.time(),
@@ -425,7 +323,13 @@ def load_thread(thread_id: str) -> dict:
     path = _thread_path(thread_id)
     if not path.exists():
         raise FileNotFoundError(f"Диалога {thread_id} нет")
-    return json.loads(path.read_text(encoding="utf-8"))
+    thread = json.loads(path.read_text(encoding="utf-8"))
+    if thread.get("engine") == "claude":
+        # История нужна человеку; идентификатор сессии другого поставщика Codex не понимает.
+        thread["handoff"] = handoff(thread, why="монтаж переведён с Claude на GPT/Codex")
+        thread.update(engine="codex", session=None, legacy_engine="claude")
+        save_thread(thread)
+    return thread
 
 
 def save_thread(thread: dict) -> None:
@@ -469,7 +373,7 @@ def fill_turn_costs(messages: list) -> None:
 
 # Сессия одного ролика тоже растёт: пятнадцать заходов «поправь то, поправь это» — и монтаж
 # деградирует так же, как в пачке в одном разговоре (Валера, 16.10.2026: «свежая сессия автоматом»).
-# Порог — размер контекста у Claude и число просьб человека у любого мозга. Состояние ролика живёт в
+# Порог — входные токены хода Codex и число просьб человека. Состояние ролика живёт в
 # файлах work/<имя>/, поэтому свежей сессии хватает короткой передачи дел.
 FRESH_CONTEXT = 120_000
 FRESH_REQUESTS = 8
@@ -484,7 +388,7 @@ def needs_fresh(thread: dict) -> str | None:
         res = next((e for e in m.get("events") or [] if e.get("type") == "result"), None)
         if res and res.get("context"):
             if res["context"] >= FRESH_CONTEXT:
-                return f"разговор занял ≈{res['context'] // 1000} тыс. токенов"
+                return f"последний ход использовал ≈{res['context'] // 1000} тыс. входных токенов"
             break
     asks = sum(1 for m in msgs if m.get("role") == "user" and not m.get("auto"))   # ходы пачки «продолжай» — не просьбы
     if asks >= FRESH_REQUESTS:
@@ -523,7 +427,7 @@ INBOX = WORK_DIR / "_studio" / "inbox"
 
 
 def inbox_add(thread_id: str, text: str) -> str:
-    """Просьба человека к идущему ходу: файл, который хук агента заберёт после ближайшего действия."""
+    """Просьба человека к идущему ходу: файл для общего списка следующего хода."""
     _thread_path(thread_id)                          # проверка номера
     box = INBOX / thread_id
     box.mkdir(parents=True, exist_ok=True)
@@ -543,7 +447,7 @@ def inbox_state(thread_id: str) -> dict:
 
 
 def inbox_take(thread_id: str) -> list:
-    """Недоставленное хуком (Codex, или ход кончился раньше) — забрать, чтобы отдать следующим ходом."""
+    """Забрать весь список дописанного для одного следующего хода Codex."""
     box = INBOX / thread_id
     texts = []
     for path in sorted(box.glob("*.json")) if box.exists() else []:
@@ -570,24 +474,17 @@ def list_threads() -> list:
 
 
 def status_report() -> str:
-    """Подключены ли Claude и Codex — для установщика: монтирует ИИ, без него только ручные правки."""
-    lines, ready = [], []
-    for name, e in engines().items():
-        title = "Claude" if name == "claude" else "Codex"
-        if not e["available"]:
-            lines.append(f"  ✗ {title}: не установлен")
-            continue
-        auth = auth_status(name, e["path"])
-        if auth.get("logged_in") is False:
-            lines.append(f"  ✗ {title}: установлен, но вход не выполнен")
-        else:
-            ready.append(title)
-            lines.append(f"  ✓ {title}: готов{' · ' + auth['plan'] if auth.get('plan') else ''}")
-    # одного Claude хватает на всё (23.10.2026: у друга Валеры — только Claude): второй — запас на лимит, не условие
-    tail = ("  Монтирует ИИ — без него студия умеет только ручные правки. Подключи Claude (или Codex): студия → кнопка\n"
-            "  «Подключи ИИ» вверху справа, установка и вход — в пару кликов." if not ready else
-            "  Хватает одного; второй — запас, если у первого кончится лимит.")
-    return "\n".join(lines + ([tail] if len(ready) < 2 else []))
+    """Подключён ли GPT через Codex — для установщика."""
+    e = engines()["codex"]
+    if not e["available"]:
+        return "  ✗ Codex не установлен. Студия → «Подключить GPT» → установка и вход в ChatGPT."
+    auth = auth_status("codex", e["path"])
+    if auth.get("logged_in") is False:
+        return "  ✗ Codex установлен, но вход не выполнен: codex login."
+    if auth.get("logged_in") is None:
+        return "  ? Codex установлен, проверить вход не удалось. Студия → «Проверить подключение»."
+    spec = gpt_client.profile("director")
+    return f"  ✓ GPT / Codex готов · {auth.get('plan') or 'вход выполнен'} · {spec['model']} ({spec['effort']})"
 
 
 if __name__ == "__main__":
@@ -595,4 +492,4 @@ if __name__ == "__main__":
         host.utf8_console()
         print(status_report())
     else:
-        sys.exit("Использование: brain.py --status — подключены ли Claude и Codex")
+        sys.exit("Использование: brain.py --status — подключён ли GPT / Codex")

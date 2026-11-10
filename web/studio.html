@@ -546,8 +546,7 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
     <div class="pop right" id="smenu-pop" hidden>
       <div class="pop-h">Кто монтирует</div>
       <div class="seg" role="group" aria-label="Мозг монтажа" id="engines">
-        <button type="button" data-engine="claude" aria-pressed="false"><span class="dot"></span>Claude</button>
-        <button type="button" data-engine="codex" aria-pressed="false"><span class="dot"></span>Codex</button>
+        <button type="button" data-engine="codex" aria-pressed="false"><span class="dot"></span>GPT / Codex</button>
       </div>
       <div class="pop-h">Что ИИ можно</div>
       <div class="seg" role="group" aria-label="Доступ мозга" id="modes">
@@ -555,7 +554,7 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
         <button type="button" data-mode="full" aria-pressed="false" title="Без ограничений: ИИ делает всё сам, ничего не спрашивая.">Полный доступ</button>
       </div>
       <p class="hint" style="margin:6px 0 0">«Безопасно» — ИИ правит файлы ролика и запускает монтаж, но ничего не удаляет и не ставит.</p>
-      <button type="button" class="icon" data-brains style="margin-top:6px">🔌 Подключение Claude и Codex…</button>
+      <button type="button" class="icon" data-brains style="margin-top:6px">🔌 Подключение GPT / Codex…</button>
       <div class="pop-h">Вид</div>
       <button type="button" class="icon" id="theme">◐ Светлая / тёмная тема</button>
       <div class="pop-h">Ещё</div>
@@ -850,7 +849,7 @@ dialog.modal label.pick { display: flex; gap: 8px; align-items: baseline; margin
 
 <dialog class="modal wide" id="brains-dialog" aria-labelledby="brains-title">
   <h3 id="brains-title">Подключи ИИ — он и монтирует</h3>
-  <div class="say">Монтирует не сама студия, а ИИ у тебя на компе — Claude или Codex, по твоей подписке. Без него работают только ручные правки. <b>Лучше подключить оба:</b> кончится лимит у одного — продолжит второй, а Codex ещё и рисует фоны, которых нет в свободных фото.</div>
+  <div class="say">Монтаж делает GPT через Codex на твоём компьютере. Войди в ChatGPT или подключи свой API-ключ средствами Codex. Лимиты зависят от тарифа, модели и сложности ролика. Без ИИ доступны ручные правки.</div>
   <div class="brains" id="brains-list"></div>
   <p class="hint" style="margin-top:10px">Установка и вход открываются в окне терминала. Вход — через браузер по ссылке оттуда, пароль в студию не попадает. Закончил — нажми «Проверить».</p>
   <div class="row">
@@ -900,7 +899,7 @@ const store = {
 const S = {
   videos: [], stem: store.get("stem", null), brief: null, styles: [], showAll: false,
   projects: [], project: store.get("project", ""), defaultProject: "antishkola", problem: null,
-  engine: store.get("engine", "claude"), mode: store.get("mode", "safe"), engines: {},
+  engine: "codex", mode: store.get("mode", "safe"), engines: {},
   thread: store.get("thread", null), threads: [], es: null, live: null,
   tracks: null, peaks: null, t: 0, pps: 40, sel: null, view: "live", playing: false,
   pv: null, extents: {}, snap: true, busyEdit: false,
@@ -2612,8 +2611,8 @@ function renderAiStart() {
   if (!v) { box.innerHTML = `<div class="ai-start"><h3>Начни с видео</h3><p>Перетащи видео в «Медиа» слева или выбери проект сверху — ИИ смонтирует его сам.</p></div>`; return; }
   const b = S.brief || {}, busy = busyStem(v.stem), done = v.steps.page, run = aiRun(v.stem);
   if (!busy && S.enginesLoaded && !readyEngines().length) {
-    box.innerHTML = `<div class="ai-start"><h3>Подключи ИИ</h3><p>Монтирует ИИ у тебя на компе — Claude или Codex, по твоей подписке. Без него работают только ручные правки. Подключение — пара минут, прямо отсюда.</p>
-      <button type="button" class="btn rec big" data-brains>🔌 Подключить Claude или Codex</button></div>`;
+    box.innerHTML = `<div class="ai-start"><h3>Подключи ИИ</h3><p>Монтирует GPT через Codex, с твоим входом в ChatGPT. Без него работают только ручные правки. Подключение — пара минут, прямо отсюда.</p>
+      <button type="button" class="btn rec big" data-brains>🔌 Подключить GPT</button></div>`;
     return;
   }
   const proj = place(v.project);
@@ -2698,8 +2697,9 @@ function selDesc() {
 }
 function ctxText() { const d = selDesc(); return `плейхед ${sec(S.t)}${d ? ` · ${d}` : ""}`; }
 
-function setEngine(name) { S.engine = name; store.set("engine", name); renderEngineChip(); document.querySelectorAll("#engines button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.engine === name))); }
-const ENGINE_NAME = { claude: "Claude", codex: "Codex" };
+function setEngine(name) { name = "codex"; S.engine = name; store.set("engine", name); renderEngineChip(); document.querySelectorAll("#engines button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.engine === name))); }
+const ENGINE_NAME = { codex: "GPT / Codex" };
+const engineLabel = (name) => ENGINE_NAME[name] || "Архив Claude";
 const readyEngines = () => Object.keys(S.engines || {}).filter((k) => S.engines[k].ready);
 function renderEngineChip() {
   const ready = readyEngines(), chip = $("engine-chip");
@@ -2710,11 +2710,10 @@ function renderEngineChip() {
 }
 // Подключение мозгов: что стоит, вошёл ли человек; поставить и войти — кнопкой, в окне терминала
 const BRAIN_INFO = {
-  claude: { about: "Claude Code (Anthropic). Нужна подписка Claude Pro или Max.", role: "Монтирует: план, рез, камера, графика, субтитры, звук." },
-  codex: { about: "Codex (OpenAI). Нужна подписка ChatGPT Plus или выше.", role: "Тоже монтирует, плюс рисует фоны для роликов. Ставится через npm — он есть вместе с проектом." },
+  codex: { about: "GPT через Codex (OpenAI). Вход — в ChatGPT; расход зависит от модели и задачи.", role: "План, рез, камера, графика, субтитры и звук. Установка через npm — он уже есть вместе с проектом." },
 };
 function renderBrains() {
-  $("brains-list").innerHTML = ["claude", "codex"].map((k) => {
+  $("brains-list").innerHTML = ["codex"].map((k) => {
     const e = (S.engines || {})[k] || {}, info = BRAIN_INFO[k];
     const [cls, state] = !e.available ? ["bad", "не установлен"] : e.logged_in === false ? ["warn", "установлен, но вход не выполнен"]
       : e.logged_in == null ? ["warn", "установлен; вошёл ли — проверить не удалось"] : ["ok", `✓ готов${e.plan ? ` · ${e.plan}` : ""}`];
@@ -2772,7 +2771,7 @@ async function loadThreads(selectId) {
   if (S.thread && !mine.some((t) => t.id === S.thread)) S.thread = null;
   if (!S.thread && mine.length) S.thread = mine[0].id;
   store.set("thread", S.thread);
-  $("threads").innerHTML = mine.length ? mine.map((t) => `<option value="${t.id}" ${t.id === S.thread ? "selected" : ""}>${t.engine === "codex" ? "Codex" : "Claude"} · ${esc(t.title)}</option>`).join("")
+  $("threads").innerHTML = mine.length ? mine.map((t) => `<option value="${t.id}" ${t.id === S.thread ? "selected" : ""}>${engineLabel(t.engine)} · ${esc(t.title)}</option>`).join("")
     : `<option value="">${S.stem ? `Про ${esc(S.stem)} разговоров ещё нет` : "Разговоров пока нет"}</option>`;
   if (S.es) { S.es.close(); S.es = null; }
   if (S.thread) await openThread(S.thread); else { S.messages = []; renderLog([]); busy(false); }
@@ -2801,7 +2800,7 @@ function botHtml(m) {
   const run = (S.brainRuns || []).find((r) => r.thread === S.thread);
   evs.filter((e) => e.type === "inbox").forEach((x) => {
     const got = m.live && run && run.inbox ? run.inbox[x.id] : null;
-    const st = !m.live ? "" : got ? "✓ ИИ получил" : m.engine === "codex" ? "⏳ передам, как закончит текущий шаг" : "⏳ передам после ближайшего действия";
+    const st = !m.live ? "" : got ? "✓ ИИ получил" : "⏳ передам все правки после текущего шага";
     parts.push(`<div class="inbox">↳ ты дописал: ${esc(x.text)}${st ? `<small>${st}</small>` : ""}</div>`);
   });
   evs.filter((e) => e.type === "text").forEach((t) => parts.push(md(t.text)));
@@ -2810,11 +2809,15 @@ function botHtml(m) {
   if (res) {
     const bits = [];
     if (res.cost != null) bits.push(res.turn != null ? `ход ≈ $${Number(res.turn).toFixed(2)} · разговор ≈ $${Number(res.cost).toFixed(2)} по API-ценам` : `разговор ≈ $${Number(res.cost).toFixed(2)} по API-ценам`);
+    if (res.usage) {
+      const u = res.usage;
+      bits.push(`вход ${Number(u.input_tokens || 0).toLocaleString("ru-RU")} · кэш ${Number(u.cached_input_tokens || 0).toLocaleString("ru-RU")} · выход ${Number(u.output_tokens || 0).toLocaleString("ru-RU")} токенов`);
+    }
     if (res.denied && res.denied.length) bits.push(`<span title="${esc(res.denied.join("\n"))}">ИИ не разрешили ${res.denied.length} ${res.denied.length === 1 ? "действие" : "действия"} — если так и надо, включи «Полный доступ» в ⚙</span>`);
     if (bits.length) parts.push(`<div class="result">${bits.join(" · ")}</div>`);
   }
   if (!parts.length) parts.push(`<p class="hint">Думаю…</p>`);
-  return `<div class="msg bot"><div class="who"><span class="dot ${m.live ? "rec" : "on"}"></span>${m.engine === "codex" ? "Codex" : "Claude"}</div>${parts.join("")}</div>`;
+  return `<div class="msg bot"><div class="who"><span class="dot ${m.live ? "rec" : "on"}"></span>${engineLabel(m.engine)}</div>${parts.join("")}</div>`;
 }
 function renderLog(messages) {
   const log = $("log");
